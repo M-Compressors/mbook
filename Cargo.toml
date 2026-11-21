@@ -2,5 +2,8 @@
 resolver = "2"
 members = ["crates/mbook-core"]
 
-[dependencies]
-mopenzl = { version = "0.2", features = ["framed"] }
+[workspace.dependencies]
+# The container layer. Uncomment together with the first code that uses it:
+# Cargo warns about a workspace dependency no member depends on. Each crate
+# picks `compression` and `decompression` itself.
+# mopenzl = { version = "0.2", default-features = false, features = ["std", "framed", "all-codecs"] }

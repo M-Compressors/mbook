@@ -50,6 +50,10 @@ no parsing to apply and are the value a parser already reports for a heading.
 
 - Easier: links never depend on a reader's Markdown implementation.
 - Easier: contents entries, links and bookmarks share one kind of position.
+- Easier: a contents row with a non-zero offset must match an anchor row
+  (decided 2026-11-21), so a contents target is a path and an optional anchor
+  name, and an editing library never handles raw offsets
+  ([RFC 0002](../0002-mbook-core-api.md#navigation)).
 - Harder: editing a chapter invalidates saved positions and requires
   rebuilding `toc` and `anchors`.
 - To revisit: whether the GitHub naming rule should be specified exactly for

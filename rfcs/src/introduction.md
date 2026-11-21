@@ -10,6 +10,7 @@ container.
 | see what a file contains and how it is opened | [RFC 0001, guide-level explanation](0001-mbook-format.md#guide-level-explanation) |
 | implement a reader or a writer | [RFC 0001, reference-level explanation](0001-mbook-format.md#reference-level-explanation) |
 | understand why the format looks this way | [Decision records](adr/overview.md) |
+| read or write books from Rust | [RFC 0002, guide-level explanation](0002-mbook-core-api.md#guide-level-explanation) |
 | know what is still open | [RFC 0001, unresolved questions](0001-mbook-format.md#unresolved-questions) |
 
 ## Documents
@@ -17,6 +18,7 @@ container.
 | Document | Title | Status |
 | --- | --- | --- |
 | [RFC 0001](0001-mbook-format.md) | The mbook file format, version 1 | Draft |
+| [RFC 0002](0002-mbook-core-api.md) | The mbook-core API | Draft |
 | [ADR-0001 … ADR-0007](adr/overview.md) | Decisions behind RFC 0001 | See the overview |
 
 An **RFC** specifies behaviour: it is what an implementation is checked

@@ -5,6 +5,7 @@
 # RFCs
 
 - [RFC 0001: The mbook file format, version 1](0001-mbook-format.md)
+- [RFC 0002: The mbook-core API](0002-mbook-core-api.md)
 
 # Decision records
 

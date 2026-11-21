@@ -485,6 +485,9 @@ Rows form a tree listed in pre-order.
 - `title` **MUST NOT** be empty. It is plain text, not Markdown.
 - `resource` **MUST** be the number of a resource with `kind` 1.
 - `offset` **MUST** be a [valid position](#positions) in that chapter.
+- A row whose `offset` is not 0 **MUST** have the same `resource` and `offset`
+  as a row of `anchors`. The target of a contents entry can therefore always
+  be written as a link destination: a path and an optional fragment.
 - Rows **MUST** be in reading order: by position of `resource` in the reading
   order, then by `offset`.
 

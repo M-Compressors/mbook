@@ -2,5 +2,19 @@
 name = "mbook-core"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.89"
+description = "Read, edit and create mbook files"
+
+[features]
+default = ["read", "write"]
+# `BookReader`, `Book::read` and `Book::open`.
+# Will enable `mopenzl/decompression` once the reader decodes containers.
+read = []
+# Everything that creates, changes or saves a `Book`.
+# Will enable `mopenzl/compression` and `markdown` 1.0.0 once books are
+# analysed and written.
+write = ["dep:uuid"]
 
 [dependencies]
+thiserror = "2"
+uuid = { version = "1", optional = true, features = ["v7"] }
