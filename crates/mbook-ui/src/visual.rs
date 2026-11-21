@@ -23,10 +23,7 @@ const SIZES: [(f32, f32); 3] = [(390.0, 844.0), (800.0, 780.0), (1280.0, 780.0)]
 
 /// Whether this system can draw a window to a picture.
 fn can_render() -> bool {
-    matches!(
-        gpui_kit::platform::current_headless_renderer(),
-        Ok(Some(_))
-    )
+    matches!(gpui_kit::platform::current_headless_renderer(), Ok(Some(_)))
 }
 
 /// Draws every screen of the application to a PNG file in `out`, and returns

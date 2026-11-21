@@ -177,26 +177,26 @@ fn painting(width: u32, height: u32, hue: f32) -> RgbImage {
 fn hsl(hue: f32, saturation: f32, lightness: f32) -> Rgb<u8> {
     let hue = hue.rem_euclid(360.0);
     let chroma = (1.0 - (2.0 * lightness - 1.0).abs()) * saturation;
-    let x = chroma * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
-    let (r, g, b) = match hue {
-        h if h < 60.0 => (chroma, x, 0.0),
-        h if h < 120.0 => (x, chroma, 0.0),
-        h if h < 180.0 => (0.0, chroma, x),
-        h if h < 240.0 => (0.0, x, chroma),
-        h if h < 300.0 => (x, 0.0, chroma),
-        _ => (chroma, 0.0, x),
+    let second = chroma * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
+    let (red, green, blue) = match hue {
+        h if h < 60.0 => (chroma, second, 0.0),
+        h if h < 120.0 => (second, chroma, 0.0),
+        h if h < 180.0 => (0.0, chroma, second),
+        h if h < 240.0 => (0.0, second, chroma),
+        h if h < 300.0 => (second, 0.0, chroma),
+        _ => (chroma, 0.0, second),
     };
-    let m = lightness - chroma / 2.0;
+    let shift = lightness - chroma / 2.0;
     let byte = |value: f32| {
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
             reason = "a channel of a colour is between 0 and 1 before it is scaled to a byte"
         )]
-        let byte = ((value + m).clamp(0.0, 1.0) * 255.0) as u8;
+        let byte = ((value + shift).clamp(0.0, 1.0) * 255.0) as u8;
         byte
     };
-    Rgb([byte(r), byte(g), byte(b)])
+    Rgb([byte(red), byte(green), byte(blue)])
 }
 
 /// The AVIF bytes of a picture, made small and fast.
@@ -237,8 +237,8 @@ impl World {
         let dir = tempfile::tempdir()?;
         let roots = Roots::new(dir.path().join("data"), dir.path().join("cache"));
         roots.prepare()?;
-        let catalogue =
-            Catalogue::open(&roots.catalogue()).map_err(|error| Error::Render(error.to_string()))?;
+        let catalogue = Catalogue::open(&roots.catalogue())
+            .map_err(|error| Error::Render(error.to_string()))?;
         let mut keys = Vec::new();
         for (at, spec) in specs.iter().enumerate() {
             keys.push(write_one(&roots, &catalogue, spec, at)?);

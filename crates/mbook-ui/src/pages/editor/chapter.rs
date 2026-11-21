@@ -51,7 +51,12 @@ impl EditorPage {
         let shown = self.preview.clone();
         let body = match mode {
             ViewMode::Source => source.into_any_element(),
-            ViewMode::Preview => div().size_full().child(shown).into_any_element(),
+            ViewMode::Preview => div()
+                .size_full()
+                .px_4()
+                .py_2()
+                .child(shown)
+                .into_any_element(),
             ViewMode::Split => h_flex()
                 .size_full()
                 .child(div().flex_1().min_w_0().h_full().child(source))
@@ -62,6 +67,8 @@ impl EditorPage {
                         .h_full()
                         .border_l_1()
                         .border_color(theme.border)
+                        .px_4()
+                        .py_2()
                         .child(shown),
                 )
                 .into_any_element(),

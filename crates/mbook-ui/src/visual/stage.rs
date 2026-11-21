@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
+use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Entity, HeadlessAppContext, MouseButton, Pixels, Point,
     ScrollDelta, Window, point, px, size,
@@ -172,7 +172,7 @@ impl Stage {
         for _ in 0..6 {
             self.cx.run_until_parked();
             self.cx.advance_clock(Duration::from_millis(30));
-            self.with_window(|window, cx| window.render_frame(cx))?;
+            self.with_window(TestWindowExt::render_frame)?;
         }
         Ok(())
     }
@@ -228,16 +228,6 @@ impl Stage {
         self.press_at(at)
     }
 
-    /// Opens the context menu of an element.
-    pub(super) fn right_click_named(&mut self, id: &str) -> Result<()> {
-        let id = id.to_owned();
-        if self.with_window(|window, _| window.try_find(id.clone()).is_none())? {
-            return Err(missing(&id));
-        }
-        self.with_window(|window, cx| window.right_click(id, cx))?;
-        self.settle()
-    }
-
     fn press_at(&mut self, at: Point<Pixels>) -> Result<()> {
         self.with_window(|window, cx| {
             window.pointer_down(at, MouseButton::Left, cx);
@@ -262,19 +252,14 @@ impl Stage {
         self.settle()
     }
 
-    /// Presses a key, such as `cmd-f`.
-    pub(super) fn press(&mut self, key: &str) -> Result<()> {
-        let key = key.to_owned();
-        self.with_window(move |window, cx| window.press(&key, cx))?;
-        self.settle()
-    }
-
     /// Scrolls an element by `lines`, down for a negative number.
     pub(super) fn scroll(&mut self, id: &'static str, lines: f32) -> Result<()> {
         if !self.has(id)? {
             return Err(missing(id));
         }
-        self.with_window(|window, cx| window.scroll(id, ScrollDelta::Lines(point(0.0, lines)), cx))?;
+        self.with_window(|window, cx| {
+            window.scroll(id, ScrollDelta::Lines(point(0.0, lines)), cx);
+        })?;
         self.settle()
     }
 

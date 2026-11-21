@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::error::Error as _;
 use std::rc::Rc;
 
 use gpui_kit::{Entity, Hsla, TestAppContext, WindowAppearance};
@@ -439,4 +440,28 @@ fn the_text_and_controls_of_the_theme_keep_their_contrast_in_both_appearances(
             }
         });
     }
+}
+
+#[gpui_kit::test]
+fn a_failure_of_the_catalogue_is_kept_until_a_write_succeeds(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let appearance = appearance(cx, &fixture);
+    cx.run_until_parked();
+    assert!(appearance.read_with(cx, |appearance, _| appearance.error().is_none()));
+    appearance.update(cx, |appearance, cx| {
+        appearance.fail(
+            CatalogueError::storage(std::io::Error::other("disk gone")),
+            cx,
+        );
+    });
+    appearance.read_with(cx, |appearance, _| {
+        assert!(appearance.error().is_some());
+        assert!(appearance.error().unwrap().source().is_some());
+    });
+    change(&appearance, cx, |settings| settings.text_size = 20.0);
+    cx.run_until_parked();
+    assert!(
+        appearance.read_with(cx, |appearance, _| appearance.error().is_none()),
+        "the settings were saved after all"
+    );
 }

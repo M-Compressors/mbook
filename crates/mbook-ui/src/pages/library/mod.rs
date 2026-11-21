@@ -38,6 +38,7 @@ use crate::features::import_book::{ImportEvent, ImportQueue};
 use crate::features::search_library::{Counts, Section, Sort, counts, select};
 use crate::shared::layout::SizeClass;
 use crate::shared::model::BookKey;
+use crate::shared::ui::announce;
 
 actions!(
     library,
@@ -103,6 +104,9 @@ pub(crate) struct LibraryPage {
     thumbnails: HashSet<BookKey>,
     thumbnails_generation: u64,
     probing: Option<Task<()>>,
+    /// Whether the failure the library holds was announced, so that it is said
+    /// once and not at every change of the shelf.
+    error_told: bool,
     /// The files this page was handed, for the tests of the root.
     #[cfg(test)]
     received: Vec<PathBuf>,
@@ -128,7 +132,10 @@ impl LibraryPage {
         let page = cx.weak_entity();
         let sidebar = cx.new(|cx| LibrarySidebar::new(page, search.clone(), queue.clone(), cx));
         let subscriptions = vec![
-            cx.observe(&library, |this, _, cx| this.library_changed(cx)),
+            cx.observe_in(&library, window, |this, _, window, cx| {
+                this.library_changed(cx);
+                this.announce_error(window, cx);
+            }),
             cx.subscribe(&queue, |_, _, event: &ImportEvent, cx| match *event {
                 ImportEvent::Opened(key) => cx.emit(LibraryEvent::Open(key)),
             }),
@@ -159,6 +166,7 @@ impl LibraryPage {
             thumbnails: HashSet::new(),
             thumbnails_generation: 0,
             probing: None,
+            error_told: false,
             #[cfg(test)]
             received: Vec::new(),
             _subscriptions: subscriptions,
@@ -290,12 +298,27 @@ impl LibraryPage {
         }
     }
 
+    /// Says once that the library could not be read or changed. The words stay
+    /// on the page with a way to try again; this is for those who do not look.
+    fn announce_error(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let words = self.library.read(cx).error().map(error_words);
+        match words {
+            Some(words) if !self.error_told => {
+                self.error_told = true;
+                announce(words, window, cx);
+            }
+            Some(_) => {}
+            None => self.error_told = false,
+        }
+    }
+
     /// Reads the books again: the library changed.
     fn library_changed(&mut self, cx: &mut Context<'_, Self>) {
         let library = self.library.read(cx);
         // An empty library equals the empty list the page starts with, and
         // would never be filtered: its heading would say "Loading" for good.
-        let unfiltered = !self.shelf.is_ready() && !library.is_loading() && self.filtering.is_none();
+        let unfiltered =
+            !self.shelf.is_ready() && !library.is_loading() && self.filtering.is_none();
         if library.books() != self.books.as_slice() || unfiltered {
             self.books = Arc::new(library.books().to_vec());
             self.index = self
@@ -365,6 +388,14 @@ impl LibraryPage {
             .ok();
         }));
     }
+}
+
+/// What went wrong with the catalogue, in words for a person.
+pub(super) fn error_words(error: &crate::entities::catalogue::LibraryError) -> String {
+    format!(
+        "The library could not be read or changed: {}.",
+        crate::features::import_book::error_chain(error)
+    )
 }
 
 /// Binds the key of the search field, once for the application.

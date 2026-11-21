@@ -4,7 +4,8 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Selectable as _, v_flex};
 use gpui_kit::{
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Role,
-    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, px,
+    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
+    px,
 };
 
 use super::EditorPage;
@@ -20,6 +21,22 @@ pub(super) fn control(
         .label(label)
         .min_h(px(target_size()))
         .cursor_pointer()
+}
+
+/// A line of a list that is a button: its words start at the left edge. A
+/// button centres what it holds and ignores `justify_start`, so the words are
+/// a child that fills it.
+pub(super) fn list_item(
+    id: impl Into<gpui_kit::ElementId>,
+    label: impl Into<SharedString>,
+) -> Button {
+    let label = label.into();
+    Button::new(id)
+        .accessibility_label(label.clone())
+        .min_h(px(target_size()))
+        .cursor_pointer()
+        .w_full()
+        .child(div().w_full().text_left().child(label))
 }
 
 impl EditorPage {
@@ -54,10 +71,8 @@ impl EditorPage {
                 name.push_str(", current section");
             }
             list = list.child(
-                control(section.id(), label)
+                list_item(section.id(), label)
                     .ghost()
-                    .w_full()
-                    .justify_start()
                     .selected(current)
                     .accessibility_label(name)
                     .on_click(cx.listener(move |this, _, window, cx| {
@@ -98,10 +113,8 @@ impl EditorPage {
             );
             let path = chapter.path.clone();
             list = list.child(
-                control(format!("chapter-{}", chapter.path), visible)
+                list_item(format!("chapter-{}", chapter.path), visible)
                     .ghost()
-                    .w_full()
-                    .justify_start()
                     .selected(is_current)
                     .accessibility_label(name)
                     .on_click(cx.listener(move |this, _, window, cx| {
@@ -117,10 +130,8 @@ impl EditorPage {
             );
         }
         list.child(
-            control("add-chapter", "Add a chapter…")
+            list_item("add-chapter", "Add a chapter…")
                 .ghost()
-                .w_full()
-                .justify_start()
                 .on_click(cx.listener(|this, _, window, cx| this.add_chapter(window, cx))),
         )
         .into_any_element()

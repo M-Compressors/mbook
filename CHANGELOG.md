@@ -34,6 +34,8 @@
     `image` crate.
   - Updates from the releases of this repository through `self_update`,
     verified against a key built into the application.
+  - The Cargo feature `visual` and the test of the same name render every
+    screen into `target/visual/` without a window.
 - `.github/workflows/release.yml`: builds the installers of the application
   for a tag, signed, when a maintainer starts it. It has not been run.
 - `mbook`: tests that count the bytes a reader takes from a large book. To

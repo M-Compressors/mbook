@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use gpui_kit::Action as _;
-use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::WindowExt;
 
 use super::stage::Stage;
 use crate::app::show_about;
@@ -44,11 +44,7 @@ fn keep_controls(settings: &mut Settings) {
     settings.keep_controls = true;
 }
 
-const fn shot(
-    name: &'static str,
-    library: Library,
-    run: fn(&mut Stage) -> Result<()>,
-) -> Shot {
+const fn shot(name: &'static str, library: Library, run: fn(&mut Stage) -> Result<()>) -> Shot {
     Shot {
         name,
         library,
@@ -63,8 +59,12 @@ pub(super) fn all() -> Vec<Shot> {
     vec![
         shot("01-library-empty", Library::Empty, |_| Ok(())),
         shot("02-library-books", Library::Books, seed_imports),
-        shot("03a-library-search", Library::Books, |stage| type_in_search(stage, "mo")),
-        shot("03b-library-no-match", Library::Books, |stage| type_in_search(stage, "zzz")),
+        shot("03a-library-search", Library::Books, |stage| {
+            type_in_search(stage, "mo")
+        }),
+        shot("03b-library-no-match", Library::Books, |stage| {
+            type_in_search(stage, "zzz")
+        }),
         shot("04a-library-menu", Library::Books, menu),
         shot("04b-library-remove", Library::Books, remove),
         Shot {
@@ -122,6 +122,25 @@ pub(super) fn all() -> Vec<Shot> {
                 stage.scroll("settings-page", -400.0)
             })
         },
+        shot("11a-library-error", Library::Books, |stage| {
+            stage.with_app(|cx| {
+                crate::entities::catalogue::Library::global(cx).update(cx, |library, cx| {
+                    library.fail(disk_gone(), cx);
+                });
+            });
+            stage.settle()
+        }),
+        Shot {
+            calm: false,
+            ..shot("11b-settings-error", Library::Books, |stage| {
+                open_settings(stage)?;
+                stage.with_app(|cx| {
+                    crate::features::appearance::Appearance::global(cx)
+                        .update(cx, |appearance, cx| appearance.fail(disk_gone(), cx));
+                });
+                stage.settle()
+            })
+        },
         #[cfg(feature = "self-update")]
         shot("10a-update-banner", Library::Books, update_banner),
         shot("10b-about", Library::Books, |stage| {
@@ -129,6 +148,13 @@ pub(super) fn all() -> Vec<Shot> {
             stage.settle()
         }),
     ]
+}
+
+/// The failure the catalogue is made to report in the shots of errors.
+fn disk_gone() -> crate::entities::catalogue::CatalogueError {
+    crate::entities::catalogue::CatalogueError::storage(std::io::Error::other(
+        "the disk is not there",
+    ))
 }
 
 /// Puts a running import and a failed one in the list of imports.
@@ -259,7 +285,7 @@ fn editor_unsaved(stage: &mut Stage) -> Result<()> {
     stage.type_text(" More words. ")?;
     for _ in 0..3 {
         stage.click("back")?;
-        if stage.with_window(|window, cx| window.has_active_dialog(cx))? {
+        if stage.with_window(WindowExt::has_active_dialog)? {
             break;
         }
     }
@@ -274,10 +300,8 @@ fn editor_problems(stage: &mut Stage) -> Result<()> {
         stage.click("chapter-source")?;
     }
     stage.type_text("\n\nSee [the gone page](nowhere.md).\n")?;
-    if stage.has("check")? {
-        stage.click("check")?;
-    }
-    open_section(stage, "section-problems")
+    open_section(stage, "section-problems")?;
+    stage.click("check")
 }
 
 fn open_settings(stage: &mut Stage) -> Result<()> {
@@ -296,7 +320,7 @@ fn update_banner(stage: &mut Stage) -> Result<()> {
         UpdateBanner::install(banner.clone(), cx);
         banner
     })?;
-    stage.with_app(|cx| banner.update(cx, |banner, cx| banner.check_now(cx)));
+    stage.with_app(|cx| banner.update(cx, UpdateBanner::check_now));
     let root = stage.root()?;
     stage.with_app(|cx| root.update(cx, |_, cx| cx.notify()));
     stage.settle()

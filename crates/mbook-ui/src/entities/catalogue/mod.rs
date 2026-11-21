@@ -12,7 +12,7 @@ mod settings;
 mod store;
 
 pub(crate) use error::CatalogueError;
-pub(crate) use model::{Library, ShelfBook, Store};
+pub(crate) use model::{Library, LibraryError, ShelfBook, Store};
 pub(crate) use rows::{BookRow, ReadingState};
 pub(crate) use settings::Settings;
 pub(crate) use store::Catalogue;

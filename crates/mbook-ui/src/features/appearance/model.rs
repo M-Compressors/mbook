@@ -146,12 +146,16 @@ impl Appearance {
 
     /// What went wrong reading or writing the settings. The settings in
     /// memory still work.
-    #[expect(
-        dead_code,
-        reason = "no view shows a failure to read or write the settings yet"
-    )]
     pub(crate) fn error(&self) -> Option<&CatalogueError> {
         self.error.as_ref()
+    }
+
+    /// Records a failure as if the catalogue had refused to read or write the
+    /// settings, so that a test of a view can show it.
+    #[cfg(any(test, feature = "visual"))]
+    pub(crate) fn fail(&mut self, error: CatalogueError, cx: &mut Context<'_, Self>) {
+        self.error = Some(error);
+        cx.notify();
     }
 
     /// Changes the settings: in memory at once, in the theme and the size of
@@ -340,14 +344,21 @@ async fn write_all(
         let result = cx
             .background_spawn(async move { catalogue.put_settings(&settings) })
             .await;
-        if let Err(error) = result {
-            let told = this.update(cx, |this, cx| {
-                this.error = Some(error);
+        // A write that succeeds is the answer to the failure before it.
+        let told = this.update(cx, |this, cx| {
+            let changed = match result {
+                Ok(()) => this.error.take().is_some(),
+                Err(error) => {
+                    this.error = Some(error);
+                    true
+                }
+            };
+            if changed {
                 cx.notify();
-            });
-            if told.is_err() {
-                return;
             }
+        });
+        if told.is_err() {
+            return;
         }
     }
 }

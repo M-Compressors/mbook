@@ -218,3 +218,32 @@ fn a_library_error_keeps_its_cause() {
     assert_eq!(error.to_string(), "the file of a book could not be deleted");
     assert_eq!(error.source().unwrap().to_string(), "disk");
 }
+
+#[gpui_kit::test]
+fn a_failed_read_is_kept_as_the_error_until_the_next_load_succeeds(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    fixture.add_book("Dune");
+    fixture.install(cx);
+    let library = library(cx);
+    cx.run_until_parked();
+    library.update(cx, |library, cx| {
+        let generation = library.generation + 1;
+        library.generation = generation;
+        library.loaded(
+            generation,
+            Err(CatalogueError::storage(std::io::Error::other("disk gone"))),
+            cx,
+        );
+    });
+    library.read_with(cx, |library, _| {
+        let error = library.error().unwrap();
+        assert_eq!(
+            crate::features::import_book::error_chain(error),
+            "the catalogue could not be read or written: the catalogue database failed: disk gone"
+        );
+        assert_eq!(library.books().len(), 1, "the books already shown stay");
+    });
+    library.update(cx, Library::reload);
+    cx.run_until_parked();
+    library.read_with(cx, |library, _| assert!(library.error().is_none()));
+}

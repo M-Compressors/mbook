@@ -27,10 +27,19 @@ use crate::features::search_library::{Progress, shelf_label};
 use crate::shared::model::BookKey;
 use crate::shared::ui::{focus_ring, icon_button, target_size};
 
-/// The space between two covers in a row, in pixels.
-pub(super) const GAP: f32 = 20.0;
+/// The width below which a cover is the small one of a compact window.
+const SMALL_COVER: f32 = 120.0;
+
+/// The space between two covers in a row, in pixels: tighter beside the
+/// small covers of a compact window, so that three of them fit a phone.
+pub(super) fn gap(cover: f32) -> f32 {
+    if cover < SMALL_COVER { 12.0 } else { 20.0 }
+}
+
 /// The space at the left and the right of the shelf, in pixels.
-pub(super) const SIDE: f32 = 24.0;
+pub(super) fn side(cover: f32) -> f32 {
+    if cover < SMALL_COVER { 16.0 } else { 24.0 }
+}
 /// The space under a row, in pixels.
 const ROW_GAP: f32 = 24.0;
 /// How many rows the page keys move by.
@@ -184,8 +193,8 @@ impl Shelf {
 impl LibraryPage {
     /// The width the shelf has, in pixels, given the width of the window and
     /// of what stands beside it.
-    pub(super) fn shelf_width(window: &Window, beside: f32) -> f32 {
-        (window.viewport_size().width.as_f32() - beside - 2.0 * SIDE).max(0.0)
+    pub(super) fn shelf_width(window: &Window, beside: f32, cover: f32) -> f32 {
+        (window.viewport_size().width.as_f32() - beside - 2.0 * side(cover)).max(0.0)
     }
 
     /// The list of rows, in its box, with the keys that move through it.
@@ -248,8 +257,8 @@ impl LibraryPage {
             .id(("shelf-row", row))
             .w_full()
             .items_start()
-            .gap(px(GAP))
-            .px(px(SIDE))
+            .gap(px(gap(cover_width)))
+            .px(px(side(cover_width)))
             .pb(px(ROW_GAP))
             .children(books.iter().map(|book| {
                 self.render_tile(book, area, tab_stop == Some(book.row.key), window, cx)

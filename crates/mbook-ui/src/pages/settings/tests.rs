@@ -732,3 +732,34 @@ mod updates {
         });
     }
 }
+
+#[gpui_kit::test]
+fn a_failure_to_save_the_settings_is_said_on_the_page(cx: &mut TestAppContext) {
+    let started = start(cx, 1280.0);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(window.try_find("settings-error").is_none());
+    });
+    started.appearance.update(cx, |appearance, cx| {
+        appearance.fail(
+            crate::entities::catalogue::CatalogueError::storage(std::io::Error::other("disk gone")),
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    testing::frame(cx, started.window, |window, _| {
+        let line = window.find("settings-error");
+        assert_eq!(line.role(), Some(Role::Status));
+        let label = line.label().unwrap();
+        assert!(
+            label.starts_with(
+                "Settings could not be saved: the catalogue database failed: disk gone."
+            ),
+            "{label}"
+        );
+    });
+    // A change that is saved takes the words away.
+    set(&started, cx, |settings| settings.text_size = 21.0);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(window.try_find("settings-error").is_none());
+    });
+}

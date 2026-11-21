@@ -10,7 +10,7 @@ use gpui_kit::{
 use super::EditorPage;
 use super::encode::Target;
 use super::prompts::confirm_remove;
-use super::sections::control;
+use super::sections::{control, list_item};
 use super::session::{Control, ViewMode, is_contents_problem, problem_words, size_label};
 use crate::shared::ui::status_line;
 
@@ -161,10 +161,8 @@ impl EditorPage {
                 .zip(problem.offset)
                 .and_then(|key| self.session.places.get(&key).copied());
             list = list.child(
-                control(format!("problem-{index}"), problem_words(problem, place))
+                list_item(format!("problem-{index}"), problem_words(problem, place))
                     .ghost()
-                    .w_full()
-                    .justify_start()
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open_problem(index, window, cx);
                     })),

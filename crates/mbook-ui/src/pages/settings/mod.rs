@@ -30,7 +30,7 @@ use self::choices::{
     same, scale_text, size_text, snap_line_height, snap_scale, snap_size, tone_index,
     typeface_index, typeface_items,
 };
-use crate::entities::catalogue::Settings;
+use crate::entities::catalogue::{CatalogueError, Settings};
 use crate::features::appearance::Appearance;
 #[cfg(feature = "self-update")]
 use crate::features::auto_update::UpdateBanner;
@@ -533,6 +533,16 @@ impl SettingsPage {
     }
 }
 
+/// What went wrong with the catalogue, and what to do about it, in words for
+/// a person. The changes stay in effect in the window; any change tries the
+/// write again.
+fn save_error_words(error: &CatalogueError) -> String {
+    format!(
+        "Settings could not be saved: {}. They still apply until the application closes; change a setting to try saving again.",
+        crate::features::import_book::error_chain(error)
+    )
+}
+
 impl Render for SettingsPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let (settings, class, tone, font, border) = {
@@ -547,6 +557,10 @@ impl Render for SettingsPage {
         };
         let updates = Self::updates(cx);
         let compact = class == SizeClass::Compact;
+        let failure = Appearance::global(cx)
+            .read(cx)
+            .error()
+            .map(save_error_words);
 
         let mut column =
             v_flex()
@@ -558,6 +572,11 @@ impl Render for SettingsPage {
             column = column.max_w(px(COLUMN_WIDTH));
         }
         let column = column
+            .children(failure.map(|words| {
+                status_line("settings-error", words)
+                    .text_sm()
+                    .text_color(cx.theme().danger)
+            }))
             .child(heading("reading-heading", "Reading"))
             .child(self.typeface_field())
             .child(self.text_size_field(&settings, cx))

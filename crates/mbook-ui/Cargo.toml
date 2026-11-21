@@ -30,6 +30,9 @@ name = "mbook_ui"
 [[bin]]
 name = "mbook"
 path = "src/main.rs"
+# The executable has the name of the `mbook` library: its documentation would
+# be written over that one.
+doc = false
 
 [features]
 default = ["self-update"]

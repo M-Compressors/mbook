@@ -308,10 +308,13 @@ fn the_shelf_has_as_many_columns_as_the_width_allows(cx: &mut TestAppContext) {
     );
     let narrow = start(cx, 390.0, &refs);
     let columns = narrow.page.read_with(cx, |page, _| page.shelf.columns());
+    // A phone: covers of 104 with gaps of 12 and margins of 16, so that
+    // three stand in a row.
     assert_eq!(
         columns,
-        crate::shared::layout::shelf_columns(390.0 - 48.0, 104.0, 20.0)
+        crate::shared::layout::shelf_columns(390.0 - 32.0, 104.0, 12.0)
     );
+    assert_eq!(columns, 3);
 }
 
 #[gpui_kit::test]
@@ -1202,4 +1205,70 @@ fn a_page_that_is_focused_hands_nothing_to_a_shelf_that_is_empty(cx: &mut TestAp
     .unwrap();
     harness.press("right", cx);
     assert_eq!(*harness.events.borrow(), Vec::new());
+}
+
+// ---- a failure of the catalogue ---------------------------------------------
+
+fn fail_the_library(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Library::global(cx).update(cx, |library, cx| {
+            library.fail(
+                crate::entities::catalogue::CatalogueError::storage(std::io::Error::other(
+                    "disk gone",
+                )),
+                cx,
+            );
+        });
+    });
+    cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn a_failure_of_the_catalogue_is_said_with_a_way_to_try_again(cx: &mut TestAppContext) {
+    let harness = start(cx, 1280.0, &["Dune"]);
+    fail_the_library(cx);
+    harness.frame(cx, |window, _| {
+        let line = window.find("library-error-text");
+        assert_eq!(line.role(), Some(Role::Status));
+        assert_eq!(
+            line.label(),
+            Some(
+                "The library could not be read or changed: the catalogue could not be read or written: the catalogue database failed: disk gone."
+            )
+        );
+        assert_eq!(window.find("library-retry").role(), Some(Role::Button));
+    });
+}
+
+#[gpui_kit::test]
+fn trying_again_reads_the_library_and_clears_the_failure(cx: &mut TestAppContext) {
+    let harness = start(cx, 1280.0, &["Dune"]);
+    fail_the_library(cx);
+    harness.click("library-retry", cx);
+    let held = cx.update(|cx| Library::global(cx).read(cx).error().is_some());
+    assert!(!held, "the library was read again");
+    harness.frame(cx, |window, _| {
+        assert!(window.try_find("library-error-text").is_none());
+    });
+    assert_eq!(harness.titles_shown(cx), ["Dune"]);
+}
+
+#[gpui_kit::test]
+fn a_failure_of_the_catalogue_is_announced_once(cx: &mut TestAppContext) {
+    let harness = start(cx, 1280.0, &["Dune"]);
+    fail_the_library(cx);
+    // Another change of the library does not say it again.
+    cx.update(|cx| {
+        Library::global(cx).update(cx, |_, cx| cx.notify());
+    });
+    cx.run_until_parked();
+    let told = harness.frame(cx, |window, _| window.find_all("notification").len());
+    assert_eq!(told, 1);
+}
+
+#[gpui_kit::test]
+fn the_heading_of_an_empty_library_counts_its_books_instead_of_loading(cx: &mut TestAppContext) {
+    let harness = start(cx, 1280.0, &[]);
+    let ready = harness.page.read_with(cx, |page, _| page.shelf.is_ready());
+    assert!(ready, "an empty library is as ready as any other");
 }

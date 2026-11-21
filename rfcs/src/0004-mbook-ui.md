@@ -800,6 +800,9 @@ a build for a store or a package manager leaves off.
   not where it arises.
 - A failure of one book, chapter or picture **MUST NOT** close the
   application or another book.
+- A failure is never kept to itself: a catalogue that cannot be read or
+  changed is reported on the library, with a way to try again, and settings
+  that cannot be saved on the settings screen.
 
 ### Dependencies
 
@@ -842,7 +845,12 @@ Ruled out:
   opens it, edits it and saves it.
 - The rule of [Threads](#threads) is tested: with the background executor
   held back, a view **MUST** still draw, showing its loading state.
-- Every layout is drawn at 390, 800 and 1280 px of width.
+- Every layout is drawn at 390, 800 and 1280 px of width. With the Cargo
+  feature `visual`, `cargo test -p mbook-ui --features visual --test visual`
+  renders every screen without a window, in these widths and in a light
+  and a dark page tone, into `target/visual/`: 104 pictures for a person to
+  look at. The renderer exists on macOS; elsewhere the test says so and
+  passes.
 - Accessibility is tested, not reviewed:
   - a unit test computes the contrast of every pair of tokens that
     [Accessibility](#accessibility) puts together;
@@ -854,12 +862,19 @@ Ruled out:
 ### What is implemented
 
 The first version implements the sections above with the differences below.
-Its tests run in headless windows; a person has not yet used it with a
-screen reader, and it has not been built or run on Windows or Linux.
+Its tests run in headless windows, and its screens were looked at as
+rendered pictures; a person has not yet used it with a pointer, a keyboard
+or a screen reader, and it has not been built or run on Windows or Linux.
+
+Seen in the pictures and left as it is: a notification stays over the right
+end of the header for a while; the scroll bar of the reader stands at the
+edge of the text column, over the text on a narrow window; a long word on a
+cover drawn from a title breaks in its middle; the message of a book that
+cannot be opened is the one of the library, not a sentence for a reader.
 
 | Part | State |
 | --- | --- |
-| Library | As designed. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. |
+| Library | As designed. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | As designed. A file is added by the "Add a book…" control, the Open key, or a drop on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
 | Reader | One chapter at a time, as designed. A picture is requested at the width it was first drawn at and is not requested again when the window or the size of the text changes. Hiding the controls does not fade. |
 | Editor | As designed, with "Move up" and "Move down" and no drag. The preview shows the alternative text of a picture, not the picture. Syntax of Markdown is not highlighted in the source. |

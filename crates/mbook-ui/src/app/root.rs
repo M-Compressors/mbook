@@ -100,7 +100,7 @@ impl Root {
     }
 
     /// The screen in front, for tests that look into its page.
-    #[cfg(any(test, feature = "visual"))]
+    #[cfg(test)]
     pub(crate) fn stack_top(&self) -> Option<&Screen> {
         self.stack.last().map(|entry| &entry.screen)
     }

@@ -187,9 +187,16 @@ impl Library {
 
     /// What went wrong the last time the catalogue was read or changed. It is
     /// cleared by the next successful load.
-    #[cfg(test)]
     pub(crate) fn error(&self) -> Option<&LibraryError> {
         self.error.as_ref()
+    }
+
+    /// Records a failure as if the catalogue had refused a read or a change,
+    /// so that a test of a view can show it.
+    #[cfg(any(test, feature = "visual"))]
+    pub(crate) fn fail(&mut self, error: CatalogueError, cx: &mut Context<'_, Self>) {
+        self.error = Some(error.into());
+        cx.notify();
     }
 
     /// Reads the rows and the states again, on the background. The books

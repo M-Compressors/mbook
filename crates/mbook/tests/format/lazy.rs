@@ -69,8 +69,18 @@ fn large_book() -> Result<Vec<u8>> {
     Ok(file)
 }
 
-/// The book, its length, and the counter of the bytes read from it.
-fn counted() -> Result<(Counting<Cursor<Vec<u8>>>, u64, Rc<Cell<u64>>)> {
+/// The large book as a source that counts.
+struct Counted {
+    /// The book.
+    source: Counting<Cursor<Vec<u8>>>,
+    /// The length of the file, in bytes.
+    len: u64,
+    /// The bytes read from the source so far.
+    read: Rc<Cell<u64>>,
+}
+
+/// The large book, with a counter of the bytes read from it.
+fn counted() -> Result<Counted> {
     let file = large_book()?;
     let len = u64::try_from(file.len()).unwrap_or(u64::MAX);
     let read = Rc::new(Cell::new(0));
@@ -78,12 +88,12 @@ fn counted() -> Result<(Counting<Cursor<Vec<u8>>>, u64, Rc<Cell<u64>>)> {
         inner: Cursor::new(file),
         read: Rc::clone(&read),
     };
-    Ok((source, len, read))
+    Ok(Counted { source, len, read })
 }
 
 #[test]
 fn the_book_of_these_tests_is_far_larger_than_one_chapter() -> Result<()> {
-    let (_, len, _) = counted()?;
+    let Counted { len, .. } = counted()?;
     // Otherwise the bounds below would prove nothing.
     assert!(len > 1024 * 1024, "the file has {len} bytes");
     Ok(())
@@ -91,7 +101,7 @@ fn the_book_of_these_tests_is_far_larger_than_one_chapter() -> Result<()> {
 
 #[test]
 fn opening_a_book_reads_its_tables_and_none_of_its_chapters() -> Result<()> {
-    let (source, len, read) = counted()?;
+    let Counted { source, len, read } = counted()?;
 
     let reader = BookReader::new(source)?;
 
@@ -106,7 +116,7 @@ fn opening_a_book_reads_its_tables_and_none_of_its_chapters() -> Result<()> {
 
 #[test]
 fn looking_into_the_tables_reads_nothing() -> Result<()> {
-    let (source, _, read) = counted()?;
+    let Counted { source, read, .. } = counted()?;
     let reader = BookReader::new(source)?;
     let opened = read.get();
 
@@ -124,7 +134,7 @@ fn looking_into_the_tables_reads_nothing() -> Result<()> {
 
 #[test]
 fn reading_a_chapter_reads_that_chapter_and_no_other() -> Result<()> {
-    let (source, len, read) = counted()?;
+    let Counted { source, len, read } = counted()?;
     let mut reader = BookReader::new(source)?;
     let Some(chapter) = reader.chapters().nth(17).map(|chapter| chapter.id) else {
         panic!("the book has thirty-two chapters");
@@ -146,7 +156,7 @@ fn reading_a_chapter_reads_that_chapter_and_no_other() -> Result<()> {
 
 #[test]
 fn reading_every_chapter_once_reads_the_file_about_once() -> Result<()> {
-    let (source, len, read) = counted()?;
+    let Counted { source, len, read } = counted()?;
     let mut reader = BookReader::new(source)?;
     let chapters: Vec<_> = reader.chapters().map(|chapter| chapter.id).collect();
 

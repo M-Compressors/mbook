@@ -16,10 +16,10 @@ use gpui_kit::{
 };
 
 use super::imports::imports_panel;
-use super::shelf::{GAP, SIDE};
+use super::shelf::{gap, side};
 use super::sidebar::{WIDTH, search_field};
-use super::{FindBooks, LibraryEvent, LibraryPage, Tab};
-use crate::entities::catalogue::ShelfBook;
+use super::{FindBooks, LibraryEvent, LibraryPage, Tab, error_words};
+use crate::entities::catalogue::{Library, ShelfBook};
 use crate::features::appearance::Appearance;
 use crate::features::search_library::{Progress, Section, Sort, continue_reading};
 use crate::shared::actions::OpenFile;
@@ -148,7 +148,7 @@ impl LibraryPage {
             .role(Role::Group)
             .aria_label(format!("Continue reading: {title}"))
             .test_support()
-            .mx(px(SIDE))
+            .mx(px(side(self.cover_width)))
             .mt_4()
             .mb_2()
             .p_3()
@@ -220,7 +220,7 @@ impl LibraryPage {
         };
         h_flex()
             .w_full()
-            .px(px(SIDE))
+            .px(px(side(self.cover_width)))
             .pt_4()
             .pb_3()
             .gap_3()
@@ -314,6 +314,40 @@ impl LibraryPage {
         }
     }
 
+    /// The failure of the catalogue, with the control that reads it again.
+    fn render_error(&self, cx: &mut Context<'_, Self>) -> Option<AnyElement> {
+        let words = self.library.read(cx).error().map(error_words)?;
+        let danger = cx.theme().danger;
+        Some(
+            h_flex()
+                .id("library-error")
+                .w_full()
+                .px(px(side(self.cover_width)))
+                .py_2()
+                .gap_3()
+                .items_center()
+                // The button stands first: the notification that announces the
+                // failure covers the right end of the row.
+                .child(
+                    Button::new("library-retry")
+                        .label("Try again")
+                        .h(px(target_size()))
+                        .cursor_pointer()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.library.update(cx, Library::reload);
+                        })),
+                )
+                .child(
+                    status_line("library-error-text", words)
+                        .flex_1()
+                        .min_w_0()
+                        .text_sm()
+                        .text_color(danger),
+                )
+                .into_any_element(),
+        )
+    }
+
     /// Remembers the book a control of the page acted on, so that the arrow
     /// keys start from it when the user comes back.
     fn shelf_current(&mut self, key: crate::shared::model::BookKey) {
@@ -338,15 +372,16 @@ impl Render for LibraryPage {
         self.cover_width = class.cover_width();
         let beside = if class.has_sidebar() { WIDTH } else { 0.0 };
         self.shelf.set_columns(shelf_columns(
-            Self::shelf_width(window, beside),
+            Self::shelf_width(window, beside, self.cover_width),
             self.cover_width,
-            GAP,
+            gap(self.cover_width),
         ));
 
         let library = self.library.read(cx);
         let library_empty = library.books().is_empty();
         let loading = library.is_loading() && library_empty;
         let searching = !self.query.trim().is_empty();
+        let failure = self.render_error(cx);
         let theme = cx.theme();
         let (background, foreground, muted) =
             (theme.background, theme.foreground, theme.muted_foreground);
@@ -377,7 +412,7 @@ impl Render for LibraryPage {
         let search_row = (class == SizeClass::Compact && self.tab == Tab::Search).then(|| {
             div()
                 .w_full()
-                .px(px(SIDE))
+                .px(px(side(self.cover_width)))
                 .pt_3()
                 .child(search_field(&self.search))
         });
@@ -388,6 +423,7 @@ impl Render for LibraryPage {
             .min_w_0()
             .min_h_0()
             .h_full()
+            .children(failure)
             .children(search_row)
             .children(card)
             .child(self.render_heading(cx))
