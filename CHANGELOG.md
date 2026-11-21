@@ -22,24 +22,24 @@
     names by GitHub's rule; picture sizes are read from the AVIF container.
 - Workspace lints, CI, and the repository's policy documents.
 
-- RFC 0001 and ADR-0008: a chapter can name lines that are not headings. The
-  names are stored in an anchor table of the chapter, a resource of the new
-  `kind` 3 placed directly before it, and are reached by a link fragment like
-  the anchor of a heading.
-- `mbook-core`: `Chapter::add_anchor`, `remove_anchor` and `extra_anchors`
-  give such names to a chapter of a `Book`; `BookReader::read_extra_anchors`
-  reads them, and `BookReader::read_resolve` follows a link to one. A book
-  without extra anchors is written to the same bytes as before, so the
+- RFC 0001, ADR-0008 and ADR-0009: a chapter can name lines that are not
+  headings, with an anchor definition in front of the line, `[fig-1]: #fig-1`.
+  The names are stored in an anchor table of the chapter, a resource of the
+  new `kind` 3 placed directly before it, and are reached by a link fragment
+  like the anchor of a heading.
+- `mbook-core`: a `Book` reads the anchor definitions of a chapter from its
+  text, whenever the text is given or replaced, and shows them as
+  `Chapter::extra_anchors`; `BookReader::read_extra_anchors` reads them from
+  a file, and `BookReader::read_resolve` follows a link to one. A book
+  without anchor definitions is written to the same bytes as before, so the
   checked-in example file is unchanged.
 
 ### Changed
 
 - `mbook-core`: `BookReader::resolve` returns the new
   `Destination::ExtraAnchor` for a fragment that is not the anchor of a
-  heading when the target chapter has an anchor table. `Chapter::set_text`
-  removes the extra anchors of the chapter. `ResourceKind` has the variant
-  `ChapterAnchors`, and `Error` the variants `InvalidAnchor` and
-  `Unresolved`.
+  heading when the target chapter has an anchor table. `ResourceKind` has
+  the variant `ChapterAnchors`, and `Error` the variant `Unresolved`.
 
 - RFC 0001: a `toc` row with a non-zero offset must match an `anchors` row,
   so that a contents target can always be written as a link destination.

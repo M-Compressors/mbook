@@ -1,11 +1,13 @@
 //! What the write side learns from the Markdown of a chapter: its headings,
-//! the destinations it refers to, and whether it contains raw HTML.
+//! the lines it gives a name to, the destinations it refers to, and whether
+//! it contains raw HTML.
 
+use crate::link;
 use crate::types::Anchor;
 use github_slugger::Slugger;
 use markdown::ParseOptions;
 use markdown::mdast::Node;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// One heading of a chapter.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,6 +42,9 @@ pub(crate) struct Reference {
 pub(crate) struct Analysis {
     /// Headings in the order they appear.
     pub(crate) headings: Vec<Heading>,
+    /// The lines that an anchor definition names, in the order they appear:
+    /// the first byte of the line and the name.
+    pub(crate) named_lines: Vec<Anchor>,
     /// Links and pictures in the order they appear.
     pub(crate) references: Vec<Reference>,
     /// Where each piece of raw HTML starts.
@@ -80,6 +85,21 @@ pub(crate) fn anchors(headings: &[Heading]) -> Vec<Anchor> {
         .collect()
 }
 
+/// One extra anchor for every line that an anchor definition names, sorted
+/// by offset.
+///
+/// An anchor definition is a link reference definition that names itself:
+/// `[fig-1]: #fig-1`. A name that a heading of the chapter already has, or an
+/// earlier definition, is not given again: a fragment names one place.
+pub(crate) fn extra_anchors(named_lines: &[Anchor], headings: &[Anchor]) -> Vec<Anchor> {
+    let mut taken: HashSet<&str> = headings.iter().map(|anchor| anchor.name.as_str()).collect();
+    named_lines
+        .iter()
+        .filter(|line| taken.insert(line.name.as_str()))
+        .cloned()
+        .collect()
+}
+
 /// Maps the identifier of every link reference definition to its destination.
 fn collect_definitions<'a>(node: &'a Node, definitions: &mut HashMap<&'a str, &'a str>) {
     if let Node::Definition(definition) = node {
@@ -114,6 +134,16 @@ fn visit(node: &Node, text: &str, definitions: &HashMap<&str, &str>, analysis: &
                 depth: heading.depth,
                 title,
             });
+        }
+        Node::Definition(definition) => {
+            // `[name]: #name` gives a name to the line it stands on.
+            let name = link::own_fragment(&definition.url);
+            if let Some(name) = name.filter(|name| definition.label.as_ref() == Some(name)) {
+                analysis.named_lines.push(Anchor {
+                    offset: to_offset(line_start(text, start)),
+                    name,
+                });
+            }
         }
         Node::Html(_) => analysis.html.push(to_offset(start)),
         Node::Link(link) => refer(ReferenceKind::Link, &link.url),
@@ -166,7 +196,7 @@ fn to_offset(offset: usize) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Reference, ReferenceKind, analyse, anchors};
+    use super::{Reference, ReferenceKind, analyse, anchors, extra_anchors};
 
     fn headings(text: &str) -> Vec<(u32, u8, String)> {
         analyse(text)
@@ -181,6 +211,85 @@ mod tests {
             .into_iter()
             .map(|anchor| (anchor.offset, anchor.name))
             .collect()
+    }
+
+    /// The extra anchors of a chapter with this text.
+    fn extra(text: &str) -> Vec<(u32, String)> {
+        let analysis = analyse(text);
+        extra_anchors(&analysis.named_lines, &anchors(&analysis.headings))
+            .into_iter()
+            .map(|anchor| (anchor.offset, anchor.name))
+            .collect()
+    }
+
+    #[test]
+    fn a_definition_that_names_itself_names_its_line() {
+        let text = "Before.\n\n[fig-1]: #fig-1\n![alt](img/a.avif)\n";
+        assert_eq!(extra(text), [(9, "fig-1".to_owned())]);
+    }
+
+    #[test]
+    fn an_anchor_definition_may_stand_apart_from_the_line_it_names() {
+        let text = "[top]: #top\n\nText.\n";
+        assert_eq!(extra(text), [(0, "top".to_owned())]);
+    }
+
+    #[test]
+    fn an_anchor_definition_may_have_a_title() {
+        let text = "[top]: #top \"The top\"\n\nText.\n";
+        assert_eq!(extra(text), [(0, "top".to_owned())]);
+    }
+
+    #[test]
+    fn a_definition_that_leads_elsewhere_names_nothing() {
+        let text = "[a]: #b\n\n[site]: https://example.org\n\n[ch]: ch02.md#ch\n\n[e]: #\n";
+        assert_eq!(extra(text), []);
+    }
+
+    #[test]
+    fn the_fragment_of_an_anchor_definition_is_percent_decoded() {
+        let text = "[рис-1]: #%D1%80%D0%B8%D1%81-1\n\nТекст.\n";
+        assert_eq!(extra(text), [(0, "рис-1".to_owned())]);
+    }
+
+    #[test]
+    fn a_name_is_compared_with_the_label_as_written() {
+        assert_eq!(extra("[Fig]: #fig\n\nText.\n"), []);
+    }
+
+    #[test]
+    fn the_name_of_a_heading_is_not_given_again() {
+        let text = "# The station\n\n[the-station]: #the-station\nText.\n";
+        assert_eq!(extra(text), []);
+    }
+
+    #[test]
+    fn the_first_definition_of_a_name_wins() {
+        let text = "[a]: #a\nOne.\n\n[a]: #a\nTwo.\n\n[b]: #b\nThree.\n";
+        assert_eq!(extra(text), [(0, "a".to_owned()), (28, "b".to_owned())]);
+    }
+
+    #[test]
+    fn an_anchor_definition_inside_a_quote_names_the_start_of_its_line() {
+        let text = "Before.\n\n> [q]: #q\n> Quoted.\n";
+        assert_eq!(extra(text), [(9, "q".to_owned())]);
+    }
+
+    #[test]
+    fn a_line_inside_a_paragraph_is_not_a_definition() {
+        assert_eq!(extra("A paragraph\n[a]: #a\ncontinues.\n"), []);
+    }
+
+    #[test]
+    fn a_reference_through_an_anchor_definition_is_a_link_to_the_name() {
+        let text = "See [the figure][fig-1].\n\n[fig-1]: #fig-1\n![alt](img/a.avif)\n";
+        assert_eq!(
+            references(text),
+            [
+                (ReferenceKind::Link, "#fig-1".to_owned()),
+                (ReferenceKind::Picture, "img/a.avif".to_owned())
+            ]
+        );
     }
 
     fn references(text: &str) -> Vec<(ReferenceKind, String)> {

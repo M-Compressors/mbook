@@ -15,8 +15,8 @@ resource, the table of contents, and a table of heading anchors. Chapters
 follow as GitHub Flavored Markdown without raw HTML, and pictures as AVIF
 files stored without recompression. Markdown refers to pictures and to other
 chapters by relative path; the resource table maps a path to a frame. A link
-into a chapter names a heading, or any other line that the chapter's own
-anchor table gives a name to.
+into a chapter names a heading, or any other line that the chapter gives a
+name to with one line of Markdown.
 
 ## Motivation
 
@@ -198,9 +198,21 @@ Everything a library view needs is in the first 757 bytes plus the cover.
 ### Anchors that are not headings
 
 The `anchors` table names headings. A chapter can name any other line as
-well: the figure of chapter 1, say, so that chapter 2 can link to it as
-`[the figure](ch01.md#fig-1)`. Those names are stored in a small table of the
-chapter's own, the resource just before the chapter:
+well, with an *anchor definition* in front of it: a link reference definition
+that names itself. Here chapter 1 names its figure:
+
+```markdown
+The train was late.
+
+[fig-1]: #fig-1
+![The station at night](img/fig-1.avif "Fig. 1. The station")
+```
+
+A Markdown renderer shows nothing for the line `[fig-1]: #fig-1`. Chapter 2
+can now link to the figure as `[the figure](ch01.md#fig-1)`.
+
+The packer records where the named line is, in a small table of the chapter's
+own: the resource just before the chapter.
 
 | row | kind | path |
 | ---: | ---: | --- |
@@ -216,11 +228,12 @@ Resource 6 is the anchor table of `ch01.md`:
 | ---: | --- |
 | 43 | `fig-1` |
 
-Chapter 2 has no names besides its heading, so it has no such table. The
+Chapter 2 names nothing besides its heading, so it has no such table. The
 rows of `toc` and `anchors` now say 7 and 8 where they said 6 and 7.
 
-A reader does not decode these tables when it opens a book. It decodes one
-when a link leads to a name that `anchors` does not have for that chapter.
+A reader does not look for anchor definitions, and does not decode these
+tables when it opens a book. It decodes one when a link leads to a name that
+`anchors` does not have for that chapter.
 
 ### How a reader opens a book
 
@@ -271,10 +284,10 @@ flowchart TD
 2. Normalise chapters to the Markdown dialect below and split them at
    top-level headings.
 3. Parse each chapter once to collect headings (for `toc` and `anchors`) and
-   to validate every link and picture reference.
+   anchor definitions (for the chapter's anchor table), and to validate every
+   link and picture reference.
 4. Write resources 0 to 4, then the cover, the chapters and the pictures. A
-   chapter with names for lines that are not headings is preceded by its
-   anchor table.
+   chapter with anchor definitions is preceded by its anchor table.
 
 ### Integration points
 
@@ -282,7 +295,7 @@ flowchart TD
 | --- | --- | --- |
 | Container, directory, checksums | mopenzl `framing` (`FramedWriter`, `FramedSeekReader`) | Writing resources in order; reading one resource by number. |
 | Typed columns | mopenzl `input` (`Numbers`, `Strings`) and `TypedOutput` | Building and reading the four tables. |
-| Markdown | Any parser of the dialect that reports byte offsets | Writers: headings, references, validation. Readers: rendering. |
+| Markdown | Any parser of the dialect that reports byte offsets | Writers: headings, anchor definitions, references, validation. Readers: rendering. |
 | AVIF encoding | Any AV1 still-image encoder | Writers only. |
 | AVIF decoding | The platform's decoder or a library | Readers only. |
 
@@ -590,6 +603,10 @@ a figure, a row of a table.
 - The table **MAY** be empty. Writers **SHOULD NOT** write a table without
   rows: a chapter that needs no such name has no anchor table.
 
+Writers **SHOULD** emit one row for every
+[anchor definition](#anchor-definitions) of the chapter. A row **MAY** name a
+position that has no anchor definition.
+
 Readers **SHOULD NOT** decode a chapter anchor table before it is needed to
 resolve a fragment.
 
@@ -644,6 +661,42 @@ alert blocks (`> [!NOTE]`), heading attributes (`{#id}`), superscript and
 subscript markers, wiki links, emoji shortcodes and metadata blocks.
 
 A footnote definition **MUST** be in the same chapter as the references to it.
+
+#### Anchor definitions
+
+A chapter names a line that is not a heading with an *anchor definition*: a
+link reference definition, as CommonMark defines it, whose destination is `#`
+followed by its own label.
+
+```markdown
+[fig-1]: #fig-1
+![View of the pond](img/fig-3.avif "Fig. 3. Patriarch's Ponds")
+```
+
+- The *name* is the destination without its `#`, percent-decoded. A link
+  reference definition is an anchor definition when its name equals its
+  label as written, byte for byte. It **MAY** have a title, which is ignored.
+- It names the first byte of the line on which it starts. A reader that
+  moves to that position shows what follows the definition, because the
+  definition itself is not rendered.
+- A definition whose name is that of an `anchors` row of the chapter, or of
+  an earlier anchor definition of the chapter, names nothing. It stays an
+  ordinary link reference definition.
+- Writers **SHOULD** record every anchor definition in the
+  [anchor table](#chapter-anchor-tables) of its chapter.
+- Readers **MUST NOT** resolve a fragment by looking for an anchor
+  definition; they resolve it through the tables. A reader needs no code for
+  anchor definitions: a CommonMark renderer produces no output for a link
+  reference definition.
+
+An anchor definition is also what it looks like. A reference link in the
+same chapter, `[the figure][fig-1]`, is a link with the destination `#fig-1`
+and resolves to the named line.
+
+Two rules of CommonMark matter to a writer. A link reference definition
+cannot interrupt a paragraph, so it follows an empty line or starts a block.
+And a line after it that holds only a quoted or parenthesised string is read
+as its title, so such a line needs an empty line in front of it.
 
 #### Resolving destinations
 
@@ -805,6 +858,7 @@ trade-off and the consequences.
 | GitHub Flavored Markdown without raw HTML | CommonMark with heading attributes | [ADR-0006](adr/0006-markdown-dialect.md) |
 | Byte offsets and a stored anchor table | Readers computing GitHub anchors | [ADR-0007](adr/0007-positions-and-anchors.md) |
 | Names of lines that are not headings in a table before their chapter | All names in resource 4; links only to headings | [ADR-0008](adr/0008-chapter-anchor-tables.md) |
+| A line is named by a link reference definition in its chapter | `{#id}` attributes; names given to the writer apart from the text | [ADR-0009](adr/0009-anchor-definitions.md) |
 
 ## Prior art
 
@@ -835,6 +889,9 @@ trade-off and the consequences.
 - **Chapter anchor tables.** Their `kind` code, the tie to a chapter by
   position, and the rule that a contents row needs an `anchors` row are
   proposals of [ADR-0008](adr/0008-chapter-anchor-tables.md).
+- **Anchor definitions.** The rule that tells an anchor definition from any
+  other link reference definition, and what happens to a repeated name, are
+  proposals of [ADR-0009](adr/0009-anchor-definitions.md).
 
 ## Future possibilities
 

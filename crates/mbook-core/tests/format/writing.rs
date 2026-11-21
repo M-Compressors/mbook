@@ -1,7 +1,8 @@
 //! Writing a book and reading back what was written.
 
+use crate::raw::Raw;
 use crate::sample;
-use crate::texts::{CH01, CH02, CROPPED, MIRRORED, PLAIN, ROTATED, figure_offset, remark_offset};
+use crate::texts::{CH01, CH01_NAMED, CH02, CROPPED, MIRRORED, PLAIN, ROTATED, named_offset};
 use mbook_core::{
     Book, BookReader, ChapterId, Destination, Error, Limits, Position, ResolveError, ResourceKind,
     Result, Size, Toc, TocItem, WriteOptions, is_mbook,
@@ -509,8 +510,8 @@ fn extra_anchors_are_read_sorted_by_offset() -> Result<()> {
     assert_eq!(
         anchors,
         [
-            ("fig-1".to_owned(), figure_offset()),
-            ("remark".to_owned(), remark_offset())
+            ("fig-1".to_owned(), named_offset("fig-1")),
+            ("remark".to_owned(), named_offset("remark"))
         ]
     );
     Ok(())
@@ -553,7 +554,7 @@ fn read_resolve_follows_a_link_to_an_extra_anchor() -> Result<()> {
     let ids = chapter_ids(&reader);
     let position = Position {
         chapter: ids[0],
-        offset: remark_offset(),
+        offset: named_offset("remark"),
     };
     assert_eq!(
         reader.read_resolve(ids[2], "ch01.md#remark")?,
@@ -624,24 +625,57 @@ fn a_loaded_book_with_extra_anchors_writes_back_to_the_same_bytes() -> Result<()
 }
 
 #[test]
-fn a_book_whose_last_extra_anchor_is_removed_gets_no_anchor_table() -> Result<()> {
+fn a_book_whose_anchor_definitions_are_removed_gets_no_anchor_table() -> Result<()> {
     let mut book = sample::book()?;
     let Some(chapter) = book.chapter_mut("ch01.md") else {
         panic!("the example has a first chapter");
     };
-    chapter.add_anchor("remark", remark_offset())?;
-    chapter.remove_anchor("remark");
+    chapter.set_text(CH01_NAMED)?;
+    chapter.set_text(CH01)?;
     assert!(written(&book)? == FIXTURE);
     Ok(())
 }
 
 #[test]
+fn the_text_of_a_chapter_keeps_its_anchor_definitions() -> Result<()> {
+    let mut reader = open(annotated()?)?;
+    let first = chapter_ids(&reader)[0];
+    assert_eq!(reader.read_chapter(first)?, CH01_NAMED);
+    Ok(())
+}
+
+#[test]
+fn a_loaded_chapter_keeps_its_extra_anchors_after_an_edit() -> Result<()> {
+    let mut book = Book::read(annotated()?.as_slice())?;
+    let Some(chapter) = book.chapter_mut("ch01.md") else {
+        panic!("the example has a first chapter");
+    };
+    chapter.set_text(chapter.text().replace("late", "very late"))?;
+    let shift = u32::try_from("very ".len()).unwrap_or(0);
+    let anchors: Vec<_> = chapter
+        .extra_anchors()
+        .iter()
+        .map(|anchor| (anchor.name.as_str(), anchor.offset))
+        .collect();
+    assert_eq!(
+        anchors,
+        [
+            ("fig-1", named_offset("fig-1") + shift),
+            ("remark", named_offset("remark") + shift)
+        ]
+    );
+    assert!(book.check().is_ok());
+    Ok(())
+}
+
+#[test]
 fn an_anchor_table_above_the_resource_limit_is_refused() -> Result<()> {
-    let mut book = Book::new("Anchors", "en")?;
-    let chapter = book.add_chapter("a.md", "# One\n")?;
-    chapter.add_anchor("n".repeat(200), 0)?;
+    // A table larger than its chapter comes only from another writer.
+    let name = "n".repeat(600);
+    let raw = Raw::example().with(|raw| raw.insert_anchor_table(6, &[0], &[&name]));
+    let book = Book::read(raw.build().map_err(Error::Container)?.as_slice())?;
     let mut options = WriteOptions::default();
-    options.limits.max_resource_bytes = 100;
+    options.limits.max_resource_bytes = 500;
     assert!(matches!(
         book.write_with(Vec::new(), &options),
         Err(Error::Limit(_))

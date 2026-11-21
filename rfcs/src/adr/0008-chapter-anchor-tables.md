@@ -83,9 +83,8 @@ RFC 0001 as proposals:
 - Harder: a reader that opens a file lazily cannot tell a link to a missing
   name from a link to a name of the chapter's table without reading that
   table.
-- Harder: an editing library holds byte offsets given by its caller; they
-  must be dropped when the text of the chapter changes
-  ([RFC 0002](../0002-mbook-core-api.md#extra-anchors)).
+- Open here, settled by [ADR-0009](0009-anchor-definitions.md): where a
+  writer learns the names. They are written in the Markdown of the chapter.
 - To revisit: whether a contents row may lead to a position of a chapter's
   table.
 

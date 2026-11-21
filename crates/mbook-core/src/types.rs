@@ -36,14 +36,6 @@ pub struct Position {
     pub offset: u32,
 }
 
-/// Tells whether an offset is a valid position in a chapter with this text:
-/// 0, or the first byte of a line.
-pub(crate) fn is_line_start(text: &[u8], offset: u32) -> bool {
-    usize::try_from(offset).is_ok_and(|offset| {
-        offset == 0 || (offset < text.len() && text.get(offset - 1) == Some(&b'\n'))
-    })
-}
-
 /// One chapter, as listed by a `BookReader`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChapterEntry<'a> {

@@ -53,6 +53,13 @@ pub(crate) fn parse(from: &str, destination: &str) -> Result<Parsed, ResolveErro
     Ok(Parsed::Internal { path, fragment })
 }
 
+/// The name that a destination of the form `#name` leads to in its own
+/// chapter, percent-decoded. `None` for any other destination.
+#[cfg(feature = "write")]
+pub(crate) fn own_fragment(destination: &str) -> Option<String> {
+    percent_decode(destination.strip_prefix('#')?).ok()
+}
+
 /// The URI scheme a destination starts with: `[A-Za-z][A-Za-z0-9+.-]*` before
 /// a colon.
 fn scheme(destination: &str) -> Option<&str> {

@@ -17,7 +17,7 @@ use crate::path;
 use crate::tables::{self, AnchorRow, ResourceRow, Tables, TocRow};
 use crate::types::{
     Anchor, ChapterEntry, Destination, PictureEntry, Position, Resource, ResourceKind, Size,
-    TocEntry, Version, is_line_start,
+    TocEntry, Version,
 };
 use mopenzl::TypedOutput;
 use std::collections::HashSet;
@@ -499,6 +499,14 @@ impl Index {
             decoded_len: row.map_or(0, |row| row.decoded_len),
         }
     }
+}
+
+/// Tells whether an offset is a valid position in a chapter with this text:
+/// 0, or the first byte of a line.
+fn is_line_start(text: &[u8], offset: u32) -> bool {
+    usize::try_from(offset).is_ok_and(|offset| {
+        offset == 0 || (offset < text.len() && text.get(offset - 1) == Some(&b'\n'))
+    })
 }
 
 /// Checks the `resources` table and joins it with the container directory.

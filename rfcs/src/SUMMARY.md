@@ -19,3 +19,4 @@
   - [ADR-0006: GitHub Flavored Markdown without raw HTML](adr/0006-markdown-dialect.md)
   - [ADR-0007: Byte offsets and a stored anchor table](adr/0007-positions-and-anchors.md)
   - [ADR-0008: Anchors that are not headings live in a table before their chapter](adr/0008-chapter-anchor-tables.md)
+  - [ADR-0009: A line is named by a link reference definition in its chapter](adr/0009-anchor-definitions.md)

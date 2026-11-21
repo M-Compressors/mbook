@@ -14,6 +14,7 @@ trade-off, and the consequences.
 | [0006](0006-markdown-dialect.md) | Chapters are GitHub Flavored Markdown without raw HTML | Accepted |
 | [0007](0007-positions-and-anchors.md) | Positions are byte offsets; heading anchors are stored in a table | Accepted |
 | [0008](0008-chapter-anchor-tables.md) | Names of lines that are not headings are stored in a table before their chapter | Accepted |
+| [0009](0009-anchor-definitions.md) | A chapter names a line with a link reference definition that names itself | Accepted |
 
 ## Status values
 

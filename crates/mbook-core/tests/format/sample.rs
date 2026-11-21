@@ -1,6 +1,6 @@
 //! The example book of RFC 0001, built with the public API.
 
-use crate::texts::{CH01, CH02, CH03, ID, PLAIN, ROTATED, figure_offset, remark_offset};
+use crate::texts::{CH01, CH01_NAMED, CH02, CH03, ID, PLAIN, ROTATED};
 use mbook_core::{Book, Result};
 
 /// The example book: a cover, two chapters and one figure.
@@ -15,13 +15,12 @@ pub(crate) fn book() -> Result<Book> {
     Ok(book)
 }
 
-/// The example book with two extra anchors in its first chapter, and a third
-/// chapter that links to them.
+/// The example book with names for two lines of its first chapter that are
+/// not headings, and a third chapter that links to them.
 pub(crate) fn annotated() -> Result<Book> {
     let mut book = book()?;
     if let Some(chapter) = book.chapter_mut("ch01.md") {
-        chapter.add_anchor("remark", remark_offset())?;
-        chapter.add_anchor("fig-1", figure_offset())?;
+        chapter.set_text(CH01_NAMED)?;
     }
     book.add_chapter("ch03.md", CH03)?;
     Ok(book)

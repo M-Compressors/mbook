@@ -42,7 +42,7 @@ container itself. Four tasks must each take a few lines:
 | Reading costs what is shown | `BookReader` decodes the tables once and one resource per call. |
 | One reading API for files and streams | `BookReader::buffered` turns any `Read` into the same reader type. |
 | An invalid book cannot be written | `Book::write` checks every **MUST** of RFC 0001 first. |
-| Edits cannot leave stale navigation | Anchors of headings and contents offsets are computed from the text; anchors given by the caller are dropped when the text is replaced. |
+| Edits cannot leave stale navigation | Anchors and contents offsets are computed from the text when writing. |
 | The call site reads like the task | Paths, titles and link destinations as arguments; no row numbers when building. |
 | mopenzl stays an implementation detail | No mopenzl type appears in a public signature. |
 
@@ -238,24 +238,30 @@ book.set_toc(Toc::Explicit(vec![
 ]));
 ```
 
-### Naming a place that is not a heading
+### Naming a line that is not a heading
 
-Headings get their anchors by themselves. Any other line can be given a name,
-so that a link can lead to it:
+Headings get their anchors by themselves. Any other line gets a name from one
+line of Markdown in front of it, an *anchor definition*:
 
 ```rust
-let text = fs::read_to_string("ch01.md")?;
-let figure = text.find("![View of the pond]").expect("the figure is there");
+book.add_chapter("ch01.md", "\
+# Chapter 1
 
-let chapter = book.add_chapter("ch01.md", text)?;
-chapter.add_anchor("fig-3", u32::try_from(figure)?)?;
+[fig-3]: #fig-3
+![View of the pond](img/fig-3.avif \"Fig. 3\")
+")?;
 
 // In another chapter: [the figure](ch01.md#fig-3)
 ```
 
-The offset counts bytes of the stored text and must be the first byte of a
-line. It belongs to that text: `set_text` removes the extra anchors of a
-chapter, and links to them are then reported when the book is saved.
+A Markdown renderer shows nothing for `[fig-3]: #fig-3`. The name is part of
+the text, so it is still there after the text is edited:
+
+```rust
+let chapter = book.chapter_mut("ch01.md").unwrap();
+chapter.set_text(chapter.text().replace("teh", "the"))?;
+assert_eq!(chapter.extra_anchors()[0].name, "fig-3");
+```
 
 ### When something is wrong
 
@@ -510,10 +516,8 @@ impl Chapter {
     pub fn path(&self) -> &str;
     pub fn text(&self) -> &str;
     pub fn anchors(&self) -> &[Anchor];                  // of headings
-    pub fn extra_anchors(&self) -> &[Anchor];            // of other lines
+    pub fn extra_anchors(&self) -> &[Anchor];            // of lines it names
     pub fn set_text(&mut self, text: impl Into<String>) -> Result<()>;
-    pub fn add_anchor(&mut self, name: impl Into<String>, offset: u32) -> Result<()>;
-    pub fn remove_anchor(&mut self, name: &str) -> Option<Anchor>;
 }
 
 impl Picture {
@@ -552,10 +556,9 @@ impl TocItem {
 }
 ```
 
-A `Book` computes every byte offset it can, so that the caller does not have
-to keep them correct:
+A `Book` never stores a byte offset that the caller has to keep correct:
 
-- **Anchors of headings belong to their chapter.** `add_chapter` and `set_text` compute
+- **Anchors belong to their chapter.** `add_chapter` and `set_text` compute
   them from the headings with the naming rule of RFC 0001. The rule is
   defined by GitHub's implementation, so the names come from a port of it,
   the `github-slugger` crate. A heading whose name would be empty, such as
@@ -573,28 +576,29 @@ to keep them correct:
 
 #### Extra anchors
 
-A heading names itself. Any other line gets a name from the caller, with
-`Chapter::add_anchor`; a converter uses it for the targets of links that do
-not lead to headings. The extra anchors of a chapter are written as its
-[anchor table](0001-mbook-format.md#chapter-anchor-tables), and a chapter
+A heading names itself. Any other line is named by an
+[anchor definition](0001-mbook-format.md#anchor-definitions) in the text of
+its chapter: `[fig-1]: #fig-1`. The extra anchors of a chapter are written as
+its [anchor table](0001-mbook-format.md#chapter-anchor-tables), and a chapter
 without them gets no table.
 
-- **An offset given by the caller lives as long as the text it was given
-  for.** This is the one place where a `Book` holds an offset it did not
-  compute. `set_text` removes the extra anchors of the chapter, because an
-  offset that is still the start of a line after an edit would point at
-  another line without any error. Links to the removed names are reported by
-  `check`.
-- `add_anchor` keeps the anchors sorted by offset; anchors with the same
-  offset stay in the order they were added. Two names may share an offset.
-- The anchor of a heading cannot be added or removed by hand: it follows
-  from the text. `remove_anchor` removes extra anchors only.
+- **Extra anchors are computed from the text**, by the same parse that finds
+  the headings. `add_chapter`, `insert_chapter` and `set_text` compute them;
+  no call takes a name or an offset. An edit therefore keeps every name
+  whose definition it keeps, and removes a name by removing its line.
+- A definition that repeats the name of a heading of the chapter, or of an
+  earlier anchor definition, adds no anchor, as RFC 0001 says.
+- The definition stays in the text: `chapter.text()` returns it, and a
+  reading application gets it from `read_chapter` and renders nothing for
+  it.
 - **A contents item leads to a chapter or to a heading**, not to an extra
   anchor: RFC 0001 wants a contents row inside a chapter to match a row of
   `anchors`. An item that names an extra anchor is reported as
   `DanglingTocItem`.
 - A loaded chapter keeps the extra anchors stored in its file, under the same
-  rule as its heading anchors: until its text is replaced.
+  rule as its heading anchors: until its text is replaced. A file from
+  another writer may name a line without an anchor definition; that name is
+  lost when the text is replaced.
 
 #### Where each rule is checked
 
@@ -605,7 +609,6 @@ without them gets no table.
 | The chapter to move exists | `move_chapter` | `Error::NoSuchPath` |
 | Text encoding: no control characters other than line feed and tab | `add_chapter`, `insert_chapter`, `set_text`, after normalising | `Error::InvalidText`, with the byte offset |
 | The same rule, for a chapter that was loaded and never replaced | `check`, `write` | `Problems` |
-| An extra anchor has a name that is not empty and not used in its chapter, at the start of a line | `add_anchor` | `Error::InvalidAnchor`, with an `AnchorError` as its source |
 | The picture is an AVIF file with a primary item | `add_picture` | `Error::InvalidPicture` |
 | `meta` key syntax and counts | `Meta` setters | `Error::InvalidMeta` |
 | No raw HTML, allowed URI schemes | `check`, `write` | `Problems` |
@@ -672,7 +675,7 @@ One `Error` enum, non-exhaustive, with `Result<T> = Result<T, Error>`.
 | `Limit` | A configured limit was exceeded. |
 | `NoSuchResource` | A `read_` call was given an id from another book. |
 | `Unresolved` | `read_resolve` was given a destination that leads nowhere. The `ResolveError` is the `source()`. |
-| `InvalidPath`, `DuplicatePath`, `InvalidText`, `InvalidPicture`, `InvalidMeta`, `InvalidAnchor` | An argument to a `Book`, `Chapter` or `Meta` method broke a rule. |
+| `InvalidPath`, `DuplicatePath`, `InvalidText`, `InvalidPicture`, `InvalidMeta` | An argument to a `Book` or `Meta` method broke a rule. |
 | `NoSuchPath`, `IndexOutOfRange` | `move_chapter` or `insert_chapter` named a chapter or a position that does not exist. |
 | `Invalid(Problems)` | `write` or `save` refused the book. |
 
@@ -760,8 +763,6 @@ three plain fields.
 - **Two calls resolve a link.** `resolve` cannot say where a fragment leads
   when it is not a heading's, and a reading application has to handle
   `Destination::ExtraAnchor`.
-- **Extra anchors do not survive an edit of their chapter.** A program that
-  changes text has to place them again.
 - **`buffered` waits for the end of the stream** before anything can be shown,
   because the directory is at the end of the file.
 
@@ -775,8 +776,8 @@ three plain fields.
 | Editing | Load into `Book`, change, write a new file | Nothing else was considered | Decided by the format author: one in-memory model serves both creating and editing. |
 | Addressing in `Book` | Path | Resource number; opaque handles | Numbers shift on every insertion. Paths are stable, unique, and already what chapters use. |
 | Navigation data | Derived from text at write time | Editable `toc` and `anchors` tables with offsets | An offset that is still a valid position after an edit points at the wrong heading without any error. |
-| Anchors of lines that are not headings | Given by the caller as a name and an offset; dropped when the text is replaced | Kept across `set_text` when the offset is still the start of a line | The same silent error: the anchor would name another line. |
-| | | Marked in the text and found by the crate | The dialect has no syntax for it; [ADR-0006](adr/0006-markdown-dialect.md) dropped heading attributes. |
+| Anchors of lines that are not headings | Read from anchor definitions in the text ([ADR-0009](adr/0009-anchor-definitions.md)) | `add_anchor(name, offset)`, dropped by `set_text` | Implemented first and removed: correcting one letter of a chapter deleted all its link targets. |
+| | | The same, with offsets carried across `set_text` by comparing lines | A rewritten line is matched by position, which can name the wrong line without any error. |
 | Resolving a fragment that is not a heading's | `resolve` without I/O returns `ExtraAnchor`; `read_resolve` reads the table | `resolve` reads the table itself | Table lookups take `&self` and do no I/O; a renderer calls `resolve` for every link of a page. |
 | | | The reader keeps every anchor table it has read | Memory would grow with the chapters visited, for a table of a few hundred bytes that sits next to the chapter. |
 | When rules are checked | One-item rules at the call, cross-item rules at `write` | Everything at `write` | The error names the call that caused it. |
@@ -814,6 +815,7 @@ The questions raised by the first draft were settled by the format author on
 | One id type or two? | `ChapterId` and `PictureId`. |
 | `Limits::default()`? | 1,000,000 resources, 64 MiB per resource, 16 GiB per file. |
 | Can a link lead to a line that is not a heading? | Yes, through the anchor table of its chapter ([ADR-0008](adr/0008-chapter-anchor-tables.md)). |
+| Where do the names of such lines come from? | From anchor definitions in the text of the chapter ([ADR-0009](adr/0009-anchor-definitions.md)). |
 
 The change required from mopenzl
 ([Required from mopenzl](#required-from-mopenzl)) is a dependency, not an open
@@ -821,9 +823,8 @@ question of this design.
 
 Still *proposed*, and not confirmed by the format author:
 
-- the names `extra_anchors`, `add_anchor`, `remove_anchor`,
-  `read_extra_anchors`, `read_resolve` and `Destination::ExtraAnchor`;
-- that `set_text` removes the extra anchors of a chapter;
+- the names `extra_anchors`, `read_extra_anchors`, `read_resolve` and
+  `Destination::ExtraAnchor`;
 - that a contents item cannot lead to an extra anchor.
 
 ## Future possibilities

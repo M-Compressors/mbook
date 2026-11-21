@@ -1,11 +1,11 @@
 //! A whole book in memory.
 
 #[cfg(feature = "write")]
-use crate::error::{AnchorError, Error, Result};
+use crate::error::{Error, Result};
 use crate::meta::Meta;
 use crate::types::{Anchor, Size};
 #[cfg(feature = "write")]
-use crate::{analysis, avif, path, text, types};
+use crate::{analysis, avif, path, text};
 use std::collections::HashMap;
 
 #[cfg(feature = "read")]
@@ -17,11 +17,10 @@ mod write;
 /// the table of contents.
 ///
 /// A `Book` is how a book is created and how an existing one is changed.
-/// Chapters and pictures are addressed by path. Anchors are computed from the
-/// headings of each chapter, and contents items name their target the way a
-/// link does. The one byte offset a caller gives is that of an extra anchor
-/// (`Chapter::add_anchor`), and it lives only as long as the text it was
-/// given for.
+/// Chapters and pictures are addressed by path. Nothing in it is a byte
+/// offset the caller has to keep correct: anchors are computed from the text
+/// of each chapter, and contents items name their target the way a link
+/// does.
 ///
 /// # Examples
 ///
@@ -83,7 +82,7 @@ enum Slot {
 }
 
 /// One chapter of a [`Book`]: a path, Markdown text, the anchors of its
-/// headings and the extra anchors given to other places.
+/// headings and the extra anchors of the lines it names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Chapter {
     path: String,
@@ -170,12 +169,12 @@ impl Chapter {
     /// Normalises the text and computes its anchors.
     #[cfg(feature = "write")]
     fn new(path: String, text: String) -> Result<Self> {
-        let (text, anchors) = stored(text)?;
+        let (text, anchors, extra_anchors) = stored(text)?;
         Ok(Self {
             path,
             text,
             anchors,
-            extra_anchors: Vec::new(),
+            extra_anchors,
         })
     }
 
@@ -200,19 +199,46 @@ impl Chapter {
         &self.anchors
     }
 
-    /// The anchors given to places that are not headings, sorted by offset.
+    /// The anchors of the lines the chapter gives a name to, sorted by
+    /// offset.
     ///
-    /// They are written as the anchor table of the chapter. A link reaches
-    /// them the same way as the anchor of a heading: `ch01.md#name`.
+    /// A line gets a name from an *anchor definition* in front of it: a link
+    /// reference definition that names itself, `[fig-1]: #fig-1`. A Markdown
+    /// renderer shows nothing for it. A link reaches the line the same way
+    /// as a heading: `ch01.md#fig-1`.
+    ///
+    /// A chapter loaded from a file keeps the extra anchors stored in that
+    /// file until its text is replaced.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[cfg(feature = "write")]
+    /// # fn main() -> mbook_core::Result<()> {
+    /// let mut book = mbook_core::Book::new("The Example", "en")?;
+    /// let chapter = book.add_chapter(
+    ///     "ch01.md",
+    ///     "# One\n\n[remark]: #remark\nA remark worth a link.\n",
+    /// )?;
+    ///
+    /// let extra: Vec<_> = chapter
+    ///     .extra_anchors()
+    ///     .iter()
+    ///     .map(|anchor| (anchor.name.as_str(), anchor.offset))
+    ///     .collect();
+    /// assert_eq!(extra, [("remark", 7)]);
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(not(feature = "write"))]
+    /// # fn main() {}
+    /// ```
     #[must_use]
     pub fn extra_anchors(&self) -> &[Anchor] {
         &self.extra_anchors
     }
 
-    /// Replaces the text and rebuilds the anchors from its headings.
-    ///
-    /// The extra anchors are removed: their offsets belonged to the text
-    /// that is replaced. Add them again for the new text.
+    /// Replaces the text and rebuilds the anchors from it: those of its
+    /// headings and those of its anchor definitions.
     ///
     /// CRLF and lone CR become a line feed and a leading byte order mark is
     /// dropped. On error the chapter is unchanged.
@@ -222,68 +248,8 @@ impl Chapter {
     /// The text contains a control character other than line feed and tab.
     #[cfg(feature = "write")]
     pub fn set_text(&mut self, text: impl Into<String>) -> Result<()> {
-        (self.text, self.anchors) = stored(text.into())?;
-        self.extra_anchors.clear();
+        (self.text, self.anchors, self.extra_anchors) = stored(text.into())?;
         Ok(())
-    }
-
-    /// Gives a name to a place that is not a heading, so that a link can
-    /// lead to it: a paragraph, a figure, a row of a table.
-    ///
-    /// `offset` counts bytes from the start of [`text`](Self::text) and must
-    /// be 0 or the first byte of a line. The anchor is removed when the text
-    /// is replaced.
-    ///
-    /// # Errors
-    ///
-    /// The name is empty or already names an anchor of this chapter, or the
-    /// offset is not the start of a line.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let mut book = mbook_core::Book::new("The Example", "en")?;
-    /// let text = "# One\n\nA remark.\n";
-    /// let chapter = book.add_chapter("ch01.md", text)?;
-    ///
-    /// let remark = text.find("A remark").and_then(|at| u32::try_from(at).ok());
-    /// chapter.add_anchor("remark", remark.unwrap_or(0))?;
-    ///
-    /// let names: Vec<_> = chapter.extra_anchors().iter().map(|a| a.name.as_str()).collect();
-    /// assert_eq!(names, ["remark"]);
-    /// # Ok::<(), mbook_core::Error>(())
-    /// ```
-    #[cfg(feature = "write")]
-    pub fn add_anchor(&mut self, name: impl Into<String>, offset: u32) -> Result<()> {
-        let name = name.into();
-        let reason = if name.is_empty() {
-            AnchorError::EmptyName
-        } else if self.has_anchor(&name) {
-            AnchorError::DuplicateName
-        } else if types::is_line_start(self.text.as_bytes(), offset) {
-            // Anchors with one offset stay in the order they were added.
-            let at = self
-                .extra_anchors
-                .partition_point(|anchor| anchor.offset <= offset);
-            self.extra_anchors.insert(at, Anchor { offset, name });
-            return Ok(());
-        } else {
-            AnchorError::NotAtLineStart
-        };
-        Err(Error::InvalidAnchor { name, reason })
-    }
-
-    /// Removes an extra anchor and returns it. The anchor of a heading
-    /// cannot be removed: it follows from the text.
-    ///
-    /// Links to it are reported when the book is written.
-    #[cfg(feature = "write")]
-    pub fn remove_anchor(&mut self, name: &str) -> Option<Anchor> {
-        let at = self
-            .extra_anchors
-            .iter()
-            .position(|anchor| anchor.name == name)?;
-        Some(self.extra_anchors.remove(at))
     }
 
     /// Tells whether a fragment with this name leads into the chapter.
@@ -296,16 +262,19 @@ impl Chapter {
     }
 }
 
-/// The stored form of chapter text and the anchors of its headings.
+/// The stored form of chapter text, the anchors of its headings and its
+/// extra anchors.
 #[cfg(feature = "write")]
-fn stored(text: String) -> Result<(String, Vec<Anchor>)> {
+fn stored(text: String) -> Result<(String, Vec<Anchor>, Vec<Anchor>)> {
     let text = text::normalize(text)?;
     // Positions inside a chapter are 32-bit offsets.
     if u32::try_from(text.len()).is_err() {
         return Err(Error::Limit("a chapter must be smaller than 4 GiB"));
     }
-    let anchors = analysis::anchors(&analysis::analyse(&text).headings);
-    Ok((text, anchors))
+    let analysis = analysis::analyse(&text);
+    let anchors = analysis::anchors(&analysis.headings);
+    let extra_anchors = analysis::extra_anchors(&analysis.named_lines, &anchors);
+    Ok((text, anchors, extra_anchors))
 }
 
 impl Picture {
@@ -615,134 +584,68 @@ impl Book {
 #[cfg(feature = "write")]
 mod tests {
     use super::{Book, Chapter, Picture, Toc, TocItem};
-    use crate::error::{AnchorError, Error, PathError};
+    use crate::error::{Error, PathError};
     use crate::types::Size;
 
-    /// A chapter with one heading and two paragraphs.
-    const TEXT: &str = "# One\n\nA remark.\n\nMore.\n";
+    /// A chapter with one heading and two paragraphs, the first of them
+    /// named.
+    const TEXT: &str = "# One\n\n[remark]: #remark\nA remark.\n\nMore.\n";
 
-    fn analysed() -> Chapter {
-        Chapter::new("ch01.md".to_owned(), TEXT.to_owned()).unwrap()
+    fn analysed(text: &str) -> Chapter {
+        Chapter::new("ch01.md".to_owned(), text.to_owned()).unwrap()
     }
 
-    fn offset_of(needle: &str) -> u32 {
-        u32::try_from(TEXT.find(needle).unwrap()).unwrap()
-    }
-
-    /// Why an anchor is refused for the chapter with [`TEXT`].
-    fn refusal(chapter: &mut Chapter, name: &str, offset: u32) -> AnchorError {
-        match chapter.add_anchor(name, offset) {
-            Err(Error::InvalidAnchor {
-                name: given,
-                reason,
-            }) if given == name => reason,
-            other => panic!("expected an invalid anchor, got {other:?}"),
-        }
-    }
-
-    fn extra_names(chapter: &Chapter) -> Vec<&str> {
+    fn extra(chapter: &Chapter) -> Vec<(&str, u32)> {
         let anchors = chapter.extra_anchors().iter();
-        anchors.map(|anchor| anchor.name.as_str()).collect()
-    }
-
-    #[test]
-    fn add_anchor_names_a_line_of_the_chapter() {
-        let mut chapter = analysed();
-        chapter.add_anchor("remark", offset_of("A remark")).unwrap();
-        let anchors: Vec<_> = chapter
-            .extra_anchors()
-            .iter()
+        anchors
             .map(|anchor| (anchor.name.as_str(), anchor.offset))
-            .collect();
-        assert_eq!(anchors, [("remark", 7)]);
+            .collect()
     }
 
     #[test]
-    fn add_anchor_leaves_the_anchors_of_headings_alone() {
-        let mut chapter = analysed();
-        chapter.add_anchor("remark", offset_of("A remark")).unwrap();
+    fn an_anchor_definition_names_its_line() {
+        assert_eq!(extra(&analysed(TEXT)), [("remark", 7)]);
+    }
+
+    #[test]
+    fn an_anchor_definition_leaves_the_anchors_of_headings_alone() {
+        let chapter = analysed(TEXT);
         let names: Vec<_> = chapter.anchors().iter().map(|a| a.name.as_str()).collect();
         assert_eq!(names, ["one"]);
     }
 
     #[test]
-    fn extra_anchors_are_kept_sorted_by_offset() {
-        let mut chapter = analysed();
-        chapter.add_anchor("more", offset_of("More")).unwrap();
-        chapter.add_anchor("top", 0).unwrap();
-        chapter.add_anchor("remark", offset_of("A remark")).unwrap();
-        chapter.add_anchor("again", offset_of("A remark")).unwrap();
-        assert_eq!(extra_names(&chapter), ["top", "remark", "again", "more"]);
+    fn a_chapter_without_anchor_definitions_has_no_extra_anchors() {
+        assert_eq!(analysed("# One\n\nText.\n").extra_anchors(), []);
     }
 
     #[test]
-    fn add_anchor_rejects_an_empty_name() {
-        assert_eq!(refusal(&mut analysed(), "", 0), AnchorError::EmptyName);
+    fn set_text_moves_an_extra_anchor_with_its_line() {
+        let mut chapter = analysed(TEXT);
+        let edited = chapter.text().replace("# One", "# One and a half");
+        chapter.set_text(edited).unwrap();
+        assert_eq!(extra(&chapter), [("remark", 18)]);
     }
 
     #[test]
-    fn add_anchor_rejects_the_name_of_a_heading() {
-        let reason = refusal(&mut analysed(), "one", offset_of("More"));
-        assert_eq!(reason, AnchorError::DuplicateName);
-    }
-
-    #[test]
-    fn add_anchor_rejects_a_name_that_is_taken() {
-        let mut chapter = analysed();
-        chapter.add_anchor("remark", offset_of("A remark")).unwrap();
-        let reason = refusal(&mut chapter, "remark", offset_of("More"));
-        assert_eq!(reason, AnchorError::DuplicateName);
-    }
-
-    #[test]
-    fn add_anchor_rejects_an_offset_inside_a_line() {
-        let reason = refusal(&mut analysed(), "inside", offset_of("remark"));
-        assert_eq!(reason, AnchorError::NotAtLineStart);
-    }
-
-    #[test]
-    fn add_anchor_rejects_the_end_of_the_text() {
-        let end = u32::try_from(TEXT.len()).unwrap();
-        let reason = refusal(&mut analysed(), "end", end);
-        assert_eq!(reason, AnchorError::NotAtLineStart);
-    }
-
-    #[test]
-    fn a_refused_anchor_is_not_added() {
-        let mut chapter = analysed();
-        refusal(&mut chapter, "inside", 1);
+    fn set_text_drops_an_extra_anchor_whose_definition_is_gone() {
+        let mut chapter = analysed(TEXT);
+        chapter.set_text("# One\n\nA remark.\n").unwrap();
         assert_eq!(chapter.extra_anchors(), []);
     }
 
     #[test]
-    fn remove_anchor_returns_the_anchor() {
-        let mut chapter = analysed();
-        chapter.add_anchor("remark", offset_of("A remark")).unwrap();
-        let removed = chapter.remove_anchor("remark").map(|anchor| anchor.offset);
-        assert_eq!((removed, chapter.extra_anchors().len()), (Some(7), 0));
-    }
-
-    #[test]
-    fn remove_anchor_leaves_the_anchor_of_a_heading() {
-        let mut chapter = analysed();
-        assert!(chapter.remove_anchor("one").is_none());
-        assert_eq!(chapter.anchors().len(), 1);
-    }
-
-    #[test]
-    fn set_text_removes_the_extra_anchors() {
-        let mut chapter = analysed();
-        chapter.add_anchor("remark", offset_of("A remark")).unwrap();
-        chapter.set_text("# Two\n\nA remark.\n").unwrap();
-        assert_eq!(chapter.extra_anchors(), []);
+    fn set_text_finds_a_new_anchor_definition() {
+        let mut chapter = analysed("# One\n\nMore.\n");
+        chapter.set_text("# One\n\n[more]: #more\nMore.\n").unwrap();
+        assert_eq!(extra(&chapter), [("more", 7)]);
     }
 
     #[test]
     fn a_text_that_is_refused_keeps_the_extra_anchors() {
-        let mut chapter = analysed();
-        chapter.add_anchor("remark", offset_of("A remark")).unwrap();
+        let mut chapter = analysed(TEXT);
         assert!(chapter.set_text("bad \u{1b} text").is_err());
-        assert_eq!(extra_names(&chapter), ["remark"]);
+        assert_eq!(extra(&chapter), [("remark", 7)]);
     }
 
     /// A chapter built by hand, for the tests that only move chapters.

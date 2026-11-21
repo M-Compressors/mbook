@@ -21,7 +21,7 @@ container.
 | [RFC 0001](0001-mbook-format.md) | The mbook file format, version 1 | Draft |
 | [RFC 0002](0002-mbook-core-api.md) | The mbook-core API | Draft |
 | [RFC 0003](0003-mbook-converter-api.md) | The mbook-converter API | Draft; not implemented |
-| [ADR-0001 … ADR-0008](adr/overview.md) | Decisions behind RFC 0001 | See the overview |
+| [ADR-0001 … ADR-0009](adr/overview.md) | Decisions behind RFC 0001 | See the overview |
 
 An **RFC** specifies behaviour: it is what an implementation is checked
 against. A **decision record** (ADR) explains one choice the RFC makes: the

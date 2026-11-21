@@ -52,7 +52,9 @@ Two details follow from choosing GFM:
 - Easier: readers need no HTML, CSS or script handling.
 - Harder: layout that Markdown cannot express cannot be stored.
 - Harder: anchors are no longer chosen by the author
-  ([ADR-0007](0007-positions-and-anchors.md)).
+  ([ADR-0007](0007-positions-and-anchors.md)). Later, a name for a line that
+  is not a heading was given back in plain GFM, as a link reference
+  definition ([ADR-0009](0009-anchor-definitions.md)).
 - To revisit: math and alert blocks; the exact CommonMark version; a formal
   definition of footnotes.
 

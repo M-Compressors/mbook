@@ -258,12 +258,11 @@ fn links_to_extra_anchors_pass_the_check() -> Result<()> {
 }
 
 #[test]
-fn a_link_to_a_removed_extra_anchor_is_reported() -> Result<()> {
+fn a_link_to_a_name_that_is_no_longer_defined_is_reported() -> Result<()> {
     let mut book = sample::annotated()?;
-    let removed = book
-        .chapter_mut("ch01.md")
-        .and_then(|chapter| chapter.remove_anchor("fig-1"));
-    assert!(removed.is_some());
+    if let Some(chapter) = book.chapter_mut("ch01.md") {
+        chapter.set_text(chapter.text().replace("[fig-1]: #fig-1\n", ""))?;
+    }
     assert_eq!(
         problems(&book),
         [(
@@ -275,19 +274,19 @@ fn a_link_to_a_removed_extra_anchor_is_reported() -> Result<()> {
 }
 
 #[test]
-fn replacing_a_text_reports_the_links_to_its_extra_anchors() -> Result<()> {
+fn an_edit_that_keeps_the_anchor_definitions_keeps_the_links() -> Result<()> {
     let mut book = sample::annotated()?;
     if let Some(chapter) = book.chapter_mut("ch01.md") {
-        chapter.set_text(crate::texts::CH01)?;
+        chapter.set_text(chapter.text().replace("late", "very late"))?;
     }
-    let kinds: Vec<_> = problems(&book).into_iter().map(|(_, kind)| kind).collect();
-    assert_eq!(
-        kinds,
-        [
-            ProblemKind::UnresolvedLink("ch01.md#fig-1".into()),
-            ProblemKind::UnresolvedLink("ch01.md#remark".into())
-        ]
-    );
+    assert_eq!(problems(&book), []);
+    Ok(())
+}
+
+#[test]
+fn a_reference_link_through_an_anchor_definition_resolves() -> Result<()> {
+    let book = with_chapter("[here]: #here\nA line.\n\nBack to [that line][here].\n")?;
+    assert_eq!(problems(&book), []);
     Ok(())
 }
 

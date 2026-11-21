@@ -193,7 +193,7 @@ of this document is *proposed* and listed again under
 | Conversion from an I/O source and from a byte slice | Confirmed |
 | Formats are read by established crates such as `unpdf` | Confirmed |
 | Pictures are encoded as AVIF by `image` with its `avif` feature, which uses `ravif` and `rav1e`; dependencies under BSD licenses are accepted | Confirmed |
-| A link to an element that is not a heading keeps its target, through an anchor table in front of the chapter ([ADR-0008](adr/0008-chapter-anchor-tables.md)) | Confirmed |
+| A link to an element that is not a heading keeps its target: the converter writes an anchor definition in front of it ([ADR-0008](adr/0008-chapter-anchor-tables.md), [ADR-0009](adr/0009-anchor-definitions.md)) | Confirmed |
 | Streaming means a `Read` as the source and a `Write` as the sink; the book is held in memory while it is converted ([Sources and memory](#sources-and-memory)) | Confirmed |
 
 ### Public surface
@@ -378,27 +378,29 @@ Text is normalised to Unicode NFC.
 #### Links and footnotes
 
 Source formats link to any element. mbook names a heading by itself and any
-other line through an extra anchor of its chapter
-([RFC 0002](0002-mbook-core-api.md#extra-anchors),
-[ADR-0008](adr/0008-chapter-anchor-tables.md)), so the target of a link is
-kept to the line.
+other line through an
+[anchor definition](0001-mbook-format.md#anchor-definitions) in front of it
+([ADR-0009](adr/0009-anchor-definitions.md)), so the target of a link is kept
+to the line.
 
 | Target in the source | Destination after conversion | Warning |
 | --- | --- | --- |
 | A file, a section or a page | The chapter that starts there | No |
 | A heading | That heading: the chapter's path and the anchor `mbook-core` computed | No |
-| Any other element that starts a line of the chapter: a paragraph, a figure, a list item, a row of a table | An extra anchor at that line | No |
-| An element inside a line, such as a word of a paragraph | An extra anchor at the line that contains it | No |
+| Any other block: a paragraph, a figure, a list item, a block quote, a table | That block, named by an anchor definition in front of it | No |
+| An element inside a block, such as a word of a paragraph or a row of a table | The block that contains it, named the same way | No |
 | Nothing that was converted | The link becomes its text | `LinkDropped` |
 
-- An extra anchor is added only for an element that a link of the book
-  leads to, not for every identifier of the source.
-- Its name is the identifier of the source. When the chapter already has an
+- The assembler writes `[name]: #name` and an empty line in front of the
+  target block. `mbook-core` finds the definition and fills the anchor table
+  of the chapter; the converter handles no byte offsets.
+- A definition is written only for an element that a link of the book leads
+  to, not for every identifier of the source.
+- The name is the identifier of the source. When the chapter already has an
   anchor with that name, `-2`, `-3`, … is appended; every link is rewritten
   anyway, so a name need not survive.
-- Extra anchors are added, and links re-targeted, after every chapter has
-  its final text: the anchor of a heading and the offset of a line are known
-  only then.
+- Links are re-targeted after every chapter has its final text: the anchor
+  of a heading is known only then.
 - A link that the source marks as a note reference (`epub:type="noteref"` in
   EPUB, `<a type="note">` in FB2) becomes a footnote: `[^n]` at the
   reference and `[^n]: text` at the end of the same chapter, as RFC 0001
@@ -659,9 +661,10 @@ Crates that were looked at and ruled out:
 - **The quality of a conversion is the quality of the front-end crate.** A
   PDF has no chapters or paragraphs of its own; what `unpdf` reconstructs is
   what the book contains.
-- **A link is kept to the line, not to the word.** A link to an element
-  inside a paragraph leads to the start of that paragraph, and a contents
-  entry that does not name a heading leads to the heading above its target.
+- **A link is kept to the block, not to the word.** A link to an element
+  inside a paragraph leads to the start of that paragraph, a link to a row
+  of a table to the table, and a contents entry that does not name a heading
+  to the heading above its target.
 - **One build per feature.** The completion checks of the repository run
   Clippy, the tests and the documentation once for every format alone.
 - **Four entry points for one operation**, because Rust cannot choose
@@ -682,7 +685,7 @@ Crates that were looked at and ruled out:
 | Pictures | Encoded by this crate | An encoder supplied by the caller | Works without setup. A trait for other encoders can be added without breaking the API. |
 | AVIF encoder | `rav1e`, through `ravif` and the `avif` feature of `image`; pure Rust | `libavif` or `libaom` | Decided by the format author. No C toolchain, and one crate both decodes the source pictures and encodes the result; slower than the C encoders, which are under BSD licenses as well. |
 | Constructs that cannot be kept | Dropped with a warning | An error | A book without one table is more useful than no book. |
-| Links to elements that are not headings | Kept, as extra anchors of the target chapter | Sent to the nearest heading | Decided by the format author, who changed the format for it ([ADR-0008](adr/0008-chapter-anchor-tables.md)). |
+| Links to elements that are not headings | Kept, as anchor definitions in the target chapter | Sent to the nearest heading | Decided by the format author, who changed the format for it ([ADR-0008](adr/0008-chapter-anchor-tables.md), [ADR-0009](adr/0009-anchor-definitions.md)). |
 | Missing title or language | A stand-in value and a warning | An error | The caller can correct a `Book`; it cannot correct a failed conversion. |
 | Final validation | `Book::check` of `mbook-core` | Checks of this crate | One definition of a valid book. |
 
