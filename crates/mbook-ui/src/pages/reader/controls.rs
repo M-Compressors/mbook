@@ -49,9 +49,15 @@ pub(super) fn chapter_title(snapshot: &BookSnapshot, chapter: usize, offset: u32
         )
 }
 
-/// How much of the progress line is filled, in percent.
-pub(super) fn progress_percent(permille: u16) -> f32 {
-    f32::from(permille.min(1000)) / 10.0
+/// A slider position as thousandths of the whole book.
+pub(super) fn slider_progress(value: f32) -> u16 {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the rounded slider position is clamped to the range of progress"
+    )]
+    let permille = (value.clamp(0.0, 100.0) * 10.0).round() as u16;
+    permille
 }
 
 #[cfg(test)]
@@ -132,9 +138,9 @@ mod tests {
     }
 
     #[test]
-    fn the_progress_line_is_filled_in_proportion() {
-        assert!((progress_percent(500) - 50.0).abs() < f32::EPSILON);
-        assert!((progress_percent(4000) - 100.0).abs() < f32::EPSILON);
-        assert!(progress_percent(0).abs() < f32::EPSILON);
+    fn slider_progress_rounds_and_stays_within_the_book() {
+        assert_eq!(slider_progress(50.25), 503);
+        assert_eq!(slider_progress(120.0), 1000);
+        assert_eq!(slider_progress(-10.0), 0);
     }
 }

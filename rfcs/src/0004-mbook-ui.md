@@ -148,13 +148,13 @@ Compact
   file name and the state of the import.
 - The menu of a book (right click, the `…` button, or a long press): Open,
   Edit, Show the file, Remove.
-- Files are added with `+`, by dropping them on the window, or by opening
-  them with the application from the system.
+- Files are added with `+` or by dropping them on the window. The system
+  picker lists mbook and the extensions accepted by the converter.
 
 ### Reader
 
 ```text
-Controls shown                           Controls hidden
+Pointer over the slider                  Controls hidden
 +-------------------------------------+  +-------------------------------------+
 | [ Back  Contents ]  Title  [ A Edit ]|  |                                     |
 |                                     |  |                                     |
@@ -163,13 +163,19 @@ Controls shown                           Controls hidden
 |         It was then that the        |  |         It was then that the        |
 |         second act began.           |  |         second act began.           |
 |                                     |  |                                     |
-| Chapter 7, 38%   < 4 of 12 >        |  |            4 of 12                  |
-| ----------------------------------- |  |                                     |
+| Chapter 7, 38%   < 48 of 126 >        |  |           48 of 126                 |
+| ------------●---------------------- |  |                                     |
 +-------------------------------------+  +-------------------------------------+
 ```
 
-- A page fills the text area. Its number stays visible below the text and is
-  counted within the current chapter. The progress bar measures the whole book.
+- A page fills the text area. The current page and the total are numbered
+  across the whole book. An approximation sign appears until all chapters
+  have been measured for the current layout.
+- The reading slider appears when the pointer is over the bottom strip,
+  during a seek gesture, or when the slider has keyboard focus. Drag or
+  click to seek across the book. The status previews the destination as
+  the thumb moves, and releasing opens the destination page. Assistive
+  technology can operate the slider while its track is hidden.
 - Move the pointer, press a key or tap in the middle of the text to show the
   controls. They fade away after a few seconds of inactivity.
 - **Contents** lists the entries of the book and marks the current one.
@@ -476,6 +482,10 @@ stateDiagram-v2
 | Converting | `Converter::convert` reads the file and writes into `books/.incoming/`. The format is detected from the content; for Markdown and plain text, which are never detected, it is taken from the extension of the file name with `Format::from_str`. |
 | Indexing | The file is renamed into `books/`. Its metadata go into `books`, and its cover, decoded and scaled, into `covers/`. |
 
+- The native picker filters by the book extensions, including ZIP
+  containers for supported sources. The application checks the extension
+  again after selection. Conversion and drag-and-drop still inspect the
+  source content.
 - The original file is neither moved nor changed.
 - A book whose `id` is already in the library is not added again; the
   existing book is opened. The converter gives a source without
@@ -515,6 +525,15 @@ An open book is an entity with two parts.
   that follows when they fit together. Other blocks move intact to the next
   page if they fit there. A block taller than a page splits on the body text
   line grid because the Kit does not expose its own internal line boundaries.
+- Each chapter contributes its measured page count to the book total. Until
+  a chapter has been laid out, its count is estimated from its decoded
+  length and the observed density of measured, multi-page chapters. With
+  no such chapter, the column size and typography supply the initial
+  density. The counts are kept for the current window and typography.
+- The reading slider maps its fraction back into the decoded lengths in the
+  snapshot, then opens the page containing the resulting byte offset. The
+  start and end include empty first or last chapters. The bottom strip
+  keeps its dimensions as the slider appears and disappears.
 - The stored place remains the chapter path and a byte offset. For a page
   that begins inside a block, the reader estimates the byte offset from
   the vertical fraction of that block. It writes the position at most once
@@ -723,7 +742,8 @@ sequenceDiagram
   the book is not saved while a draft exists: nothing typed is dropped.
 - A picture, or a cover, is added from a file in AVIF, JPEG, PNG, GIF, WebP
   or BMP, the formats `mbook-converter` reads
-  ([RFC 0003](0003-mbook-converter-api.md#pictures)).
+  ([RFC 0003](0003-mbook-converter-api.md#pictures)). The native picker and
+  its selection check use the extensions of these formats.
   - An AVIF file is passed to `Book::add_picture` or `Book::set_cover` as it
     is.
   - Any other file is decoded, turned upright by its orientation tag, and
@@ -831,6 +851,7 @@ several packages share.
 | Crate | Version, last release | License | Used for |
 | --- | --- | --- | --- |
 | `gpui-kit`, feature `gpui-fast` | 0.10.0, 2026-11-16 | Apache-2.0 | The interface; brings GPUI Fast 0.1 |
+| `rfd` | 0.17.2 | MIT | Native book and picture pickers with extension filters |
 | `mimalloc3` | 0.1.61, 2026-11-17 | MIT | The allocator of the binary |
 | `dirs` | 7.0.0, 2026-09-05 | MIT OR Apache-2.0 | The roots on desktop |
 | `self_update` | 1.3.3, 2026-10-27 | MIT | Updates; Rust 1.88 |
@@ -891,8 +912,8 @@ can break in its middle.
 | Part | State |
 | --- | --- |
 | Library | Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
-| Import | As designed. A file is added by the "Add a book…" control, the Open key, or a drop on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
-| Reader | Single-page reading, a persistent chapter page number, and an auto-hiding title bar and progress panel. A block taller than the page can be clipped through a line. Pictures keep the decode width of their first draw. |
+| Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
+| Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. A block taller than the page can be clipped through a line. Pictures keep the decode width of their first draw. |
 | Editor | A segmented icon picker controls the source and preview. The preview uses the page tone and shows picture alternatives. Markdown syntax highlighting and drag to reorder are unimplemented. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. No real release exists, so neither has met the network; the Windows part has never been compiled. |
@@ -953,12 +974,15 @@ asks:
 | Decision | Chosen | Rejected | Why |
 | --- | --- | --- | --- |
 | Toolkit | GPUI Kit on GPUI Fast | | Decided by the format author. |
+| File picker filters | Native dialogs through `rfd` | GPUI file prompts | GPUI Kit 0.10 cannot pass extension filters to its platform picker. |
 | Where CPU-bound work runs | The background executor of GPUI | A separate thread pool | Decided by the format author. One scheduler, with priorities, whose tasks are cancelled by dropping them. |
 | What decides a layout | The width of the window | The platform | A narrow desktop window and a phone need the same layout; a platform test gives two code paths that drift apart. |
 | Reading | `BookReader`, lazily | `Book` for everything | A `Book` decodes every chapter and picture before the first line is shown. |
 | Access to the reader | A snapshot on the main thread; the source behind a mutex for background tasks | Table lookups on the main thread | A lookup would wait for a mutex that a read holds during I/O. |
 | Rendering Markdown | The Markdown view of GPUI Kit | A renderer of this crate | It virtualises, selects text, parses off the main thread, and is built on the same `markdown` crate as `mbook`. |
 | Paginating a chapter | Break the chapter using the measured GPUI Kit blocks | A custom Markdown renderer or a fixed `max_lines` value | Measurements include proportional wrapping, headings and images while chapter-wide references stay with the Kit. |
+| Whole-book page numbers | Combine measured chapters and estimates for the current layout | A fixed count in the file or a full-book layout pass on open | Reflow changes the rendered count. Estimates let the book open lazily, and each measured chapter replaces its estimate. |
+| Seeking within the book | Use the decoded chapter lengths and an offset | Index every page before allowing a seek | Chapter lengths are already in the snapshot and locate a destination even before its chapter is measured. |
 | Stored place | Chapter path and byte offset | Resource number and offset | Numbers change when a book is written again. |
 | Editing | One background task owns the `Book`; commands in order | A `Book` behind a mutex, one task per change | Separate tasks may run out of order: a save could miss the edit before it. |
 | Where an edit is saved | Over the book in the library, by a rename | Always a new copy | Decided by the format author. The library is the working copy; the original file was never touched. |
@@ -981,7 +1005,7 @@ asks:
 
 | Application | Taken from it | Left behind |
 | --- | --- | --- |
-| Apple Books for the Mac | Cover-first shelves, single-page reading with quiet controls, an always-visible page number, and page tones | Store, two-page spreads, collections, and annotations |
+| Apple Books for the Mac | Cover-first shelves, single-page reading with quiet controls, an always-visible page number, a reading position slider, and page tones | Store, two-page spreads, collections, and annotations |
 | Calibre | A library that owns copies of the books; converting on import; an editor with source and preview | A database as the source of truth; a window per tool |
 | Zed | Entities as models; tasks owned by their entity; nothing blocking on the main thread | |
 

@@ -8,7 +8,7 @@ use gpui_kit::component::link::Link;
 use gpui_kit::component::{WindowExt as _, v_flex};
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, ExternalPaths, FocusHandle, Focusable as _,
-    InteractiveElement as _, IntoElement, ParentElement as _, PathPromptOptions, Render, Role,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _, Window,
     div,
 };
@@ -16,11 +16,13 @@ use gpui_kit::{
 use crate::entities::catalogue::Library;
 #[cfg(feature = "self-update")]
 use crate::features::auto_update::UpdateBanner;
+use crate::features::import_book::BOOK_FILE_EXTENSIONS;
 use crate::pages::editor::{EditorEvent, EditorPage};
 use crate::pages::library::{LibraryEvent, LibraryPage};
 use crate::pages::reader::{ReaderEvent, ReaderPage};
 use crate::pages::settings::{SettingsEvent, SettingsPage};
 use crate::shared::actions::{About, GoBack, OpenFile, OpenSettings};
+use crate::shared::file_picker;
 use crate::shared::model::BookKey;
 use crate::shared::ui::announce;
 
@@ -258,29 +260,16 @@ impl Root {
 
     /// Asks which files to add, in the dialog of the platform.
     fn on_open_file(&mut self, _: &OpenFile, window: &mut Window, cx: &mut Context<'_, Self>) {
-        let chosen = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: true,
-            prompt: Some("Add".into()),
-        });
         self.prompt = Some(cx.spawn_in(window, async move |this, cx| {
-            match chosen.await {
-                Ok(Ok(Some(paths))) => {
+            match file_picker::choose("Add books", "Books", BOOK_FILE_EXTENSIONS, true).await {
+                Ok(Some(paths)) => {
                     this.update_in(cx, |this, window, cx| this.import(paths, window, cx))
                         .ok();
                 }
-                // The dialog was closed without a choice.
-                Ok(Ok(None)) | Err(_) => {}
-                Ok(Err(_)) => {
-                    this.update_in(cx, |_, window, cx| {
-                        announce(
-                            "The file dialog could not be opened. Drop the files on the window instead.",
-                            window,
-                            cx,
-                        );
-                    })
-                    .ok();
+                Ok(None) => {}
+                Err(error) => {
+                    this.update_in(cx, |_, window, cx| announce(error.to_string(), window, cx))
+                        .ok();
                 }
             }
         }));

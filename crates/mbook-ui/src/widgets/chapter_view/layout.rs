@@ -23,7 +23,7 @@ pub(super) fn margin(class: SizeClass) -> f32 {
 
 /// The width of the text column: at most 38 em, less the margins in a window
 /// that is narrower. A size that is no number gives no width.
-pub(super) fn column_width(viewport: f32, text_size: f32, class: SizeClass) -> f32 {
+pub(crate) fn column_width(viewport: f32, text_size: f32, class: SizeClass) -> f32 {
     if !(viewport.is_finite() && text_size.is_finite()) {
         return 0.0;
     }

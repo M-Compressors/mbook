@@ -70,7 +70,7 @@ use crate::entities::picture::Bitmap;
 use crate::features::appearance::Appearance;
 use crate::shared::ui::page_colors;
 
-pub(crate) use layout::device_width;
+pub(crate) use layout::{column_width, device_width};
 
 /// The gap the Kit leaves under a paragraph, in rems: the `paragraph_gap` of
 /// its text style, which the view does not change. A test measures it.

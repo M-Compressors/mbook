@@ -16,5 +16,5 @@ mod transform;
 pub(crate) use bitmap::Bitmap;
 pub(crate) use cache::PictureCache;
 pub(crate) use decode::{cover_thumbnail, decode_avif};
-pub(crate) use encode::{EncodeOptions, encode_avif};
+pub(crate) use encode::{EncodeOptions, encode_avif, picture_file_extensions};
 pub(crate) use error::PictureError;

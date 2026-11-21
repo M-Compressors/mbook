@@ -6,7 +6,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::base::motion::{Presence, PresenceSample, Transition};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::popover::Popover;
-use gpui_kit::component::progress::Progress;
+use gpui_kit::component::slider::Slider;
 use gpui_kit::component::{
     ActiveTheme as _, Icon, Placement, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
@@ -17,20 +17,27 @@ use gpui_kit::{
     canvas, div, px, relative,
 };
 
-use super::controls::{chapter_title, progress_percent, status_text};
+use super::controls::{chapter_title, status_text};
 use super::keys::{
-    CONTEXT, ChapterEnd, ChapterStart, HIDDEN, NextChapter, PreviousChapter, ScreenBack,
+    CONTEXT, ChapterEnd, ChapterStart, HIDDEN, NextChapter, PreviousChapter, SCRUBBER, ScreenBack,
     ScreenForward, ShowControls, Zone, zone,
 };
+use super::pagination::Layout;
 use super::{Panel, Phase, ReaderEvent, ReaderPage};
 use crate::features::appearance::Appearance;
 use crate::shared::actions::GoBack;
 use crate::shared::layout::SizeClass;
-use crate::shared::ui::{empty_state, icon_button, page_colors, page_header, status_line};
-use crate::widgets::chapter_view::{ChapterView, Direction};
+use crate::shared::ui::{
+    BAR_HEIGHT, empty_state, icon_button, page_colors, page_header, status_line, target_size,
+};
+use crate::widgets::chapter_view::{ChapterView, Direction, column_width};
 
 /// The height the line under the text takes, in pixels.
 const FOOTER: f32 = 64.0;
+/// Height of the strip that reveals the reading slider.
+const SEEK_STRIP: f32 = 24.0;
+/// Space reserved for the status on its own row in a compact window.
+const COMPACT_STATUS: f32 = 20.0;
 /// How long the reading controls take to fade.
 const FADE: Duration = Duration::from_millis(160);
 /// The width of the popover of a panel, in pixels.
@@ -49,7 +56,14 @@ impl Render for ReaderPage {
             .transition(Transition::new(FADE))
             .sample(window, cx);
         let bottom = window.insets().effective().bottom;
-        self.controls.holds.focused = self.handles.focused(window);
+        let footer = FOOTER.max(target_size() + SEEK_STRIP)
+            + if class == SizeClass::Compact {
+                COMPACT_STATUS
+            } else {
+                0.0
+            };
+        self.prepare_footer(footer, class, window, cx);
+        self.controls.holds.focused = self.handles.focused(window, cx);
         if class != self.class {
             // A window of another class keeps another number of pictures.
             self.class = class;
@@ -119,9 +133,9 @@ impl Render for ReaderPage {
                 div()
                     .flex_none()
                     .w_full()
-                    .h(px(FOOTER) + bottom)
+                    .h(px(footer) + bottom)
                     .pb(bottom)
-                    .children(ready.then(|| self.footer(class, ink, presence, cx))),
+                    .children(ready.then(|| self.footer(class, ink, presence, window, cx))),
             )
     }
 }
@@ -318,12 +332,62 @@ impl ReaderPage {
             .into_any_element()
     }
 
+    /// Updates the book page estimates and the seek slider for this frame.
+    fn prepare_footer(
+        &mut self,
+        footer: f32,
+        class: SizeClass,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        let appearance = Appearance::global(cx).read(cx);
+        let settings = appearance.settings();
+        let viewport = window.viewport_size();
+        let insets = window.insets().effective();
+        let height = viewport.height - insets.top - insets.bottom - px(BAR_HEIGHT + footer);
+        self.pages.set_layout(Layout {
+            column: column_width(viewport.width.as_f32(), settings.text_size, class),
+            height: height.as_f32().max(1.0),
+            text_size: settings.text_size,
+            line_height: settings.line_height,
+            rem: window.rem_size(),
+            font: appearance.reading_font(cx),
+        });
+        self.scrubber.sync(self.progress, window, cx);
+    }
+
+    /// Keeps the slider's hit area available while the track is transparent.
+    fn seek_strip(&self, ink: Hsla, window: &Window, cx: &gpui_kit::App) -> impl IntoElement {
+        let keyboard_focus =
+            window.last_input_was_keyboard() && self.handles.scrubber.contains_focused(window, cx);
+        let active = self.scrubber.preview.is_some() || keyboard_focus;
+        div()
+            .id("reader-seek-strip")
+            .absolute()
+            .bottom_0()
+            .left_5()
+            .right_5()
+            .h(px(SEEK_STRIP))
+            .px_2()
+            .key_context(SCRUBBER)
+            .track_focus(&self.handles.scrubber)
+            .opacity(if active { 1.0 } else { 0.0 })
+            .hover(|style| style.opacity(1.0))
+            .child(
+                Slider::new(&self.scrubber.slider)
+                    .accessibility_label("Reading position")
+                    .bg(ink)
+                    .text_color(ink),
+            )
+    }
+
     /// The current page number and the controls around it.
     fn footer(
         &self,
         class: SizeClass,
         ink: Hsla,
         presence: PresenceSample,
+        window: &Window,
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let Phase::Ready(reading) = &self.phase else {
@@ -331,15 +395,31 @@ impl ReaderPage {
         };
         let shown = presence.should_render();
         let muted = ink.opacity(0.72);
-        let title = chapter_title(&reading.snapshot, self.spot.chapter, self.spot.offset);
-        let text = status_text(&title, self.progress);
-        let number = self.view.read(cx).page_number().map(|(page, total)| {
-            status_line("reader-page-number", format!("{page} of {total}"))
-                .min_w(px(72.0))
-                .text_center()
-                .text_sm()
-                .text_color(muted)
-        });
+        let (chapter, offset, progress) = self
+            .scrubber
+            .preview
+            .and_then(|progress| {
+                reading
+                    .snapshot
+                    .at_progress(progress)
+                    .map(|(chapter, offset)| (chapter, offset, progress))
+            })
+            .unwrap_or((self.spot.chapter, self.spot.offset, self.progress));
+        let title = chapter_title(&reading.snapshot, chapter, offset);
+        let text = status_text(&title, progress);
+        let number = self
+            .view
+            .read(cx)
+            .page_number()
+            .filter(|_| !reading.loading)
+            .map(|local| {
+                let number = self.pages.label(&reading.snapshot, reading.chapter, local);
+                status_line("reader-page-number", number)
+                    .min_w(px(72.0))
+                    .text_center()
+                    .text_sm()
+                    .text_color(muted)
+            });
         let previous = icon_button("previous-page", IconName::ChevronLeft, "Previous page")
             .rounded_full()
             .track_focus(&self.handles.previous)
@@ -358,7 +438,7 @@ impl ReaderPage {
         };
         let row = h_flex()
             .w_full()
-            .min_h(px(crate::shared::ui::target_size()))
+            .min_h(px(target_size()))
             .items_center()
             .child(
                 div()
@@ -372,7 +452,8 @@ impl ReaderPage {
             .children(shown.then(|| next.opacity(presence.progress)))
             .child(div().flex_1().min_w_0());
         Self::control_hover("reader-footer", cx)
-            .w_full()
+            .relative()
+            .size_full()
             .px_5()
             .child(row)
             .children((shown && compact).then(|| {
@@ -381,14 +462,7 @@ impl ReaderPage {
                     .opacity(presence.progress)
                     .child(status())
             }))
-            .children(shown.then(|| {
-                Progress::new("reader-progress")
-                    .accessibility_label("Book progress")
-                    .value(progress_percent(self.progress))
-                    .with_size(px(2.0))
-                    .mt_1()
-                    .opacity(presence.progress)
-            }))
+            .child(self.seek_strip(ink, window, cx))
             .into_any_element()
     }
 

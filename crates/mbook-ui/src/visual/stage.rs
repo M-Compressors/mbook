@@ -214,18 +214,28 @@ impl Stage {
         self.press_at(at)
     }
 
+    /// The centre of the first control with this accessible name.
+    fn centre_of_label(&mut self, label: &str) -> Result<Point<Pixels>> {
+        self.with_window(|window, _| {
+            window
+                .find_all_by_label(label)
+                .first()
+                .map(|found| found.bounds().center())
+        })?
+        .ok_or_else(|| missing(label))
+    }
+
     /// Clicks the control with this accessible name.
     pub(super) fn click_label(&mut self, label: &str) -> Result<()> {
-        let label = label.to_owned();
-        let at = self
-            .with_window(|window, _| {
-                window
-                    .find_all_by_label(&label)
-                    .first()
-                    .map(|found| found.bounds().center())
-            })?
-            .ok_or_else(|| missing(&label))?;
+        let at = self.centre_of_label(label)?;
         self.press_at(at)
+    }
+
+    /// Puts the pointer over the control with this accessible name.
+    pub(super) fn hover_label(&mut self, label: &str) -> Result<()> {
+        let at = self.centre_of_label(label)?;
+        self.with_window(|window, cx| window.pointer_move(at, None, cx))?;
+        self.settle()
     }
 
     fn press_at(&mut self, at: Point<Pixels>) -> Result<()> {

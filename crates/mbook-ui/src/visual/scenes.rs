@@ -74,10 +74,7 @@ pub(super) fn all() -> Vec<Shot> {
         },
         Shot {
             settings: keep_controls,
-            ..shot("05b-reader-next-page", Library::Books, |stage| {
-                open_reader(stage)?;
-                stage.click("next-page")
-            })
+            ..shot("05b-reader-next-page", Library::Books, reader_next_page)
         },
         shot("06a-reader-hidden", Library::Books, reader_hidden),
         Shot {
@@ -242,6 +239,12 @@ fn ask(stage: &mut Stage, event: LibraryEvent) -> Result<()> {
 fn open_reader(stage: &mut Stage) -> Result<()> {
     let key = book(stage, 0)?;
     ask(stage, LibraryEvent::Open(key))
+}
+
+fn reader_next_page(stage: &mut Stage) -> Result<()> {
+    open_reader(stage)?;
+    stage.click("next-page")?;
+    stage.hover_label("Reading position")
 }
 
 fn reader_hidden(stage: &mut Stage) -> Result<()> {

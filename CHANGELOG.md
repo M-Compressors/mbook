@@ -4,6 +4,10 @@
 
 ### Changed
 
+- The reader shows a page number for the whole book and marks estimates
+  while chapters are still unmeasured. A position slider previews the
+  destination and seeks on release. The slider appears when the pointer
+  reaches the bottom strip, while seeking, or when it has keyboard focus.
 - The default reading text size is 20 px. Saved text sizes still apply.
 - The mbook reader lays out chapters as individual pages, with an animated
   turn, a persistent page number, and progress that fades with the controls.
@@ -24,6 +28,9 @@
   `mbook_converter::mbook`.
 
 ### Fixed
+
+- The native book, picture, and cover pickers filter to supported file
+  extensions.
 
 - The shelf hover highlight has padding around the cover and reading status.
 - AVIF pictures decode on a dedicated stack, so opening an illustrated

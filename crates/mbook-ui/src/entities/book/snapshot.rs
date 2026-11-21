@@ -53,11 +53,7 @@ impl BookSnapshot {
     /// of its chapter counts as the end, and a chapter past the last one as
     /// the end of the book. It is 0 for a book without text.
     pub(crate) fn progress(&self, chapter: usize, offset: u32) -> u16 {
-        let total: u128 = self
-            .chapters
-            .iter()
-            .map(|info| u128::from(info.decoded_len))
-            .sum();
+        let total = self.decoded_len();
         if total == 0 {
             return 0;
         }
@@ -72,6 +68,36 @@ impl BookSnapshot {
         });
         let thousandths = (before + within) * 1000 / total;
         u16::try_from(thousandths).map_or(1000, |value| value.min(1000))
+    }
+
+    /// The chapter and byte offset at this fraction of the decoded text.
+    ///
+    /// The ends go to the first and last chapter, including an empty one.
+    /// Interior positions on a boundary go to the next non-empty chapter.
+    /// Returns `None` when there are no chapters.
+    pub(crate) fn at_progress(&self, permille: u16) -> Option<(usize, u32)> {
+        let last = self.chapters.len().checked_sub(1)?;
+        let total = self.decoded_len();
+        if permille == 0 || (total == 0 && permille < 1000) {
+            return Some((0, 0));
+        }
+        let mut remaining = (total * u128::from(permille.min(1000))).div_ceil(1000);
+        for (index, info) in self.chapters.iter().enumerate() {
+            let bytes = u128::from(info.decoded_len);
+            if remaining < bytes || index == last {
+                return Some((index, u32::try_from(remaining).unwrap_or(u32::MAX)));
+            }
+            remaining -= bytes;
+        }
+        None
+    }
+
+    /// The sum of the decoded lengths, including books with very large chapters.
+    fn decoded_len(&self) -> u128 {
+        self.chapters
+            .iter()
+            .map(|info| u128::from(info.decoded_len))
+            .sum()
     }
 
     /// Where a stored place is now: the index of its chapter and the offset,
@@ -204,6 +230,40 @@ mod tests {
             Vec::new(),
         );
         assert_eq!(huge.progress(1, u32::MAX), 500);
+    }
+
+    #[test]
+    fn progress_seeks_across_chapter_boundaries() {
+        assert_eq!(two_chapters().at_progress(250), Some((1, 0)));
+        assert_eq!(two_chapters().at_progress(500), Some((1, 100)));
+    }
+
+    #[test]
+    fn seeking_to_the_edges_includes_empty_chapters() {
+        let book = snapshot(
+            vec![info("first", 0), info("middle", 100), info("last", 0)],
+            Vec::new(),
+        );
+        assert_eq!(book.at_progress(0), Some((0, 0)));
+        assert_eq!(book.at_progress(1000), Some((2, 0)));
+    }
+
+    #[test]
+    fn a_positive_seek_rounds_up_in_a_short_book() {
+        let book = snapshot(vec![info("short", 1)], Vec::new());
+        assert_eq!(book.at_progress(1), Some((0, 1)));
+    }
+
+    #[test]
+    fn no_progress_position_exists_without_chapters() {
+        assert_eq!(snapshot(Vec::new(), Vec::new()).at_progress(500), None);
+    }
+
+    #[test]
+    fn a_book_of_empty_chapters_seeks_to_its_start_or_end() {
+        let book = snapshot(vec![info("first", 0), info("last", 0)], Vec::new());
+        assert_eq!(book.at_progress(500), Some((0, 0)));
+        assert_eq!(book.at_progress(1000), Some((1, 0)));
     }
 
     #[test]

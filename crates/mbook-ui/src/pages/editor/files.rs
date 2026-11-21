@@ -6,7 +6,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use gpui_kit::{AppContext as _, Context, PathPromptOptions, RenderImage, Window};
+use gpui_kit::{AppContext as _, Context, RenderImage, Window};
 
 use super::EditorPage;
 use super::commands::{ChapterOp, Origin};
@@ -14,9 +14,10 @@ use super::encode::{Encoded, Job, Target, encode_file, words};
 use super::prompts::{PathRequest, ask_path};
 use super::session::{Control, line_and_column, propose_chapter_path, propose_picture_path};
 use crate::entities::catalogue::{BookRow, Catalogue, CatalogueError, Store};
-use crate::entities::picture::{PictureError, decode_avif};
+use crate::entities::picture::{PictureError, decode_avif, picture_file_extensions};
 use crate::features::edit_book::command::Command;
 use crate::features::import_book::refresh_thumbnail;
+use crate::shared::file_picker;
 use crate::shared::model::BookKey;
 use crate::shared::roots::Roots;
 use crate::shared::ui::announce;
@@ -34,24 +35,26 @@ impl EditorPage {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
-        let chosen = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: target == Target::Picture,
-            prompt: Some("Add".into()),
-        });
         let control = control_of(target);
         self.chooser = Some(cx.spawn_in(window, async move |this, cx| {
-            let paths = match chosen.await {
-                Ok(Ok(Some(paths))) => paths,
-                Ok(Ok(None)) | Err(_) => return,
-                Ok(Err(_)) => {
+            let title = match target {
+                Target::Cover => "Choose a cover",
+                Target::Picture => "Add pictures",
+            };
+            let extensions = picture_file_extensions();
+            let paths = match file_picker::choose(
+                title,
+                "Pictures",
+                &extensions,
+                target == Target::Picture,
+            )
+            .await
+            {
+                Ok(Some(paths)) => paths,
+                Ok(None) => return,
+                Err(error) => {
                     this.update_in(cx, |this, _, cx| {
-                        this.session.set_error(
-                            control,
-                            "The file dialog could not be opened. Drop the file on the window instead."
-                                .to_owned(),
-                        );
+                        this.session.set_error(control, error.to_string());
                         cx.notify();
                     })
                     .ok();

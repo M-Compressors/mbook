@@ -17,7 +17,9 @@ mod chrome;
 mod contents;
 mod controls;
 mod keys;
+mod pagination;
 mod pictures;
+mod scrubber;
 #[cfg(test)]
 mod support;
 #[cfg(test)]
@@ -37,7 +39,9 @@ use gpui_kit::{
 
 use self::contents::ContentsPanel;
 use self::controls::{HIDE_AFTER, Plan};
+use self::pagination::BookPages;
 use self::pictures::{CONCURRENCY, Job, Pictures};
+use self::scrubber::Scrubber;
 use self::typography::TypographyPanel;
 use crate::entities::book::chapter::{PreparedChapter, Target};
 use crate::entities::book::error::BookError;
@@ -136,6 +140,7 @@ struct Handles {
     edit: FocusHandle,
     previous: FocusHandle,
     next: FocusHandle,
+    scrubber: FocusHandle,
 }
 
 impl Handles {
@@ -147,11 +152,12 @@ impl Handles {
             edit: cx.focus_handle(),
             previous: cx.focus_handle(),
             next: cx.focus_handle(),
+            scrubber: cx.focus_handle(),
         }
     }
 
     /// Whether the focus is on one of the controls.
-    fn focused(&self, window: &Window) -> bool {
+    fn focused(&self, window: &Window, cx: &App) -> bool {
         [
             &self.back,
             &self.contents,
@@ -162,6 +168,7 @@ impl Handles {
         ]
         .into_iter()
         .any(|handle| handle.is_focused(window))
+            || self.scrubber.contains_focused(window, cx)
     }
 }
 
@@ -187,6 +194,8 @@ pub(crate) struct ReaderPage {
     chapter_generation: u64,
     spot: Spot,
     progress: u16,
+    pages: BookPages,
+    scrubber: Scrubber,
     /// Where a link or an entry of the contents was followed from.
     history: Vec<Spot>,
     /// Where to continue once the book is open again.
@@ -236,8 +245,12 @@ impl ReaderPage {
             });
         });
         let handles = Handles::new(cx);
+        let scrubber = Scrubber::new(cx);
         let subscriptions = vec![
             cx.observe(&appearance, |_, _, cx| cx.notify()),
+            cx.subscribe(&scrubber.slider, |this, _, event, cx| {
+                this.on_scrub(event, cx);
+            }),
             cx.subscribe(&view, |this, _, event, cx| match event {
                 ChapterViewEvent::Moved => this.sample(cx),
                 ChapterViewEvent::Turn(direction) => this.screen(*direction, cx),
@@ -268,6 +281,8 @@ impl ReaderPage {
             chapter_generation: 0,
             spot: Spot::default(),
             progress: 0,
+            pages: BookPages::default(),
+            scrubber,
             history: Vec::new(),
             resume_at: None,
             opened_ms: now_ms(),
@@ -387,6 +402,8 @@ impl ReaderPage {
                 cx,
             );
         });
+        self.pages = BookPages::default();
+        self.scrubber.reset();
         self.phase = Phase::Ready(Reading {
             snapshot,
             source: Some(source),
@@ -700,11 +717,14 @@ impl ReaderPage {
         if reading.loading || reading.error.is_some() || reading.prepared.is_none() {
             return;
         }
-        let (offset, at_end) = {
-            let view = self.view.read(cx);
-            (view.top_offset(cx), view.at_end(cx))
-        };
         let chapter = reading.chapter;
+        let (offset, at_end, number) = {
+            let view = self.view.read(cx);
+            (view.top_offset(cx), view.at_end(cx), view.page_number())
+        };
+        if let Some((_, count)) = number {
+            self.pages.record(chapter, count);
+        }
         let snapshot = Arc::clone(&reading.snapshot);
         self.spot = Spot { chapter, offset };
         let previous = Library::global(cx)
@@ -792,6 +812,7 @@ impl ReaderPage {
         keep || self.controls.holds.hovered
             || self.controls.holds.focused
             || self.controls.holds.panel
+            || self.scrubber.preview.is_some()
             || self.panel.is_some()
             || !matches!(&self.phase, Phase::Ready(reading) if reading.error.is_none())
     }

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
+use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{
     Action as _, AnyWindowHandle, AppContext as _, ClickEvent, Entity, Focusable as _, Role,
     TestAppContext, TouchClickEvent,
@@ -890,36 +890,131 @@ fn the_typeface_is_chosen_from_the_ones_on_offer(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn the_next_button_advances_the_page_number(cx: &mut TestAppContext) {
+fn pages_are_numbered_across_chapters(cx: &mut TestAppContext) {
     let started = start(cx, 800.0).unwrap();
     settle(&started, cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(
+            window
+                .find("reader-page-number")
+                .label()
+                .unwrap()
+                .starts_with("≈ 1 of ")
+        );
+    });
+    let first = started
+        .page
+        .read_with(cx, |page, cx| page.view.read(cx).page_number().unwrap().1);
     started
         .page
         .update(cx, |page, cx| page.load_chapter(1, Arrival::Start, cx));
     settle(&started, cx);
+    testing::frame(cx, started.window, |window, _| {
+        let words = window
+            .find("reader-page-number")
+            .label()
+            .unwrap()
+            .to_owned();
+        assert!(words.starts_with(&format!("{} of ", first + 1)), "{words}");
+    });
     click(&started, "next-page", cx);
     testing::frame(cx, started.window, |window, _| {
-        assert!(
-            window
-                .find("reader-page-number")
-                .label()
-                .unwrap()
-                .starts_with("2 of ")
-        );
+        let words = window
+            .find("reader-page-number")
+            .label()
+            .unwrap()
+            .to_owned();
+        assert!(words.starts_with(&format!("{} of ", first + 2)), "{words}");
     });
     click(&started, "previous-page", cx);
     testing::frame(cx, started.window, |window, _| {
-        assert!(
-            window
-                .find("reader-page-number")
-                .label()
-                .unwrap()
-                .starts_with("1 of ")
-        );
+        let words = window
+            .find("reader-page-number")
+            .label()
+            .unwrap()
+            .to_owned();
+        assert!(words.starts_with(&format!("{} of ", first + 1)), "{words}");
     });
 }
 
+#[gpui_kit::test]
+fn the_reading_slider_previews_a_chapter_and_seeks_on_release(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    let at = testing::frame(cx, started.window, |window, cx| {
+        let slider = window.find_by_label("Reading position");
+        assert_eq!(slider.role(), Some(Role::Slider));
+        let at = slider.bounds().center();
+        window.pointer_down(at, gpui_kit::MouseButton::Left, cx);
+        at
+    });
+    settle(&started, cx);
+    assert_eq!(chapter_of(&started, cx), 0);
+    testing::frame(cx, started.window, |window, cx| {
+        assert_eq!(window.find("reader-status").label(), Some("Two, 50%"));
+        window.pointer_up(at, gpui_kit::MouseButton::Left, cx);
+    });
+    settle(&started, cx);
+    assert_eq!(chapter_of(&started, cx), 1);
+    assert!(top(&started, cx) > 0);
+}
+
+#[gpui_kit::test]
+fn dragging_the_thumb_moves_to_the_target_page(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    testing::frame(cx, started.window, |window, cx| {
+        let slider = window.find_by_label("Reading position").bounds();
+        let center = slider.center();
+        window.drag(gpui_kit::point(slider.left(), center.y), center, cx);
+    });
+    settle(&started, cx);
+    assert_eq!(chapter_of(&started, cx), 1);
+    assert!(top(&started, cx) > 0);
+}
+
+#[gpui_kit::test]
+fn the_reading_slider_reaches_the_ends_with_the_keyboard(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    let focused = |cx: &mut TestAppContext| {
+        testing::frame(cx, started.window, |window, _| {
+            window.find_by_label("Reading position").focused() == Some(true)
+        })
+    };
+    for _ in 0..12 {
+        if focused(cx) {
+            break;
+        }
+        press(&started, "tab", cx);
+    }
+    assert!(focused(cx));
+    press(&started, "end", cx);
+    assert_eq!(chapter_of(&started, cx), 1);
+    assert_eq!(started.page.read_with(cx, |page, _| page.progress), 1000);
+    press(&started, "home", cx);
+    assert_eq!(chapter_of(&started, cx), 0);
+    assert_eq!(top(&started, cx), 0);
+}
+
 // The controls
+
+#[gpui_kit::test]
+fn the_slider_stays_available_to_accessibility_when_the_controls_hide(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    rest_the_pointer(&started, cx);
+    cx.executor()
+        .advance_clock(HIDE_AFTER + Duration::from_millis(100));
+    settle(&started, cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(window.try_find("back").is_none());
+        assert_eq!(
+            window.find_by_label("Reading position").role(),
+            Some(Role::Slider)
+        );
+    });
+}
 
 #[gpui_kit::test]
 fn the_controls_hide_while_reading_and_come_back_on_a_key(cx: &mut TestAppContext) {

@@ -10,6 +10,8 @@ pub(super) const CONTEXT: &str = "Reader";
 /// bring them back instead of moving the focus to something that cannot be
 /// seen.
 pub(super) const HIDDEN: &str = "ControlsHidden";
+/// The slider owns the navigation keys while it has focus.
+pub(super) const SCRUBBER: &str = "ReadingPosition";
 
 actions!(
     reader,
@@ -62,7 +64,9 @@ pub(crate) fn bind(cx: &mut App) {
         ("secondary-[", Box::new(PreviousChapter)),
         ("secondary-]", Box::new(NextChapter)),
     ];
-    let context = KeyBindingContextPredicate::parse(CONTEXT).ok().map(Rc::new);
+    let context = KeyBindingContextPredicate::parse(&format!("{CONTEXT} && !{SCRUBBER}"))
+        .ok()
+        .map(Rc::new);
     // A key the platform cannot parse is left out; the controls still reach
     // every action.
     let bindings: Vec<KeyBinding> = keys

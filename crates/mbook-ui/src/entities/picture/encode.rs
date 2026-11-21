@@ -10,6 +10,26 @@ use image::codecs::avif::AvifEncoder;
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
 use std::io::Cursor;
 
+/// The image formats that are decoded and converted to AVIF.
+const DECODE_FORMATS: [ImageFormat; 5] = [
+    ImageFormat::Jpeg,
+    ImageFormat::Png,
+    ImageFormat::Gif,
+    ImageFormat::WebP,
+    ImageFormat::Bmp,
+];
+
+/// File extensions offered by the picture picker, including AVIF passthrough.
+pub(crate) fn picture_file_extensions() -> Vec<&'static str> {
+    std::iter::once("avif")
+        .chain(
+            DECODE_FORMATS
+                .into_iter()
+                .flat_map(|format| format.extensions_str().iter().copied()),
+        )
+        .collect()
+}
+
 /// How a picture is encoded, and how large a picture may be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct EncodeOptions {
@@ -63,16 +83,10 @@ fn decode(bytes: &[u8], max_pixels: u64) -> Result<DynamicImage, PictureError> {
     let reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(PictureError::undecodable)?;
-    if !matches!(
-        reader.format(),
-        Some(
-            ImageFormat::Jpeg
-                | ImageFormat::Png
-                | ImageFormat::Gif
-                | ImageFormat::WebP
-                | ImageFormat::Bmp
-        )
-    ) {
+    if !reader
+        .format()
+        .is_some_and(|format| DECODE_FORMATS.contains(&format))
+    {
         return Err(PictureError::UnsupportedFormat);
     }
     let mut decoder = reader.into_decoder().map_err(PictureError::undecodable)?;
@@ -103,7 +117,7 @@ fn encode(picture: &DynamicImage, options: EncodeOptions) -> Result<Vec<u8>, Pic
 
 #[cfg(test)]
 mod tests {
-    use super::{EncodeOptions, encode_avif};
+    use super::{EncodeOptions, encode_avif, picture_file_extensions};
     use crate::entities::picture::decode::decode_avif;
     use crate::entities::picture::error::PictureError;
     use image::{DynamicImage, ImageFormat, Rgb, RgbImage, Rgba, RgbaImage};
@@ -134,6 +148,14 @@ mod tests {
         let mut book = Book::new("T", "en").unwrap();
         let size = book.add_picture("p.avif", avif).unwrap().size();
         (size.width, size.height)
+    }
+
+    #[test]
+    fn the_picture_picker_offers_only_the_supported_picture_extensions() {
+        assert_eq!(
+            picture_file_extensions(),
+            ["avif", "jpg", "jpeg", "png", "gif", "webp", "bmp"]
+        );
     }
 
     #[test]
