@@ -67,6 +67,8 @@ impl Section {
 /// What the chapter area shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ViewMode {
+    /// Formatted text that can be edited directly.
+    Visual,
     /// The Markdown editor alone.
     Source,
     /// The editor and the preview side by side.
@@ -79,18 +81,18 @@ impl ViewMode {
     /// The name of the choice.
     pub(super) const fn label(self) -> &'static str {
         match self {
+            Self::Visual => "Visual",
             Self::Source => "Source",
             Self::Split => "Split",
             Self::Preview => "Preview",
         }
     }
 
-    /// The choices a window of this size class offers: all three when it is
-    /// expanded, and one or the other below it.
+    /// The choices a window of this size class offers.
     pub(super) const fn available(class: SizeClass) -> &'static [Self] {
         match class {
-            SizeClass::Expanded => &[Self::Source, Self::Split, Self::Preview],
-            SizeClass::Medium | SizeClass::Compact => &[Self::Source, Self::Preview],
+            SizeClass::Expanded => &[Self::Visual, Self::Source, Self::Split, Self::Preview],
+            SizeClass::Medium | SizeClass::Compact => &[Self::Visual, Self::Source, Self::Preview],
         }
     }
 

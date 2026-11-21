@@ -334,6 +334,9 @@ impl EditorPage {
         self.loaded = None;
         self.text
             .update(cx, |state, cx| state.set_disabled(true, cx));
+        self.visual
+            .input
+            .update(cx, |state, cx| state.set_disabled(true, cx));
         if let Some(draft) = self.session.draft(&path).map(str::to_owned) {
             self.set_editor_text(&draft, true, window, cx);
             self.loaded = Some(path);
@@ -387,6 +390,7 @@ impl EditorPage {
             state.set_value(text, window, cx);
             state.set_disabled(!editable, cx);
         });
+        self.visual_loaded(editable, window, cx);
         self.preview.update(cx, |view, cx| view.set_text(text, cx));
     }
 

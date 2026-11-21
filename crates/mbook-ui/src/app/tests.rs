@@ -314,6 +314,102 @@ fn an_editor_opened_from_the_library_returns_to_it(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_new_book_opens_in_the_editor_and_keeps_its_first_chapter(cx: &mut TestAppContext) {
+    let started = start(cx, 1200.0, &["Dune"]);
+    let root = finish(&started, cx);
+
+    click(&started, "new-book", cx);
+    testing::frame(cx, started.window, |window, cx| {
+        window.input("  A new story  ", cx);
+    });
+    click_label(&started, "Create", cx);
+    assert!(root.read_with(cx, |root, _| matches!(root.screen(), Screen::Editor(_))));
+    assert!(cx.update(|cx| Editing::any(cx)));
+
+    let key = cx.update(|cx| {
+        let library = Library::global(cx);
+        let book = library
+            .read(cx)
+            .books()
+            .iter()
+            .find(|book| book.row.title == "A new story")
+            .unwrap();
+        assert_eq!(book.row.language, "und");
+        assert!(book.row.added_ms > 0);
+        book.row.key
+    });
+    let path = started.roots.book(key);
+    let blank = mbook::Book::open(&path).unwrap();
+    assert_eq!(blank.chapters()[0].text(), "");
+
+    click_label(&started, "Visual editor of ch01.md", cx);
+    testing::frame(cx, started.window, |window, cx| {
+        window.input("It starts here.", cx);
+    });
+    click(&started, "save", cx);
+    let book = mbook::Book::open(path).unwrap();
+    assert_eq!(book.chapters()[0].text(), "It starts here.");
+}
+
+#[gpui_kit::test]
+fn a_new_book_in_a_compact_window_opens_on_the_chapter_screen(cx: &mut TestAppContext) {
+    let started = start(cx, 390.0, &[]);
+    let _root = finish(&started, cx);
+    click(&started, "create-first-book", cx);
+    testing::frame(cx, started.window, |window, cx| {
+        window.input("A short story", cx);
+    });
+    press(&started, "enter", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Visual editor of ch01.md")
+                .is_some()
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn new_book_requires_a_title_and_can_be_cancelled(cx: &mut TestAppContext) {
+    let started = start(cx, 1200.0, &[]);
+    let root = finish(&started, cx);
+    click(&started, "create-first-book", cx);
+    testing::frame(cx, started.window, |window, cx| window.input("   ", cx));
+    click_label(&started, "Create", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert_eq!(
+            window.find("new-book-error").label(),
+            Some("Enter a title.")
+        );
+    });
+    click_label(&started, "Cancel", cx);
+    assert!(root.read_with(cx, |root, _| matches!(root.screen(), Screen::Library(_))));
+    assert_eq!(std::fs::read_dir(started.roots.books()).unwrap().count(), 1);
+}
+
+#[gpui_kit::test]
+fn a_creation_failure_keeps_the_library_open(cx: &mut TestAppContext) {
+    let started = start(cx, 1200.0, &[]);
+    let root = finish(&started, cx);
+    let incoming = started.roots.incoming();
+    std::fs::remove_dir(&incoming).unwrap();
+    std::fs::write(&incoming, "").unwrap();
+
+    click(&started, "new-book", cx);
+    testing::frame(cx, started.window, |window, cx| {
+        window.input("A story", cx);
+    });
+    click_label(&started, "Create", cx);
+
+    assert!(root.read_with(cx, |root, _| matches!(root.screen(), Screen::Library(_))));
+    testing::frame(cx, started.window, |window, cx| {
+        use gpui_kit::component::WindowExt as _;
+        assert_eq!(window.notifications(cx).len(), 1);
+        assert!(window.try_find("new-book").is_some());
+    });
+}
+
+#[gpui_kit::test]
 fn a_book_counts_as_being_edited_while_its_editor_is_open(cx: &mut TestAppContext) {
     let started = start(cx, 1200.0, &["Dune"]);
     let _root = finish(&started, cx);

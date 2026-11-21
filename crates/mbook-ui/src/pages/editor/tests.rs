@@ -291,6 +291,68 @@ fn selecting_the_active_preview_mode_keeps_it_selected(cx: &mut TestAppContext) 
 }
 
 #[gpui_kit::test]
+fn the_source_editor_uses_the_markdown_highlighter(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    setup.page.read_with(cx, |page, cx| {
+        assert_eq!(page.text.read(cx).language_name().as_str(), "markdown");
+    });
+}
+
+#[gpui_kit::test]
+fn visual_text_edits_save_as_markdown_without_rewriting_the_surroundings(cx: &mut TestAppContext) {
+    let original = "# One\n\nA **word** and [a link](https://example.com).\n";
+    let setup = start_with(cx, 1280.0, &[("ch01.md", original)]);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    act(&setup, cx, |page, _, cx| {
+        page.visual.input.update(cx, |input, cx| {
+            assert_eq!(input.value(), "One\n\nA word and a link.\n");
+            input.set_selected_range(7..11, cx);
+        });
+    });
+    frame(&setup, cx, |window, cx| window.input("слово", cx));
+    click(&setup, "save", cx);
+    assert_eq!(
+        saved_titles_and_texts(&setup).1,
+        ["# One\n\nA **слово** and [a link](https://example.com).\n"]
+    );
+}
+
+#[gpui_kit::test]
+fn visual_formatting_can_be_undone_and_redone_before_switching_to_source(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "mode-visual", cx);
+    act(&setup, cx, |page, _, cx| {
+        page.visual.input.update(cx, |input, cx| {
+            input.set_selected_range(5..10, cx);
+        });
+    });
+    click(&setup, "visual-bold", cx);
+    assert_eq!(editor_text(&setup, cx), "# One\n\n**First** text.\n");
+    let mac = cx.update(|cx| cx.platform_info().os == gpui_kit::OperatingSystem::Mac);
+    press(&setup, if mac { "cmd-z" } else { "ctrl-z" }, cx);
+    assert_eq!(editor_text(&setup, cx), CHAPTERS[0].1);
+    click(&setup, "visual-redo", cx);
+    click(&setup, "mode-source", cx);
+    assert_eq!(editor_text(&setup, cx), "# One\n\n**First** text.\n");
+}
+
+#[gpui_kit::test]
+fn changing_chapters_flushes_the_visual_editor(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    frame(&setup, cx, |window, cx| window.input("New ", cx));
+    click(&setup, "chapter-ch02.md", cx);
+    click(&setup, "save", cx);
+    assert_eq!(
+        saved_titles_and_texts(&setup).1,
+        ["# New One\n\nFirst text.\n", CHAPTERS[1].1, CHAPTERS[2].1]
+    );
+}
+
+#[gpui_kit::test]
 fn a_medium_window_offers_the_source_or_the_preview(cx: &mut TestAppContext) {
     let setup = started(cx, 800.0);
     act(&setup, cx, |page, _, cx| {

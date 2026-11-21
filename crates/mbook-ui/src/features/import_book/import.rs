@@ -8,7 +8,7 @@ use std::io::{self, BufReader, BufWriter, Read as _, Write as _};
 use std::path::Path;
 use std::str::FromStr as _;
 
-use mbook::BookReader;
+use mbook::{Book, BookReader};
 use mbook_converter::{ConvertOptions, Converter, Format};
 use tempfile::NamedTempFile;
 
@@ -67,6 +67,9 @@ pub(crate) enum ImportError {
     /// The file is an mbook file that cannot be read.
     #[error("the file is not a valid book")]
     Book(#[from] mbook::Error),
+    /// The initial book could not be created or written.
+    #[error("the new book could not be written")]
+    Create(#[source] mbook::Error),
     /// The book could not be recorded.
     #[error("the book could not be added to the catalogue")]
     Catalogue(#[from] CatalogueError),
@@ -113,14 +116,49 @@ pub(crate) fn import(
     };
 
     on_step(Step::Indexing);
+    let (key, added) = shelve(roots, catalogue, incoming, added_ms, format)?;
+    Ok(Imported {
+        key,
+        added,
+        warnings,
+    })
+}
+
+/// Creates a book with an empty first chapter and adds it to the library.
+///
+/// # Errors
+///
+/// When the title is empty or the book or its catalogue row cannot be stored.
+pub(crate) fn create_book(
+    roots: &Roots,
+    catalogue: &Catalogue,
+    title: &str,
+    added_ms: u64,
+) -> Result<BookKey, ImportError> {
+    let mut book = Book::new(title, "und").map_err(ImportError::Create)?;
+    book.add_chapter("ch01.md", "")
+        .map_err(ImportError::Create)?;
+    fs::create_dir_all(roots.incoming())?;
+    let mut incoming = NamedTempFile::new_in(roots.incoming())?;
+    book.write(incoming.as_file_mut())
+        .map_err(ImportError::Create)?;
+    incoming.as_file().sync_all()?;
+    let (key, _) = shelve(roots, catalogue, incoming, added_ms, None)?;
+    Ok(key)
+}
+
+/// Installs a staged mbook file and returns its key and whether it was added.
+fn shelve(
+    roots: &Roots,
+    catalogue: &Catalogue,
+    incoming: NamedTempFile,
+    added_ms: u64,
+    format: Option<String>,
+) -> Result<(BookKey, bool), ImportError> {
     let file_len = incoming.as_file().metadata()?.len();
     let mut reader = BookReader::open(incoming.path())?;
     if let Some(key) = catalogue.find_by_id(reader.meta().id())? {
-        return Ok(Imported {
-            key,
-            added: false,
-            warnings,
-        });
+        return Ok((key, false));
     }
 
     let key = BookKey::generate();
@@ -139,11 +177,7 @@ pub(crate) fn import(
     if let Some(avif) = cover {
         write_thumbnail(roots, key, &avif);
     }
-    Ok(Imported {
-        key,
-        added: true,
-        warnings,
-    })
+    Ok((key, true))
 }
 
 /// Makes the thumbnail of a cover again, after a book was saved.
@@ -276,6 +310,32 @@ mod tests {
             .collect();
         names.sort();
         names
+    }
+
+    #[test]
+    fn an_invalid_title_leaves_no_book_in_the_library() {
+        let library = library();
+        let result = create_book(&library.roots, &library.catalogue, "", 1_000);
+        assert!(matches!(result, Err(ImportError::Create(_))));
+        assert_eq!(library.catalogue.books().unwrap(), Vec::<BookRow>::new());
+        assert_eq!(files_in(&library.roots.books()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_new_book_can_be_retried_after_a_storage_failure() {
+        let library = library();
+        let incoming = library.roots.incoming();
+        fs::remove_dir(&incoming).unwrap();
+        fs::write(&incoming, "").unwrap();
+
+        let result = create_book(&library.roots, &library.catalogue, "A draft", 1_000);
+        assert!(matches!(result, Err(ImportError::Io(_))));
+        assert_eq!(library.catalogue.books().unwrap(), Vec::<BookRow>::new());
+        assert_eq!(files_in(&library.roots.books()), Vec::<String>::new());
+
+        fs::remove_file(incoming).unwrap();
+        let key = create_book(&library.roots, &library.catalogue, "A draft", 1_000).unwrap();
+        assert!(library.roots.book(key).is_file());
     }
 
     #[test]

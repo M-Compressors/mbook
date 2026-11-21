@@ -55,7 +55,7 @@ thiserror.workspace = true
 uuid.workspace = true
 # GPUI, its component library and their assets behind one name. `gpui-fast`
 # selects the GPUI Fast engine; application code imports `gpui_kit` only.
-gpui-kit = { version = "0.10", features = ["gpui-fast"] }
+gpui-kit = { version = "0.10", features = ["gpui-fast", "tree-sitter-markdown"] }
 mimalloc3 = "0.1"
 # The data and cache directories of the platform.
 dirs = "7"

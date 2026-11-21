@@ -277,14 +277,14 @@ fn the_places_of_problems_are_forgotten_when_there_are_none() {
 
 #[test]
 fn the_views_a_window_offers_follow_its_size_class() {
-    assert_eq!(ViewMode::available(SizeClass::Expanded).len(), 3);
+    assert_eq!(ViewMode::available(SizeClass::Expanded).len(), 4);
     assert_eq!(
         ViewMode::available(SizeClass::Medium),
-        &[ViewMode::Source, ViewMode::Preview]
+        &[ViewMode::Visual, ViewMode::Source, ViewMode::Preview]
     );
     assert_eq!(
         ViewMode::available(SizeClass::Compact),
-        &[ViewMode::Source, ViewMode::Preview]
+        &[ViewMode::Visual, ViewMode::Source, ViewMode::Preview]
     );
 }
 

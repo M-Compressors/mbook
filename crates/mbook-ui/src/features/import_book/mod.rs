@@ -1,10 +1,10 @@
-//! Adding a file to the library.
+//! Adding imported and newly written books to the library.
 
 mod import;
 mod queue;
 
-pub(crate) use import::{ImportError, Imported, Step, import, refresh_thumbnail};
-pub(crate) use queue::{ImportEntry, ImportEvent, ImportQueue, ImportStatus, error_chain};
+pub(crate) use import::{ImportError, Imported, Step, create_book, import, refresh_thumbnail};
+pub(crate) use queue::{ImportEntry, ImportEvent, ImportQueue, ImportStatus, error_chain, now_ms};
 
 /// The file extensions offered by the native book picker, including ZIP
 /// containers for supported zipped sources.

@@ -47,13 +47,13 @@ impl EditorPage {
         let mode = self.session.mode.effective(class);
         let theme = cx.theme().clone();
         let (paper, ink) = page_colors(Appearance::global(cx).read(cx).page_tone(window));
-        let source = self.render_source(&path, cx);
         let label = format!("Preview of {path}");
         self.preview
             .update(cx, |view, cx| view.set_label(label, cx));
         let shown = self.preview.clone();
         let body = match mode {
-            ViewMode::Source => source.into_any_element(),
+            ViewMode::Visual => self.render_visual(&path, window, cx),
+            ViewMode::Source => self.render_source(&path, cx),
             ViewMode::Preview => div()
                 .size_full()
                 .px_4()
@@ -64,7 +64,13 @@ impl EditorPage {
                 .into_any_element(),
             ViewMode::Split => h_flex()
                 .size_full()
-                .child(div().flex_1().min_w_0().h_full().child(source))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .child(self.render_source(&path, cx)),
+                )
                 .child(
                     div()
                         .flex_1()
@@ -158,18 +164,18 @@ impl EditorPage {
                 ToggleGroup::new("view-mode")
                     .segmented()
                     .single()
-                    .on_click(cx.listener(move |this, checked: &Vec<bool>, _, cx| {
+                    .on_click(cx.listener(move |this, checked: &Vec<bool>, window, cx| {
                         if let Some(next) = checked
                             .iter()
                             .position(|selected| *selected)
                             .and_then(|index| modes_for_click.get(index))
                         {
-                            this.session.mode = *next;
-                            cx.notify();
+                            this.set_mode(*next, window, cx);
                         }
                     }))
                     .children(modes.iter().map(|candidate| {
                         let (id, icon) = match candidate {
+                            ViewMode::Visual => ("mode-visual", IconName::Type),
                             ViewMode::Source => ("mode-source", IconName::Code),
                             ViewMode::Split => ("mode-split", IconName::Columns2),
                             ViewMode::Preview => ("mode-preview", IconName::Eye),

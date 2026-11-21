@@ -38,6 +38,10 @@
 
 ### Added
 
+- A Visual chapter editor with formatting controls and undo and redo.
+  Source and Split modes highlight Markdown syntax.
+- **New book…** in the library creates a book and opens its empty first
+  chapter in the Markdown editor.
 - RFC 0004, the design of `mbook-ui`: a reading application with a library,
   a reader and an editor, built with GPUI Kit, usable without a pointer and
   with a screen reader.

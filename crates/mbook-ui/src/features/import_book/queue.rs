@@ -458,7 +458,7 @@ impl ImportQueue {
 }
 
 /// The milliseconds of Unix time now; zero if the clock is before 1970.
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| {

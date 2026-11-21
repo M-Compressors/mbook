@@ -25,7 +25,16 @@ icon_assets!(
         FilePenLine,
         FoldVertical,
         UnfoldVertical,
-        SunMoon
+        SunMoon,
+        Type,
+        Pilcrow,
+        Heading1,
+        Heading2,
+        Bold,
+        Italic,
+        Strikethrough,
+        ListOrdered,
+        Quote
     ]
 );
 
@@ -105,6 +114,30 @@ mod tests {
     #[test]
     fn an_icon_of_the_default_bundle_is_found() {
         assert!(Assets.load("icons/arrow-left.svg").unwrap().is_some());
+    }
+
+    #[test]
+    fn the_visual_editing_icons_are_embedded() {
+        for name in [
+            "type",
+            "pilcrow",
+            "heading-1",
+            "heading-2",
+            "bold",
+            "italic",
+            "strikethrough",
+            "code",
+            "list",
+            "list-ordered",
+            "quote",
+            "undo-2",
+            "redo-2",
+        ] {
+            assert!(
+                Assets.load(&format!("icons/{name}.svg")).unwrap().is_some(),
+                "{name}"
+            );
+        }
     }
 
     #[test]

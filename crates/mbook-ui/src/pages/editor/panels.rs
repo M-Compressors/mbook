@@ -223,8 +223,8 @@ impl EditorPage {
         let Some(path) = problem.path else {
             return;
         };
-        if self.session.mode == ViewMode::Preview {
-            self.session.mode = ViewMode::Source;
+        if matches!(self.session.mode, ViewMode::Preview | ViewMode::Visual) {
+            self.set_mode(ViewMode::Source, window, cx);
         }
         let offset = problem
             .offset

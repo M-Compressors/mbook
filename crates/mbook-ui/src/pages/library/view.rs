@@ -7,7 +7,7 @@ use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::sheet::Sheet;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{
-    ActiveTheme as _, Placement, Selectable as _, WindowExt as _, h_flex, v_flex,
+    ActiveTheme as _, Disableable as _, Placement, Selectable as _, WindowExt as _, h_flex, v_flex,
 };
 use gpui_kit::{
     Action as _, AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement,
@@ -117,6 +117,11 @@ impl LibraryPage {
             .trailing(
                 icon_button("add-book", IconName::Plus, "Add a book…")
                     .on_click(|_, window, cx| window.dispatch_action(OpenFile.boxed_clone(), cx)),
+            )
+            .trailing(
+                icon_button("new-book", IconName::FilePenLine, "New book…")
+                    .disabled(self.creating.is_some())
+                    .on_click(cx.listener(|this, _, window, cx| this.ask_to_create(window, cx))),
             )
             .trailing(
                 icon_button("settings", IconName::Settings, "Settings")
@@ -289,20 +294,36 @@ impl LibraryPage {
     }
 
     /// What stands in the place of the shelf when there is nothing to show.
-    fn render_empty(&self, library_empty: bool) -> AnyElement {
+    fn render_empty(&self, library_empty: bool, cx: &mut Context<'_, Self>) -> AnyElement {
         let (title, hint) = empty_words(&self.query, self.section, library_empty);
         let state = empty_state(title, hint);
         if library_empty {
             state
                 .action(
-                    Button::new("add-first-book")
-                        .primary()
-                        .label("Add a book…")
-                        .h(px(target_size()))
-                        .cursor_pointer()
-                        .on_click(|_, window, cx| {
-                            window.dispatch_action(OpenFile.boxed_clone(), cx);
-                        }),
+                    h_flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .gap_2()
+                        .child(
+                            Button::new("add-first-book")
+                                .primary()
+                                .label("Add a book…")
+                                .h(px(target_size()))
+                                .cursor_pointer()
+                                .on_click(|_, window, cx| {
+                                    window.dispatch_action(OpenFile.boxed_clone(), cx);
+                                }),
+                        )
+                        .child(
+                            Button::new("create-first-book")
+                                .label("New book…")
+                                .h(px(target_size()))
+                                .cursor_pointer()
+                                .disabled(self.creating.is_some())
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.ask_to_create(window, cx);
+                                })),
+                        ),
                 )
                 .into_any_element()
         } else {
@@ -389,7 +410,7 @@ impl Render for LibraryPage {
                 .child(Spinner::new())
                 .into_any_element()
         } else if self.shelf.visible().is_empty() {
-            self.render_empty(library_empty)
+            self.render_empty(library_empty, cx)
         } else {
             self.render_shelf(cx)
         };

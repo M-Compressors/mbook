@@ -165,9 +165,21 @@ impl Root {
         self.enter(Screen::Reader(page), subscription, window, cx);
     }
 
-    fn open_editor(&mut self, key: BookKey, window: &mut Window, cx: &mut Context<'_, Self>) {
+    fn open_editor(
+        &mut self,
+        key: BookKey,
+        start_writing: bool,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
         Editing::change(cx, 1);
-        let page = cx.new(|cx| EditorPage::new(key, window, cx));
+        let page = cx.new(|cx| {
+            let mut page = EditorPage::new(key, window, cx);
+            if start_writing {
+                page.open_first_chapter();
+            }
+            page
+        });
         let subscription = cx.subscribe_in(&page, window, Self::on_editor);
         self.enter(Screen::Editor(page), subscription, window, cx);
     }
@@ -190,7 +202,12 @@ impl Root {
     ) {
         match *event {
             LibraryEvent::Open(key) => self.open_reader(key, window, cx),
-            LibraryEvent::Edit(key) => self.open_editor(key, window, cx),
+            LibraryEvent::Edit(key) => self.open_editor(key, false, window, cx),
+            LibraryEvent::Write(key) => {
+                if matches!(self.screen(), Screen::Library(_)) {
+                    self.open_editor(key, true, window, cx);
+                }
+            }
             LibraryEvent::Settings => self.open_settings(window, cx),
         }
     }
@@ -207,7 +224,7 @@ impl Root {
             ReaderEvent::Edit(key) => {
                 // The file must be closed before the editor replaces it.
                 reader.update(cx, ReaderPage::suspend);
-                self.open_editor(key, window, cx);
+                self.open_editor(key, false, window, cx);
             }
         }
     }

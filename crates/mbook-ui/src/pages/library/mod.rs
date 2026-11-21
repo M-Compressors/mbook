@@ -15,6 +15,7 @@
 //! and never touches a file.
 
 mod cover;
+mod create;
 mod imports;
 mod menu;
 mod shelf;
@@ -55,6 +56,8 @@ pub(crate) enum LibraryEvent {
     Open(BookKey),
     /// Edit a book.
     Edit(BookKey),
+    /// Start writing a newly created book.
+    Write(BookKey),
     /// Go to the settings.
     Settings,
 }
@@ -104,6 +107,8 @@ pub(crate) struct LibraryPage {
     thumbnails: HashSet<BookKey>,
     thumbnails_generation: u64,
     probing: Option<Task<()>>,
+    /// Writing and indexing a newly created book.
+    creating: Option<Task<()>>,
     /// Whether the failure the library holds was announced, so that it is said
     /// once and not at every change of the shelf.
     error_told: bool,
@@ -166,6 +171,7 @@ impl LibraryPage {
             thumbnails: HashSet::new(),
             thumbnails_generation: 0,
             probing: None,
+            creating: None,
             error_told: false,
             #[cfg(test)]
             received: Vec::new(),

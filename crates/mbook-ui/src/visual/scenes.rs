@@ -116,6 +116,7 @@ pub(super) fn all() -> Vec<Shot> {
         }),
         shot("08f-editor-problems", Library::Books, editor_problems),
         shot("08g-editor-unsaved", Library::Books, editor_unsaved),
+        shot("08h-editor-visual", Library::Books, editor_visual),
         Shot {
             calm: false,
             ..shot("09a-settings-top", Library::Books, open_settings)
@@ -307,6 +308,12 @@ fn editor_unsaved(stage: &mut Stage) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn editor_visual(stage: &mut Stage) -> Result<()> {
+    open_editor(stage)?;
+    open_chapter(stage)?;
+    stage.click_label("Visual")
 }
 
 /// Breaks a link in a chapter and asks the editor to check the book.

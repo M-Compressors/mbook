@@ -64,8 +64,6 @@ that depends on them.
   device.
 - **Two-page spreads.** See [Future possibilities](#future-possibilities).
 - **Annotations**: highlights, notes and bookmarks.
-- **A visual (WYSIWYG) editor.** A chapter is edited as Markdown next to its
-  preview.
 - **Converting from mbook**, as in RFC 0003.
 - **A streaming editor.** [RFC 0002](0002-mbook-api.md#non-goals) has none;
   a book is edited as a whole `Book`.
@@ -150,6 +148,9 @@ Compact
   Edit, Show the file, Remove.
 - Files are added with `+` or by dropping them on the window. The system
   picker lists mbook and the extensions accepted by the converter.
+- **New book…** asks for a title. Confirming creates a book in the library
+  and opens its empty first chapter in the Markdown editor. The title and
+  language can be changed in **Details**.
 
 ### Reader
 
@@ -209,12 +210,17 @@ Expanded
 | Problems  2  |                           |                           |
 +--------------+---------------------------+---------------------------+
 
-Compact: a stack. Sections, then a chapter with Source | Preview.
+Compact: a stack. Sections, then a chapter with Visual | Source | Preview.
 ```
 
-- The chapter toolbar uses a segmented icon picker for Source, Split and
-  Preview. Compact and medium windows offer Source and Preview. Each icon
-  has a tooltip and an accessible name.
+- The chapter toolbar offers Visual, Source, Split and Preview. Split is
+  available in expanded windows. Each icon has a tooltip and an accessible
+  name. A newly created book opens in Visual.
+- **Visual** edits formatted chapter text with controls for paragraphs,
+  headings, emphasis, strikethrough, inline code, lists and quotes. Link
+  labels and picture alternatives are editable in place. Source provides
+  direct access to destinations, tables and reference definitions.
+- **Source** and the source side of **Split** highlight Markdown syntax.
 - **Details** is a form over the metadata of RFC 0001: title, authors,
   language, series, publisher, date, annotation.
 - **Chapters** are a list in reading order: add, remove, move up and down.
@@ -697,6 +703,11 @@ element is reported when it has an identifier and a role.
 
 ### Editing
 
+- The library creates new books with `Book::new`, the entered title and
+  the language tag `und`. It adds an empty `ch01.md`, writes the book into
+  `books/.incoming/` and uses the same install and catalogue step as an
+  import. The editor opens after the file and its catalogue row are in place.
+
 ```mermaid
 sequenceDiagram
     participant V as Views (main thread)
@@ -717,7 +728,15 @@ sequenceDiagram
 - The main thread holds an *outline*: the metadata, the paths and sizes of
   chapters and pictures, the contents, the problems last reported. The task
   sends a new outline after each command that changes it.
-- The text of the chapter being edited is in the editor of GPUI Kit. It is
+- The Markdown text of the chapter is in the source editor of GPUI Kit.
+  Source and Split use its Tree-sitter Markdown grammar.
+- Visual displays a second GPUI Kit editor with a projection of Markdown.
+  The GFM syntax tree supplies the byte ranges for styling text and hiding
+  delimiters. A visual edit maps to a splice of the original Markdown.
+  Opening or closing Visual leaves unedited source bytes intact. The
+  visual history retains at most 40 revisions per stack and evicts old
+  revisions once their text exceeds 8 MiB. The newest revision is retained.
+- The source text is
   sent to the task as `Chapter::set_text` when typing pauses for 400 ms,
   when another chapter is opened, and before a check or a save.
 - The preview is the Markdown view of the reader, given the text of the
@@ -780,7 +799,7 @@ sequenceDiagram
 | Columns of the shelf | As many covers of 104 px as fit | Covers of 132 px | Covers of 132 px |
 | Contents of a book | A sheet | A sheet | A popover |
 | Paged text column | Window width less 20 px on each side | At most 38 em with at least 32 px on each side | At most 38 em with at least 32 px on each side |
-| Editor | A stack; source or preview | Source or preview; sections slide over | Sections, source and preview side by side |
+| Editor | A stack; Visual, Source or Preview | Visual, Source or Preview; sections slide over | Sections beside Visual, Source, Split or Preview |
 | Menu of a book | A long press | A long press, or `…` | A right click, or `…` |
 
 ### Updates
@@ -911,10 +930,10 @@ can break in its middle.
 
 | Part | State |
 | --- | --- |
-| Library | Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
+| Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
 | Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. A block taller than the page can be clipped through a line. Pictures keep the decode width of their first draw. |
-| Editor | A segmented icon picker controls the source and preview. The preview uses the page tone and shows picture alternatives. Markdown syntax highlighting and drag to reorder are unimplemented. |
+| Editor | The Visual editor styles prose and supports common formatting commands. Images appear as alternative text. Tables and reference definitions can be edited as Markdown. Source and Split highlight Markdown syntax. Drag to reorder is unimplemented. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. No real release exists, so neither has met the network; the Windows part has never been compiled. |
 | Release workflow | Written; never run. A local `cargo bundle` on macOS produces the application with its icon. |
@@ -984,7 +1003,9 @@ asks:
 | Whole-book page numbers | Combine measured chapters and estimates for the current layout | A fixed count in the file or a full-book layout pass on open | Reflow changes the rendered count. Estimates let the book open lazily, and each measured chapter replaces its estimate. |
 | Seeking within the book | Use the decoded chapter lengths and an offset | Index every page before allowing a seek | Chapter lengths are already in the snapshot and locate a destination even before its chapter is measured. |
 | Stored place | Chapter path and byte offset | Resource number and offset | Numbers change when a book is written again. |
+| Creating a book | Create a titled book with one empty chapter and open it in the editor | Ask for chapter paths before opening the editor | A writer can start with the title and go straight to writing. The title and chapter paths remain editable. |
 | Editing | One background task owns the `Book`; commands in order | A `Book` behind a mutex, one task per change | Separate tasks may run out of order: a save could miss the edit before it. |
+| Visual chapter editing | Map edits to source bytes with the GFM syntax tree | Serialize the formatted document on save | A splice preserves untouched Markdown, including constructs with no formatting command. |
 | Where an edit is saved | Over the book in the library, by a rename | Always a new copy | Decided by the format author. The library is the working copy; the original file was never touched. |
 | Catalogue | `redb` | SQLite through `rusqlite` | Decided by the format author. Pure Rust: nothing to cross-compile for a phone. The price is no SQL; a library is filtered in memory. |
 | | | No catalogue; open every file at start | Reading places and settings need a store anyway, and a shelf of thousands should not wait for thousands of files. |

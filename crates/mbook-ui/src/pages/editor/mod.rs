@@ -28,11 +28,13 @@ mod session;
 #[cfg(test)]
 mod tests;
 mod view;
+mod visual;
+mod visual_document;
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use gpui_kit::component::input::{EditorState, InputEvent};
+use gpui_kit::component::input::{EditorState, InputEditsEvent, InputEvent};
 use gpui_kit::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, RenderImage,
     Subscription, Task, Window,
@@ -47,7 +49,8 @@ use crate::widgets::chapter_view::ChapterView;
 
 use self::details::Fields;
 use self::encode::{Encoded, Job, Target};
-use self::session::{MetaField, Session};
+use self::session::{Level, MetaField, Session, ViewMode};
+use self::visual::VisualEditor;
 
 /// What the editor asks the root to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +135,7 @@ pub(crate) struct EditorPage {
     requests: HashMap<u64, Task<()>>,
     /// The Markdown editor, which holds the text of the open chapter.
     text: Entity<EditorState>,
+    visual: VisualEditor,
     /// The preview of the text of the editor.
     preview: Entity<ChapterView>,
     /// The chapter whose text is in the editor.
@@ -171,16 +175,33 @@ impl EditorPage {
         let actor = cx.background_spawn(serving);
         let text = cx.new(|cx| {
             let mut state = EditorState::new(window, cx)
+                .language("markdown")
+                .folding(false)
                 .line_number(false)
                 .soft_wrap(true);
             state.set_disabled(true, cx);
             state
         });
+        let visual = VisualEditor::new(window, cx);
         let fields = Fields::new(window, cx);
         let mut subscriptions = vec![
             cx.subscribe_in(&text, window, |this, _, event: &InputEvent, window, cx| {
                 this.on_text_event(event, window, cx);
             }),
+            cx.subscribe_in(
+                &visual.input,
+                window,
+                |this, _, event: &InputEditsEvent, window, cx| this.visual_typed(event, window, cx),
+            ),
+            cx.subscribe_in(
+                &visual.input,
+                window,
+                |this, _, event: &InputEvent, window, cx| {
+                    if !matches!(event, InputEvent::Change) {
+                        this.on_text_event(event, window, cx);
+                    }
+                },
+            ),
             cx.observe(&Appearance::global(cx), |_, _, cx| cx.notify()),
         ];
         subscriptions.extend(fields.subscribe(window, cx));
@@ -193,6 +214,7 @@ impl EditorPage {
             sent: 0,
             requests: HashMap::new(),
             text,
+            visual,
             preview: preview::new_preview(window, cx),
             loaded: None,
             load_generation: 0,
@@ -213,9 +235,18 @@ impl EditorPage {
         page
     }
 
+    /// Starts a newly created book on the chapter screen at every window size.
+    pub(crate) fn open_first_chapter(&mut self) {
+        self.session.level = Level::Chapter;
+        self.session.mode = ViewMode::Visual;
+    }
+
     /// The focus handle of the Markdown editor.
     fn text_focus(&self, cx: &App) -> FocusHandle {
-        self.text.focus_handle(cx)
+        match self.session.mode {
+            ViewMode::Visual => self.visual.input.focus_handle(cx),
+            _ => self.text.focus_handle(cx),
+        }
     }
 }
 
