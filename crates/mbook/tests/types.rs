@@ -1,6 +1,6 @@
 //! Value types, options and the guarantees every public type gives.
 
-use mbook_core::{
+use mbook::{
     Anchor, ChapterId, Destination, Error, Limits, Meta, PictureId, Position, Problems,
     ReadOptions, ResourceKind, Size, TocEntry, TocItem, Version, WriteOptions,
 };
@@ -36,7 +36,7 @@ fn ids_and_positions_are_copy_and_hashable() {
 #[cfg(feature = "read")]
 #[test]
 fn a_reader_over_a_file_can_move_to_another_thread() {
-    assert_send_sync::<mbook_core::BookReader<std::fs::File>>();
+    assert_send_sync::<mbook::BookReader<std::fs::File>>();
 }
 
 #[test]

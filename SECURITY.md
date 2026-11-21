@@ -8,7 +8,7 @@ latest minor version.
 
 ## What counts as a vulnerability
 
-An mbook file is untrusted input. `mbook-core` forbids `unsafe`, so memory
+An mbook file is untrusted input. `mbook` forbids `unsafe`, so memory
 corruption there should be impossible; a report that shows otherwise is
 especially welcome. Please report privately anything that lets a file cause:
 
@@ -26,7 +26,7 @@ is in scope as well.
 
 Not vulnerabilities:
 
-- Bugs in an AVIF decoder. `mbook-core` returns picture bytes undecoded; the
+- Bugs in an AVIF decoder. `mbook` returns picture bytes undecoded; the
   decoder belongs to the reading application.
 - A book that the writer refuses although it is valid, or accepts although a
   rule forbids it, when the result is harmless. Open a regular issue.

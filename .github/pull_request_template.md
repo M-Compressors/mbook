@@ -11,7 +11,7 @@
 
 - [ ] `cargo fmt --all -- --check`
 - [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
-- [ ] the same clippy run with `-p mbook-core --no-default-features --features read`, and with `--features write`
+- [ ] the same clippy run with `-p mbook --no-default-features --features read`, and with `--features write`
 - [ ] `cargo test --workspace --all-features --locked`
 - [ ] `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked`
 - [ ] New and changed functions are covered by tests (`cargo llvm-cov`); bug fixes include a regression test

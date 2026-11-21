@@ -51,6 +51,6 @@ they do not know.
 
 ## Action items
 
-1. [ ] Define table readers and builders in `mbook-core`.
+1. [ ] Define table readers and builders in `mbook`.
 2. [ ] Reject a table whose columns differ in row count, type or width.
 3. [ ] Add a `dump` command that prints tables as text.

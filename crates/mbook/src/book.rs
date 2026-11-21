@@ -28,8 +28,8 @@ mod write;
 ///
 /// ```no_run
 /// # #[cfg(feature = "write")]
-/// # fn main() -> mbook_core::Result<()> {
-/// use mbook_core::Book;
+/// # fn main() -> mbook::Result<()> {
+/// use mbook::Book;
 /// use std::fs;
 ///
 /// let mut book = Book::new("The Example", "en")?;
@@ -48,8 +48,8 @@ mod write;
 ///
 /// ```no_run
 /// # #[cfg(all(feature = "read", feature = "write"))]
-/// # fn main() -> mbook_core::Result<()> {
-/// use mbook_core::Book;
+/// # fn main() -> mbook::Result<()> {
+/// use mbook::Book;
 ///
 /// let mut book = Book::open("example.mbook")?;
 /// book.meta_mut().set_title("The Example, 2nd edition")?;
@@ -145,7 +145,7 @@ impl TocItem {
     /// # Examples
     ///
     /// ```
-    /// use mbook_core::TocItem;
+    /// use mbook::TocItem;
     ///
     /// let item = TocItem::new(2, "The station", "ch01.md#the-station");
     /// assert_eq!(item.chapter, "ch01.md");
@@ -192,7 +192,7 @@ impl Landmark {
     /// # Examples
     ///
     /// ```
-    /// use mbook_core::Landmark;
+    /// use mbook::Landmark;
     ///
     /// let landmark = Landmark::new("index", "", "back/index.md#index");
     /// assert_eq!(landmark.chapter, "back/index.md");
@@ -271,8 +271,8 @@ impl Chapter {
     ///
     /// ```
     /// # #[cfg(feature = "write")]
-    /// # fn main() -> mbook_core::Result<()> {
-    /// let mut book = mbook_core::Book::new("The Example", "en")?;
+    /// # fn main() -> mbook::Result<()> {
+    /// let mut book = mbook::Book::new("The Example", "en")?;
     /// let chapter = book.add_chapter(
     ///     "ch01.md",
     ///     "# One\n\n[remark]: #remark\nA remark worth a link.\n",
@@ -480,9 +480,9 @@ impl Book {
     /// # Examples
     ///
     /// ```
-    /// let book = mbook_core::Book::new("The Example", "en")?;
+    /// let book = mbook::Book::new("The Example", "en")?;
     /// assert!(book.meta().id().starts_with("urn:uuid:"));
-    /// # Ok::<(), mbook_core::Error>(())
+    /// # Ok::<(), mbook::Error>(())
     /// ```
     pub fn new(title: impl Into<String>, language: impl Into<String>) -> Result<Self> {
         let id = format!("urn:uuid:{}", uuid::Uuid::now_v7());
@@ -635,13 +635,13 @@ impl Book {
     /// # Examples
     ///
     /// ```
-    /// use mbook_core::{Book, Landmark};
+    /// use mbook::{Book, Landmark};
     ///
     /// let mut book = Book::new("The Example", "en")?;
     /// book.add_chapter("ch01.md", "# Arrival\n")?;
     /// book.set_landmarks(vec![Landmark::new("start", "", "ch01.md")])?;
     /// assert_eq!(book.landmarks().len(), 1);
-    /// # Ok::<(), mbook_core::Error>(())
+    /// # Ok::<(), mbook::Error>(())
     /// ```
     pub fn set_landmarks(&mut self, landmarks: Vec<Landmark>) -> Result<()> {
         let invalid = landmarks

@@ -5,7 +5,7 @@ These instructions apply to all repository-owned code and documents.
 ## Design documents come first
 
 - The file format is specified by `rfcs/src/0001-mbook-format.md` and the API
-  of `mbook-core` by `rfcs/src/0002-mbook-core-api.md`. Read them, and the
+  of `mbook` by `rfcs/src/0002-mbook-api.md`. Read them, and the
   decision records in `rfcs/src/adr/`, before changing behaviour.
 - A change to the format or to a public API updates its RFC in the same
   change. Code that disagrees with an RFC is an incomplete change.
@@ -24,7 +24,7 @@ These instructions apply to all repository-owned code and documents.
 
 ## Architecture and API boundaries
 
-- `mbook-core` has two central types: `BookReader` reads lazily, `Book` is
+- `mbook` has two central types: `BookReader` reads lazily, `Book` is
   the in-memory model. Editing goes through `Book` only; there is no
   streaming editor and none is planned.
 - Keep the public API small and difficult to misuse. Table lookups take
@@ -94,7 +94,7 @@ These instructions apply to all repository-owned code and documents.
   report (`cargo llvm-cov`) rather than assuming a passing test reached the
   code; only closures that map errors which cannot occur may be uncovered.
 - Unit tests sit beside private logic. Public behaviour goes into
-  integration tests under `crates/mbook-core/tests/`, and public examples are
+  integration tests under `crates/mbook/tests/`, and public examples are
   doc tests.
 - Give tests behaviour-oriented names, cover success, error, empty and
   boundary cases, and keep each test to one behaviour.
@@ -115,7 +115,7 @@ After changing Rust code:
 
 1. `cargo fmt --all`, then `cargo fmt --all -- --check`.
 2. `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`,
-   and the same with `-p mbook-core --no-default-features --features read`
+   and the same with `-p mbook --no-default-features --features read`
    and `--features write`.
 3. `cargo test --workspace --all-features --locked`, and with each feature
    alone.

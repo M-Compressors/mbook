@@ -5,7 +5,7 @@ container.**
 
 An mbook file opens without being read in full, decodes only what is on
 screen, and needs neither a web engine nor an XML parser to show. This
-repository holds the format specification, `mbook-core`, the Rust library
+repository holds the format specification, `mbook`, the Rust library
 that reads and writes it, and `mbook-converter`, which turns books in other
 formats into mbook.
 
@@ -23,7 +23,7 @@ mbook is not released yet, and the format may still change.
 | File format, version 1.0 | Draft: [RFC 0001][format] |
 | Library API | Draft: [RFC 0002][api] |
 | Converter API | Draft: [RFC 0003][converter] |
-| `mbook-core` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including anchor tables of chapters. Tested against files built by hand and against real AVIF pictures. Not published to crates.io. |
+| `mbook` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including anchor tables of chapters. Tested against files built by hand and against real AVIF pictures. Not published to crates.io. |
 | `mbook-converter` | Implements RFC 0003: EPUB, FB2, PDF, comic archives, Word, HTML, Markdown and plain text are converted into mbook, with pictures encoded as AVIF. The limits of each format are listed in [RFC 0003][converter-status]. Tested against sources its tests build in memory; not yet against a collection of real books. Not published to crates.io. |
 
 ## Why another book format
@@ -65,12 +65,12 @@ The complete rules are in [RFC 0001][format].
 
 ## The library
 
-`mbook-core` has two central types. `BookReader` reads a book lazily from
+`mbook` has two central types. `BookReader` reads a book lazily from
 anything that can seek; `Book` is a whole book in memory that can be changed
 and written out. The API is described in [RFC 0002][api].
 
 ```rust
-use mbook_core::BookReader;
+use mbook::BookReader;
 
 let mut book = BookReader::open("example.mbook")?;
 println!("{}", book.meta().title());
@@ -84,7 +84,7 @@ if let Some(first) = book.chapters().next().map(|chapter| chapter.id) {
 ```
 
 ```rust
-use mbook_core::Book;
+use mbook::Book;
 
 let mut book = Book::new("The Example", "en")?;
 book.meta_mut().add_author("A. Writer")?;
@@ -127,7 +127,7 @@ Every source format is one Cargo feature, all on by default: `epub`, `fb2`,
 | Path | Contents |
 | --- | --- |
 | [`rfcs/`](rfcs/) | The design documents, an mdBook published at the [site]. |
-| [`crates/mbook-core/`](crates/mbook-core/) | The library. |
+| [`crates/mbook/`](crates/mbook/) | The library. |
 | [`crates/mbook-converter/`](crates/mbook-converter/) | The converter from EPUB, FB2, PDF and other formats. |
 
 ## Development
@@ -166,7 +166,7 @@ conditions.
 [ci]: https://github.com/M-Compressors/mbook/actions/workflows/ci.yml
 [site]: https://m-compressors.github.io/mbook/
 [format]: https://m-compressors.github.io/mbook/0001-mbook-format.html
-[api]: https://m-compressors.github.io/mbook/0002-mbook-core-api.html
+[api]: https://m-compressors.github.io/mbook/0002-mbook-api.html
 [converter]: https://m-compressors.github.io/mbook/0003-mbook-converter-api.html
 [converter-status]: https://m-compressors.github.io/mbook/0003-mbook-converter-api.html#what-is-implemented
 [adr]: https://m-compressors.github.io/mbook/adr/overview.html

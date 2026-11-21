@@ -28,8 +28,8 @@ jobs:
       - name: clippy for every feature alone
         run: |
           for features in read write; do
-            echo "::group::mbook-core, features '$features'"
-            cargo clippy -p mbook-core --all-targets --no-default-features --features "$features" --locked -- -D warnings
+            echo "::group::mbook, features '$features'"
+            cargo clippy -p mbook --all-targets --no-default-features --features "$features" --locked -- -D warnings
             echo "::endgroup::"
           done
           # One feature per source format.
@@ -44,12 +44,12 @@ jobs:
         run: |
           cargo doc --workspace --no-deps --all-features --locked
           for features in read write; do
-            cargo doc -p mbook-core --no-deps --no-default-features --features "$features" --locked
+            cargo doc -p mbook --no-deps --no-default-features --features "$features" --locked
           done
           for features in epub fb2 pdf cbz docx html md txt; do
             cargo doc -p mbook-converter --no-deps --no-default-features --features "$features" --locked
           done
-      - run: cargo package -p mbook-core --locked
+      - run: cargo package -p mbook --locked
 
   test:
     name: test on ${{ matrix.os }}
@@ -63,8 +63,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-features --locked
-      - run: cargo test -p mbook-core --no-default-features --features read --locked
-      - run: cargo test -p mbook-core --no-default-features --features write --locked
+      - run: cargo test -p mbook --no-default-features --features read --locked
+      - run: cargo test -p mbook --no-default-features --features write --locked
       - name: mbook-converter, every format alone
         shell: bash
         run: |

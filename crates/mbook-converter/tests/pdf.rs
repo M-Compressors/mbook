@@ -8,7 +8,7 @@
 
 use image::codecs::jpeg::JpegEncoder;
 use image::{ExtendedColorType, ImageEncoder, RgbImage};
-use mbook_converter::mbook_core::{Book, Toc, TocItem};
+use mbook_converter::mbook::{Book, Toc, TocItem};
 use mbook_converter::{ConvertOptions, Converted, Converter, Error, Format, WarningKind};
 use std::fmt::Write as _;
 
@@ -354,7 +354,7 @@ fn texts(converted: &Converted) -> Vec<&str> {
         .book
         .chapters()
         .iter()
-        .map(mbook_converter::mbook_core::Chapter::text)
+        .map(mbook_converter::mbook::Chapter::text)
         .collect()
 }
 

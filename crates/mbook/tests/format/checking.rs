@@ -1,7 +1,7 @@
 //! What `Book::check` reports, and that nothing invalid is written.
 
 use crate::sample;
-use mbook_core::{Book, Error, Landmark, Problem, ProblemKind, Result, Toc, TocItem};
+use mbook::{Book, Error, Landmark, Problem, ProblemKind, Result, Toc, TocItem};
 
 /// The problems of a book as (chapter, kind) pairs.
 fn problems(book: &Book) -> Vec<(Option<String>, ProblemKind)> {

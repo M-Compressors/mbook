@@ -33,7 +33,7 @@
 #![cfg_attr(not(feature = "write"), doc = "[`Book::new`]: #features")]
 
 #[cfg(not(any(feature = "read", feature = "write")))]
-compile_error!("mbook-core needs at least one of the `read` and `write` features");
+compile_error!("mbook needs at least one of the `read` and `write` features");
 
 #[cfg(feature = "write")]
 mod analysis;
@@ -81,7 +81,7 @@ pub use types::{
 /// # Examples
 ///
 /// ```
-/// assert!(!mbook_core::is_mbook(b"PK\x03\x04"));
+/// assert!(!mbook::is_mbook(b"PK\x03\x04"));
 /// ```
 #[must_use]
 pub fn is_mbook(prefix: &[u8]) -> bool {

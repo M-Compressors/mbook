@@ -54,6 +54,6 @@ every resource is exactly one ordinary OpenZL frame.
 
 ## Action items
 
-1. [ ] Wrap `FramedSeekReader` and `FramedWriter` in `mbook-core`.
+1. [ ] Wrap `FramedSeekReader` and `FramedWriter` in `mbook`.
 2. [ ] Choose and document mbook's own `FramingConfig` limits.
 3. [ ] Measure text compression per chapter against a solid frame on real books.

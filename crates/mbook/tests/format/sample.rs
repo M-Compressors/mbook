@@ -1,7 +1,7 @@
 //! The example book of RFC 0001, built with the public API.
 
 use crate::texts::{CH01, CH01_NAMED, CH02, CH03, ID, PLAIN, ROTATED};
-use mbook_core::{Book, Landmark, Result};
+use mbook::{Book, Landmark, Result};
 
 /// The example book: a cover, two chapters and one figure.
 pub(crate) fn book() -> Result<Book> {

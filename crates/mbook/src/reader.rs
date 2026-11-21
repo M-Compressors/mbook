@@ -35,7 +35,7 @@ use std::path::Path;
 /// # Examples
 ///
 /// ```no_run
-/// use mbook_core::BookReader;
+/// use mbook::BookReader;
 ///
 /// let mut book = BookReader::open("example.mbook")?;
 /// println!("{}", book.meta().title());
@@ -48,7 +48,7 @@ use std::path::Path;
 ///     let text = book.read_chapter(id)?;
 ///     println!("{text}");
 /// }
-/// # Ok::<(), mbook_core::Error>(())
+/// # Ok::<(), mbook::Error>(())
 /// ```
 #[derive(Debug)]
 pub struct BookReader<R> {
@@ -278,7 +278,7 @@ impl<R: Read + Seek> BookReader<R> {
     /// # Examples
     ///
     /// ```no_run
-    /// use mbook_core::{BookReader, Destination};
+    /// use mbook::{BookReader, Destination};
     ///
     /// let mut book = BookReader::open("example.mbook")?;
     /// let Some(from) = book.chapters().next().map(|chapter| chapter.id) else {
@@ -288,7 +288,7 @@ impl<R: Read + Seek> BookReader<R> {
     /// if let Destination::Chapter(position) = book.read_resolve(from, "ch01.md#fig-1")? {
     ///     println!("byte {} of chapter {}", position.offset, position.chapter.number());
     /// }
-    /// # Ok::<(), mbook_core::Error>(())
+    /// # Ok::<(), mbook::Error>(())
     /// ```
     pub fn read_resolve(&mut self, from: ChapterId, destination: &str) -> Result<Destination> {
         match self.index.resolve_named(from, destination)? {
@@ -361,13 +361,13 @@ impl<R: Read + Seek> BookReader<R> {
     /// # Examples
     ///
     /// ```no_run
-    /// use mbook_core::BookReader;
+    /// use mbook::BookReader;
     ///
     /// let mut book = BookReader::open("example.mbook")?;
     /// for landmark in book.read_landmarks()? {
     ///     println!("{}: resource {}", landmark.kind, landmark.position.chapter.number());
     /// }
-    /// # Ok::<(), mbook_core::Error>(())
+    /// # Ok::<(), mbook::Error>(())
     /// ```
     pub fn read_landmarks(&mut self) -> Result<Vec<LandmarkEntry>> {
         let Some(table) = self.index.landmarks_table() else {

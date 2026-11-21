@@ -854,7 +854,7 @@ mod tests {
         code, collapse, external_destination, fragment, plain, push_piece, quoted, surround,
     };
     use crate::formats::fb2::tree::{Node, parse};
-    use mbook_core::Limits;
+    use mbook::Limits;
 
     #[test]
     fn white_space_runs_become_one_space() {

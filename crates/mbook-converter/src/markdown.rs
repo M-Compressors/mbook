@@ -5,7 +5,7 @@
 //! Escaping is a rule of the mbook dialect, not of Markdown in general: a
 //! single tilde marks strikethrough and a bare `www.` starts a link. The
 //! functions here are tested against `markdown` 1.0.0, the parser that
-//! `mbook-core` reads chapters with.
+//! `mbook` reads chapters with.
 
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn a_definition_is_an_anchor_definition_of_the_format() {
-        let book = &mut mbook_core::Book::new("T", "en").unwrap();
+        let book = &mut mbook::Book::new("T", "en").unwrap();
         let text = format!("{}\nA line.\n", definition("рис-1"));
         let chapter = book.add_chapter("a.md", text).unwrap();
         let names: Vec<_> = chapter

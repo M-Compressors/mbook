@@ -9,7 +9,7 @@
 
 use crate::error::{Error, Result};
 use crate::format::Format;
-use mbook_core::Limits;
+use mbook::Limits;
 use std::io::{Cursor, Read};
 use zip::ZipArchive;
 use zip::result::ZipError;

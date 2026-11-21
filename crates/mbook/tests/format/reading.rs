@@ -2,7 +2,7 @@
 
 use crate::raw::Raw;
 use crate::texts::{CH01, CH02, ID, PLAIN, ROTATED, station_offset};
-use mbook_core::{
+use mbook::{
     Book, BookReader, Destination, Error, ReadOptions, ResolveError, ResourceKind, Result, Size,
     Version,
 };
@@ -262,8 +262,7 @@ fn the_whole_book_is_read_into_memory() -> Result<()> {
         .collect();
     assert_eq!(chapters, [("ch01.md", CH01), ("ch02.md", CH02)]);
     assert_eq!(
-        book.picture("img/cover.avif")
-            .map(mbook_core::Picture::data),
+        book.picture("img/cover.avif").map(mbook::Picture::data),
         Some(PLAIN)
     );
     Ok(())

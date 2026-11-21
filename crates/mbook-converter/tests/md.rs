@@ -1,7 +1,7 @@
 //! One Markdown document, through the public API.
 #![cfg(feature = "md")]
 
-use mbook_converter::mbook_core::{Toc, TocItem};
+use mbook_converter::mbook::{Toc, TocItem};
 use mbook_converter::{ConvertOptions, Converted, Converter, Error, Format, WarningKind};
 
 type Outcome = Result<(), Box<dyn std::error::Error>>;
@@ -103,7 +103,7 @@ fn the_contents_come_from_the_headings() -> Outcome {
     assert_eq!(converted.book.toc(), &Toc::FromHeadings { max_level: 6 });
     let mut file = Vec::new();
     converted.book.write(&mut file)?;
-    let read = mbook_converter::mbook_core::Book::read(file.as_slice())?;
+    let read = mbook_converter::mbook::Book::read(file.as_slice())?;
     let Toc::Explicit(items) = read.toc() else {
         return Err("a stored book lists its contents".into());
     };

@@ -10,9 +10,9 @@ Security issues are reported privately; see [SECURITY.md](SECURITY.md).
 - For anything beyond a small fix, open an issue first.
 - Read the design documents in [`rfcs/`](rfcs/src/introduction.md). The
   format is specified by [RFC 0001](rfcs/src/0001-mbook-format.md) and the
-  library API by [RFC 0002](rfcs/src/0002-mbook-core-api.md).
+  library API by [RFC 0002](rfcs/src/0002-mbook-api.md).
 - **A change of behaviour starts in the documents.** A change to the file
-  format or to the public API of `mbook-core` updates the RFC it belongs to,
+  format or to the public API of `mbook` updates the RFC it belongs to,
   and a choice between alternatives gets a decision record under
   `rfcs/src/adr/`, in the same pull request as the code.
 - The documents are written in English.
@@ -46,8 +46,8 @@ The full rules are in [`AGENTS.md`](AGENTS.md). In short:
 ```sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo clippy -p mbook-core --all-targets --no-default-features --features read --locked -- -D warnings
-cargo clippy -p mbook-core --all-targets --no-default-features --features write --locked -- -D warnings
+cargo clippy -p mbook --all-targets --no-default-features --features read --locked -- -D warnings
+cargo clippy -p mbook --all-targets --no-default-features --features write --locked -- -D warnings
 cargo test --workspace --all-features --locked
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked
 mdbook build rfcs

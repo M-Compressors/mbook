@@ -3,7 +3,7 @@
 
 use crate::raw::{ANCHORS, Column, META, RESOURCES, Raw, TOC};
 use crate::texts::{CH01, CH02, figure_offset, station_offset};
-use mbook_core::{
+use mbook::{
     Book, BookReader, Destination, Error, ResolveError, ResourceKind, Result, Size, Toc, Version,
 };
 use std::io::Cursor;

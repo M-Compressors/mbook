@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::markdown as md;
 use crate::options::ConvertOptions;
 use crate::report::WarningKind;
-use mbook_core::Book;
+use mbook::Book;
 use std::collections::HashMap;
 
 fn section(name: &str, markdown: &str) -> Section {
@@ -47,11 +47,7 @@ fn chapters(sections: &[(&str, &str)]) -> (Vec<String>, Vec<WarningKind>) {
 #[test]
 fn every_section_becomes_a_chapter_with_a_numbered_path() {
     let (book, warnings) = assembled(draft(&[("a", "# One\n"), ("b", "# Two\n")]));
-    let paths: Vec<_> = book
-        .chapters()
-        .iter()
-        .map(mbook_core::Chapter::path)
-        .collect();
+    let paths: Vec<_> = book.chapters().iter().map(mbook::Chapter::path).collect();
     assert_eq!((paths, warnings), (vec!["ch0001.md", "ch0002.md"], vec![]));
 }
 
@@ -287,11 +283,7 @@ fn a_long_section_becomes_several_chapters_and_links_find_their_part() {
         ("a", "[Go](b#target) and [start](b).\n"),
         ("b", &long),
     ]));
-    let paths: Vec<_> = book
-        .chapters()
-        .iter()
-        .map(mbook_core::Chapter::path)
-        .collect();
+    let paths: Vec<_> = book.chapters().iter().map(mbook::Chapter::path).collect();
     assert_eq!(paths, ["ch0001.md", "ch0002.md", "ch0003.md"]);
     assert_eq!(
         book.chapters()[0].text(),
@@ -687,7 +679,7 @@ mod outlines {
     use super::{assembled, draft};
     use crate::draft::{Draft, OutlineEntry};
     use crate::report::WarningKind;
-    use mbook_core::{Toc, TocItem};
+    use mbook::{Toc, TocItem};
 
     const FIRST: &str =
         "[top]: #top\n\n# One\n\nText.\n\n[h2]: #h2\n\n## Inside\n\n[p]: #p\n\nA paragraph.\n";

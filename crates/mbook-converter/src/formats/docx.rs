@@ -48,7 +48,7 @@ use crate::markdown as md;
 use crate::options::ConvertOptions;
 use markdown::mdast::Node;
 use markdown::{ParseOptions, to_mdast};
-use mbook_core::Limits;
+use mbook::Limits;
 use percent_encoding::percent_decode_str;
 use std::collections::HashSet;
 use std::io::{Cursor, Read};

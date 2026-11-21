@@ -3,7 +3,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use mbook_converter::mbook_core::{Book, Chapter};
+use mbook_converter::mbook::{Book, Chapter};
 use mbook_converter::{ConvertOptions, Converted, Converter, Error, Format, WarningKind};
 use std::fmt::Write as _;
 use std::io::{Cursor, Write};

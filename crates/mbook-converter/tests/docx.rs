@@ -7,7 +7,7 @@
 use image::{ImageBuffer, ImageFormat, Rgb};
 use markdown::mdast::Node;
 use markdown::{ParseOptions, to_mdast};
-use mbook_converter::mbook_core::{Book, Chapter, Picture, Size};
+use mbook_converter::mbook::{Book, Chapter, Picture, Size};
 use mbook_converter::{ConvertOptions, Converted, Converter, Error, Format, WarningKind};
 use std::error::Error as StdError;
 use std::io::{Cursor, Write};

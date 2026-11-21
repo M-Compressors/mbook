@@ -20,7 +20,7 @@ for warning in &report.warnings {
 
 A source is any `Read` or a byte slice. The result is an mbook file written
 to any `Write`, or a `Book` of
-[`mbook-core`](https://crates.io/crates/mbook-core) that can still be
+[`mbook`](https://crates.io/crates/mbook) that can still be
 changed:
 
 ```rust

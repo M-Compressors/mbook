@@ -1,6 +1,6 @@
 //! Recognising an mbook file from its first bytes.
 
-use mbook_core::is_mbook;
+use mbook::is_mbook;
 
 #[test]
 fn an_empty_prefix_is_not_an_mbook_file() {

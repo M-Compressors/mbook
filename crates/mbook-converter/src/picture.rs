@@ -87,7 +87,7 @@ mod tests {
     use crate::draft::PictureData;
     use crate::options::{ConvertLimits, PictureOptions};
     use image::{DynamicImage, ImageFormat, Rgb, RgbImage, Rgba, RgbaImage};
-    use mbook_core::{Book, Size};
+    use mbook::{Book, Size};
     use std::io::Cursor;
 
     /// A picture of one colour, as a file of the given format.
@@ -104,7 +104,7 @@ mod tests {
         to_avif(data, PictureOptions::default(), &ConvertLimits::default())
     }
 
-    /// The size `mbook-core` reads from an AVIF file.
+    /// The size `mbook` reads from an AVIF file.
     fn stored_size(avif: Vec<u8>) -> Size {
         let mut book = Book::new("T", "en").unwrap();
         book.add_picture("p.avif", avif).unwrap().size()

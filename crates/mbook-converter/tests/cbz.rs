@@ -2,7 +2,7 @@
 #![cfg(feature = "cbz")]
 
 use image::{ImageFormat, Rgb, RgbImage};
-use mbook_converter::mbook_core::Book;
+use mbook_converter::mbook::Book;
 use mbook_converter::{ConvertOptions, Converted, Converter, Error, Format, WarningKind};
 use std::io::{Cursor, Write};
 use zip::write::SimpleFileOptions;
@@ -91,7 +91,7 @@ fn pictures(book: &Book) -> Vec<(String, (u32, u32))> {
 fn texts(book: &Book) -> Vec<&str> {
     book.chapters()
         .iter()
-        .map(mbook_converter::mbook_core::Chapter::text)
+        .map(mbook_converter::mbook::Chapter::text)
         .collect()
 }
 

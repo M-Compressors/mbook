@@ -4,7 +4,7 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use image::{ImageFormat, Rgba, RgbaImage};
-use mbook_converter::mbook_core::{Book, BookReader, Chapter};
+use mbook_converter::mbook::{Book, BookReader, Chapter};
 use mbook_converter::{ConvertOptions, Converted, Converter, Error, Format, WarningKind};
 use std::io::Cursor;
 

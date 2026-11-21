@@ -36,17 +36,17 @@ pub enum Error {
     /// A limit of the options was exceeded.
     #[error("limit exceeded: {0}")]
     Limit(&'static str),
-    /// The converted book was refused by `mbook-core`.
+    /// The converted book was refused by `mbook`.
     #[error("the converted book cannot be built")]
-    Book(#[source] mbook_core::Error),
+    Book(#[source] mbook::Error),
 }
 
-impl From<mbook_core::Error> for Error {
+impl From<mbook::Error> for Error {
     /// A failure of the sink stays an I/O error; anything else is about the
     /// book.
-    fn from(error: mbook_core::Error) -> Self {
+    fn from(error: mbook::Error) -> Self {
         match error {
-            mbook_core::Error::Io(error) => Self::Io(error),
+            mbook::Error::Io(error) => Self::Io(error),
             other => Self::Book(other),
         }
     }
@@ -108,13 +108,13 @@ mod tests {
 
     #[test]
     fn a_failing_sink_stays_an_io_error() {
-        let sink = mbook_core::Error::from(std::io::Error::other("pipe closed"));
+        let sink = mbook::Error::from(std::io::Error::other("pipe closed"));
         assert!(matches!(Error::from(sink), Error::Io(_)));
     }
 
     #[test]
-    fn a_refused_book_keeps_the_error_of_mbook_core_as_its_source() {
-        let error = Error::from(mbook_core::Error::NotMbook);
+    fn a_refused_book_keeps_the_error_of_mbook_as_its_source() {
+        let error = Error::from(mbook::Error::NotMbook);
         let source = error.source().map(ToString::to_string);
         assert_eq!(
             (error.to_string().as_str(), source.as_deref()),

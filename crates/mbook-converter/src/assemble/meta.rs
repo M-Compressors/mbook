@@ -2,7 +2,7 @@
 
 use crate::draft::DraftMeta;
 use crate::report::{Warning, WarningKind};
-use mbook_core::Book;
+use mbook::Book;
 use uuid::Uuid;
 
 /// The namespace of the identifiers computed from the bytes of a source.
@@ -16,7 +16,7 @@ pub(crate) const UNDETERMINED: &str = "und";
 /// Fills the metadata of a book from a draft.
 ///
 /// `heading` is the first top-level heading of the text, which names a book
-/// whose source has no title. A value that `mbook-core` refuses is left out
+/// whose source has no title. A value that `mbook` refuses is left out
 /// with a warning; nothing here fails a conversion.
 pub(crate) fn apply(
     book: &mut Book,
@@ -212,7 +212,7 @@ mod tests {
     use super::{apply, computed_id, date, isbn, stable_id};
     use crate::draft::DraftMeta;
     use crate::report::{Warning, WarningKind};
-    use mbook_core::Book;
+    use mbook::Book;
 
     fn applied(meta: DraftMeta, heading: Option<&str>) -> (Book, Vec<WarningKind>) {
         let mut book = Book::new("x", "x").unwrap();

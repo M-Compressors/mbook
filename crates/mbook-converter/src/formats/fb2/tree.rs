@@ -9,7 +9,7 @@
 
 use crate::error::{Error, Result};
 use crate::format::Format;
-use mbook_core::Limits;
+use mbook::Limits;
 use quick_xml::XmlVersion;
 use quick_xml::encoding::{decode, detect_encoding};
 use quick_xml::escape::resolve_html5_entity;
@@ -336,7 +336,7 @@ pub(super) fn parse(source: &[u8], limits: &Limits) -> Result<Document> {
 mod tests {
     use super::{Document, MAX_DEPTH, Node, parse};
     use crate::error::Error;
-    use mbook_core::Limits;
+    use mbook::Limits;
 
     fn read(xml: &str) -> Result<Document, Error> {
         parse(xml.as_bytes(), &Limits::default())

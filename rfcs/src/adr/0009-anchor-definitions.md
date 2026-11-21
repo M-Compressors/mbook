@@ -88,7 +88,7 @@ chapter, as link reference definitions. Written into RFC 0001 as proposals:
 
 - Easier: an editing library computes every offset from the text again, and
   an edit keeps the names it does not delete
-  ([RFC 0002](../0002-mbook-core-api.md#extra-anchors)).
+  ([RFC 0002](../0002-mbook-api.md#extra-anchors)).
 - Easier: unpacking a book into a folder and packing it again keeps every
   link target.
 - Easier: a converter writes one line of Markdown per link target instead of

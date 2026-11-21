@@ -13,7 +13,7 @@ use percent_encoding::percent_decode_str;
 use std::collections::HashSet;
 use std::ops::Range;
 
-/// Parses Markdown as the dialect of RFC 0001, the way `mbook-core` does.
+/// Parses Markdown as the dialect of RFC 0001, the way `mbook` does.
 pub(crate) fn parse(text: &str) -> Option<Node> {
     // Parsing fails only for MDX syntax, which the dialect does not enable.
     to_mdast(text, &ParseOptions::gfm()).ok()

@@ -61,7 +61,7 @@ use crate::report::{Warning, WarningKind};
 use base64::Engine as _;
 use base64::alphabet::STANDARD;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
-use mbook_core::Limits;
+use mbook::Limits;
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 use text::Renderer;

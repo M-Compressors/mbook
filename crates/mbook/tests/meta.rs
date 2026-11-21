@@ -1,7 +1,7 @@
 //! The metadata of a book, through the public API.
 #![cfg(feature = "write")]
 
-use mbook_core::{Book, Error, MetaError, Result};
+use mbook::{Book, Error, MetaError, Result};
 use std::error::Error as _;
 
 fn book() -> Result<Book> {

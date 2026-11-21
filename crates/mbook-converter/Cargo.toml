@@ -28,7 +28,7 @@ md = ["dep:github-slugger", "dep:encoding_rs", "dep:chardetng"]
 txt = ["dep:encoding_rs", "dep:chardetng"]
 
 [dependencies]
-mbook-core = { workspace = true, features = ["write"] }
+mbook = { workspace = true, features = ["write"] }
 thiserror.workspace = true
 markdown.workspace = true
 percent-encoding.workspace = true
@@ -49,7 +49,7 @@ undoc = { workspace = true, optional = true }
 
 [dev-dependencies]
 # The tests read back what was converted.
-mbook-core = { workspace = true, features = ["read", "write"] }
+mbook = { workspace = true, features = ["read", "write"] }
 # Test sources are built in memory: pictures with `image`, archives with `zip`.
 image.workspace = true
 zip.workspace = true

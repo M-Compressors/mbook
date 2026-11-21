@@ -51,7 +51,7 @@ and a pinned encoding, so its bytes appear unchanged at file offset 47.
 
 ## Action items
 
-1. [ ] Add the 64-byte prefix of a 1.0 file as a test vector in `mbook-core`.
+1. [ ] Add the 64-byte prefix of a 1.0 file as a test vector in `mbook`.
 2. [ ] Implement detection by fixed offsets and full validation by decoding.
 3. [ ] Test that a file with a greater `major` is rejected and a greater
    `minor` is accepted.

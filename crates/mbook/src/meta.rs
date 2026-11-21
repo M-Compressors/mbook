@@ -181,8 +181,8 @@ impl Meta {
     ///
     /// ```
     /// # #[cfg(feature = "write")]
-    /// # fn main() -> mbook_core::Result<()> {
-    /// let mut book = mbook_core::Book::new("The Example", "en")?;
+    /// # fn main() -> mbook::Result<()> {
+    /// let mut book = mbook::Book::new("The Example", "en")?;
     /// book.meta_mut().set("x-shelf", "favourites")?;
     /// assert_eq!(book.meta().get("x-shelf"), Some("favourites"));
     /// # Ok(())

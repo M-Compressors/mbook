@@ -1,15 +1,15 @@
-# RFC 0002: The mbook-core API
+# RFC 0002: The mbook API
 
 | | |
 | --- | --- |
 | **Status** | Draft |
 | **Start date** | 2026-11-21 |
-| **Crate** | `mbook-core` |
+| **Crate** | `mbook` |
 | **Implements** | [RFC 0001](0001-mbook-format.md), format version 1.0 |
 
 ## Summary
 
-`mbook-core` is the Rust library that reads and writes mbook files. It has two
+`mbook` is the Rust library that reads and writes mbook files. It has two
 central types:
 
 - **`BookReader<R>`** reads a book lazily from anything that can seek. Opening
@@ -88,7 +88,7 @@ written.
 ### Showing a book in a library
 
 ```rust
-use mbook_core::BookReader;
+use mbook::BookReader;
 
 let mut book = BookReader::open("example.mbook")?;
 let meta = book.meta();
@@ -105,7 +105,7 @@ reads one more frame.
 ### Reading a chapter
 
 ```rust
-use mbook_core::{BookReader, Destination};
+use mbook::{BookReader, Destination};
 
 for entry in book.toc() {
     println!("{}{}", "  ".repeat(entry.level as usize - 1), entry.title);
@@ -159,7 +159,7 @@ let chapter = book.chapter_id(saved.0);   // None: not a chapter of this book
 ### Reading from a source that cannot seek
 
 ```rust
-use mbook_core::{Book, BookReader};
+use mbook::{Book, BookReader};
 use std::io;
 
 // The same lazy reader, over a buffer that holds the compressed file.
@@ -175,7 +175,7 @@ for chapter in book.chapters() {
 ### Editing a book
 
 ```rust
-use mbook_core::Book;
+use mbook::Book;
 
 let mut book = Book::open("example.mbook")?;
 
@@ -208,7 +208,7 @@ book.insert_chapter(index, "part1/ch02.md", old.text())?;
 ### Creating a book
 
 ```rust
-use mbook_core::{Book, Toc, TocItem};
+use mbook::{Book, Toc, TocItem};
 use std::fs;
 
 let mut book = Book::new("The Example", "en")?;
@@ -270,7 +270,7 @@ at the call that caused it. Rules that connect items are checked when the book
 is written, because a book under construction is allowed to be incomplete.
 
 ```rust
-use mbook_core::{Error, ProblemKind};
+use mbook::{Error, ProblemKind};
 
 match book.save("example.mbook") {
     Err(Error::Invalid(problems)) => {
@@ -816,6 +816,7 @@ three plain fields.
 
 | Decision | Chosen | Rejected | Why |
 | --- | --- | --- | --- |
+| Name of the crate | `mbook`, the name of the format | `mbook-core` | Decided by the format author. The library is the reference implementation of the format; crates built on it, such as `mbook-converter`, carry a suffix. |
 | Shape of the API | `BookReader` for lazy reading, `Book` for the editable model | One type generic over its storage | A lazy read can fail and needs `&mut`; an in-memory read cannot and does not. One type would force the weaker signature on both. |
 | | | A `BookSource` trait implemented by both | Same problem, plus a trait in every caller's signatures. |
 | Streams that cannot seek | `buffered` gives the ordinary reader; `Book::read` gives the model | A third, forward-only reader type | Reading applications get one API. Memory is the compressed size instead of the decoded size. |
@@ -835,7 +836,7 @@ three plain fields.
 | Line endings and byte order marks | Normalised silently | Rejected with an error | The meaning of the text does not change, and every caller would write the same replacement. |
 | Moving a resource to another path | Remove and add | A `rename` that rewrites links | The crate would start editing chapter text it was given. |
 | Helpers | Established crates for mechanisms; own code for the rules of the format | Hand-written cursors, decoders and temporary files | Less code to test and to keep correct; the exception is listed under [Dependencies and features](#dependencies-and-features). |
-| mopenzl in the API | Hidden behind `Error::Container` and `Limits` | Re-exporting `FramedError` and `FramingConfig` | A mopenzl major version would become an mbook-core major version. |
+| mopenzl in the API | Hidden behind `Error::Container` and `Limits` | Re-exporting `FramedError` and `FramingConfig` | A mopenzl major version would become an mbook major version. |
 
 ## Prior art
 

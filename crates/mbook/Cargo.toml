@@ -1,5 +1,5 @@
 [package]
-name = "mbook-core"
+name = "mbook"
 description = "Read, edit and create mbook files: Markdown chapters and AVIF pictures in one indexed container"
 version.workspace = true
 edition.workspace = true

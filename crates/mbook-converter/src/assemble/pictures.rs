@@ -4,7 +4,7 @@
 use crate::draft::{PictureData, SourcePicture};
 use crate::options::ConvertOptions;
 use crate::picture;
-use mbook_core::Book;
+use mbook::Book;
 use std::collections::HashMap;
 
 /// The path of the cover.
@@ -73,7 +73,7 @@ impl<'a> Pictures<'a> {
         path
     }
 
-    /// Encodes a picture and adds it to the book. `mbook-core` has the last
+    /// Encodes a picture and adds it to the book. `mbook` has the last
     /// word on whether the result is a picture it can store.
     fn encode(&mut self, book: &mut Book, data: &PictureData, as_cover: bool) -> Option<String> {
         let avif = picture::to_avif(data, self.options.pictures, &self.options.limits)?;

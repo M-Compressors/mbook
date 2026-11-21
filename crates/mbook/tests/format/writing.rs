@@ -3,7 +3,7 @@
 use crate::raw::Raw;
 use crate::sample;
 use crate::texts::{CH01, CH01_NAMED, CH02, CROPPED, MIRRORED, PLAIN, ROTATED, named_offset};
-use mbook_core::{
+use mbook::{
     Book, BookReader, ChapterId, Destination, Error, Landmark, Limits, Position, ResolveError,
     ResourceKind, Result, Size, Toc, TocItem, WriteOptions, is_mbook,
 };
@@ -444,7 +444,7 @@ fn saving_into_a_missing_folder_is_an_io_error() -> Result<()> {
 fn the_second_chapter_of_the_example_is_what_was_given() -> Result<()> {
     let book = Book::read(sample::bytes()?.as_slice())?;
     assert_eq!(
-        book.chapter("ch02.md").map(mbook_core::Chapter::text),
+        book.chapter("ch02.md").map(mbook::Chapter::text),
         Some(CH02)
     );
     Ok(())

@@ -1,5 +1,5 @@
 name: Feature or format proposal
-description: Something mbook-core should do, or a change to the file format.
+description: Something mbook should do, or a change to the file format.
 labels: ["enhancement"]
 body:
   - type: markdown

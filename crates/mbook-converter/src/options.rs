@@ -1,7 +1,7 @@
 //! Options and limits of a conversion.
 
 use crate::format::Format;
-use mbook_core::{Limits, WriteOptions};
+use mbook::{Limits, WriteOptions};
 
 /// How a source is converted. Start from [`ConvertOptions::default`] and
 /// change the fields that matter.
@@ -94,7 +94,7 @@ mod tests {
             ),
             (2 << 30, 100_000_000)
         );
-        assert_eq!(options.limits.book, mbook_core::Limits::default());
+        assert_eq!(options.limits.book, mbook::Limits::default());
     }
 
     #[test]

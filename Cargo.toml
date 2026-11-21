@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/mbook-core", "crates/mbook-converter"]
+members = ["crates/mbook", "crates/mbook-converter"]
 
 [workspace.package]
 version = "0.1.0"
@@ -24,7 +24,7 @@ github-slugger = "0.1"
 
 # `mbook-converter`. Every front-end crate is optional there, behind the
 # feature of its format.
-mbook-core = { path = "crates/mbook-core", version = "0.1.0", default-features = false }
+mbook = { path = "crates/mbook", version = "0.1.0", default-features = false }
 unicode-normalization = "0.1"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 # Decodes the pictures of a source and encodes them as AVIF; `avif` is the

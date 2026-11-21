@@ -1,7 +1,7 @@
 //! What a conversion reports besides the book.
 
 use crate::format::Format;
-use mbook_core::Book;
+use mbook::Book;
 use std::fmt;
 
 /// A converted book that can still be changed, and what its conversion
@@ -9,7 +9,7 @@ use std::fmt;
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Converted {
-    /// The book. Every call of `mbook-core` works on it.
+    /// The book. Every call of `mbook` works on it.
     pub book: Book,
     /// The format of the source and what was lost.
     pub report: Report,

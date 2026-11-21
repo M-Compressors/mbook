@@ -2,7 +2,7 @@
 //! and AVIF analysis: argument checks happen before either is needed.
 #![cfg(feature = "write")]
 
-use mbook_core::{Book, Error, PathError, Result, Toc, TocItem};
+use mbook::{Book, Error, PathError, Result, Toc, TocItem};
 
 fn book() -> Result<Book> {
     Book::new("The Example", "en")

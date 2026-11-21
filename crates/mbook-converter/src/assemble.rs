@@ -19,10 +19,10 @@ use crate::report::Warning;
 #[cfg(any(pictures, outlines))]
 use crate::report::WarningKind;
 #[cfg(feature = "epub")]
-use mbook_core::Landmark;
-use mbook_core::{Anchor, Book};
+use mbook::Landmark;
+use mbook::{Anchor, Book};
 #[cfg(outlines)]
-use mbook_core::{Toc, TocItem};
+use mbook::{Toc, TocItem};
 use percent_encoding::percent_decode_str;
 use rewrite::{Fate, Rules, Scan};
 use std::collections::{HashMap, HashSet};
@@ -215,7 +215,7 @@ fn chapters(sections: &[Section]) -> Layout<'_> {
 /// Chooses the marks to keep: those that a link, or an entry of the
 /// contents, leads to. A mark directly in front of a heading stands for the
 /// anchor of that heading. Any other gets a name that is free in its
-/// chapter: `headings` holds, for every chapter, the anchors `mbook-core`
+/// chapter: `headings` holds, for every chapter, the anchors `mbook`
 /// gave to its headings.
 fn choose_marks(
     layout: &Layout<'_>,
@@ -312,7 +312,7 @@ pub(crate) fn assemble(
     let mut book = Book::new(meta::UNTITLED, meta::UNDETERMINED)?;
     let mut headings: Vec<Vec<Anchor>> = Vec::with_capacity(layout.parts.len());
     for part in &layout.parts {
-        // `mbook-core` names the headings; a mark must not take such a name.
+        // `mbook` names the headings; a mark must not take such a name.
         let chapter = book.add_chapter(part.path.as_str(), part.text.as_str())?;
         headings.push(chapter.anchors().to_vec());
     }
@@ -393,7 +393,7 @@ pub(crate) fn assemble(
         return Err(Error::Empty);
     }
     // A failure here is a defect of this crate, not of the source.
-    book.check().map_err(mbook_core::Error::from)?;
+    book.check().map_err(mbook::Error::from)?;
     Ok((book, warnings))
 }
 

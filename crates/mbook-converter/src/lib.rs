@@ -2,7 +2,7 @@
 //!
 //! One type does the work: [`Converter`]. It takes a source as any
 //! [`Read`](std::io::Read) or as a byte slice, and gives an mbook file
-//! written to any [`Write`](std::io::Write), or a [`Book`](mbook_core::Book)
+//! written to any [`Write`](std::io::Write), or a [`Book`](mbook::Book)
 //! that can still be changed.
 //!
 //! ```no_run
@@ -76,6 +76,6 @@ mod xhtml;
 pub use converter::Converter;
 pub use error::{Error, Result};
 pub use format::Format;
-pub use mbook_core;
+pub use mbook;
 pub use options::{ConvertLimits, ConvertOptions, PictureOptions};
 pub use report::{Converted, Report, Warning, WarningKind};

@@ -958,6 +958,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mbook"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "github-slugger",
+ "markdown",
+ "mopenzl",
+ "percent-encoding",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "mbook-converter"
 version = "0.1.0"
 dependencies = [
@@ -969,7 +983,7 @@ dependencies = [
  "htmd",
  "image",
  "markdown",
- "mbook-core",
+ "mbook",
  "percent-encoding",
  "quick-xml",
  "rbook",
@@ -979,20 +993,6 @@ dependencies = [
  "unpdf",
  "uuid",
  "zip",
-]
-
-[[package]]
-name = "mbook-core"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "github-slugger",
- "markdown",
- "mopenzl",
- "percent-encoding",
- "tempfile",
- "thiserror",
- "uuid",
 ]
 
 [[package]]

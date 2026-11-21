@@ -1,9 +1,9 @@
-# mbook-core
+# mbook
 
 **Read, edit and create mbook files.**
 
 An mbook file holds a book as Markdown chapters and AVIF pictures in one
-indexed container. `mbook-core` is the Rust library for it:
+indexed container. `mbook` is the Rust library for it:
 
 - `BookReader` reads a book lazily from anything that can seek. Opening it
   reads the tables; each chapter and picture is decoded when asked for.
@@ -11,7 +11,7 @@ indexed container. `mbook-core` is the Rust library for it:
   existing one is changed.
 
 ```rust
-use mbook_core::Book;
+use mbook::Book;
 
 let mut book = Book::new("The Example", "en")?;
 book.meta_mut().add_author("A. Writer")?;
@@ -38,7 +38,7 @@ At least one of them must be enabled. Requires Rust 1.89 or later.
 ## Documentation
 
 - [The file format](https://m-compressors.github.io/mbook/0001-mbook-format.html)
-- [The design of this API](https://m-compressors.github.io/mbook/0002-mbook-core-api.html)
+- [The design of this API](https://m-compressors.github.io/mbook/0002-mbook-api.html)
 
 ## License
 

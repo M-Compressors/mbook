@@ -8,7 +8,7 @@
 /// # Examples
 ///
 /// ```
-/// let mut limits = mbook_core::Limits::default();
+/// let mut limits = mbook::Limits::default();
 /// limits.max_file_bytes = 1 << 30;
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

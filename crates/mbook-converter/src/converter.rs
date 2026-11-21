@@ -13,7 +13,7 @@ use std::io::{Read, Write};
 /// A converter holds only its options: one value serves any number of
 /// conversions, from any number of threads.
 ///
-/// | | To an mbook file | To a [`Book`](mbook_core::Book) |
+/// | | To an mbook file | To a [`Book`](mbook::Book) |
 /// | --- | --- | --- |
 /// | From any [`Read`] | [`convert`](Self::convert) | [`load`](Self::load) |
 /// | From a byte slice | [`convert_slice`](Self::convert_slice) | [`load_slice`](Self::load_slice) |

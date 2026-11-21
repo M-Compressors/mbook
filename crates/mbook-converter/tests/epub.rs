@@ -2,7 +2,7 @@
 #![cfg(feature = "epub")]
 
 use image::{ImageFormat, Rgb, RgbImage};
-use mbook_converter::mbook_core::{Book, Chapter, Landmark, Toc, TocItem};
+use mbook_converter::mbook::{Book, Chapter, Landmark, Toc, TocItem};
 use mbook_converter::{ConvertOptions, Converted, Converter, Error, Format, WarningKind};
 use std::io::{Cursor, Write};
 use zip::write::SimpleFileOptions;

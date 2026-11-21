@@ -1,7 +1,7 @@
 //! Plain text, through the public API.
 #![cfg(feature = "txt")]
 
-use mbook_converter::mbook_core::{Book, BookReader};
+use mbook_converter::mbook::{Book, BookReader};
 use mbook_converter::{ConvertOptions, Converter, Error, Format, WarningKind};
 use std::io::Cursor;
 

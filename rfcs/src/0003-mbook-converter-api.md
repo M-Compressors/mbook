@@ -5,7 +5,7 @@
 | **Status** | Draft |
 | **Start date** | 2026-11-21 |
 | **Crate** | `mbook-converter` |
-| **Builds on** | [RFC 0001](0001-mbook-format.md), format version 1.0; [RFC 0002](0002-mbook-core-api.md) |
+| **Builds on** | [RFC 0001](0001-mbook-format.md), format version 1.0; [RFC 0002](0002-mbook-api.md) |
 
 ## Summary
 
@@ -33,7 +33,7 @@ crate does today.
 
 [RFC 0001](0001-mbook-format.md#how-a-packer-builds-a-book) describes a
 packer that starts from FB2, EPUB or a folder, and
-[RFC 0002](0002-mbook-core-api.md#non-goals) leaves conversion to "crates
+[RFC 0002](0002-mbook-api.md#non-goals) leaves conversion to "crates
 built on this one". Without such a crate every application that imports books
 writes the same code: parse the source, produce Markdown without raw HTML,
 re-encode pictures, rename every reference, build the contents.
@@ -68,7 +68,7 @@ re-encode pictures, rename every reference, build the contents.
   pictures.
 - **Fetching anything.** A picture or a stylesheet named by a network address
   is never downloaded.
-- **Asynchronous I/O**, as in `mbook-core`.
+- **Asynchronous I/O**, as in `mbook`.
 
 ## Guide-level explanation
 
@@ -80,7 +80,7 @@ flowchart LR
     det --> fe["Front end<br/>one established<br/>crate per format"]
     fe --> draft["Draft<br/>metadata, Markdown,<br/>pictures, outline"]
     draft --> asm["Assembler<br/>chapters, paths, links,<br/>dialect, AVIF"]
-    asm --> book["Book<br/>of mbook-core"]
+    asm --> book["Book<br/>of mbook"]
     book --> out["Any Write<br/>an .mbook file"]
 ```
 
@@ -92,7 +92,7 @@ flowchart LR
 3. The *assembler* is the same for every format. It cuts the text into
    chapters, gives chapters and pictures their paths, re-targets links, brings
    the Markdown into the dialect of RFC 0001, and encodes pictures as AVIF.
-4. The result is a `Book` of `mbook-core`. `convert` writes it; `load`
+4. The result is a `Book` of `mbook`. `convert` writes it; `load`
    returns it.
 
 ### Converting a file
@@ -142,7 +142,7 @@ book.meta_mut().set_language("en")?;
 book.save("example.mbook")?;
 ```
 
-`converted.book` is an ordinary [`Book`](0002-mbook-core-api.md#book): every
+`converted.book` is an ordinary [`Book`](0002-mbook-api.md#book): every
 call of RFC 0002 works on it.
 
 ### Choosing formats and settings
@@ -226,7 +226,7 @@ impl Converter {
 }
 
 #[non_exhaustive]
-pub struct Converted { pub book: mbook_core::Book, pub report: Report }
+pub struct Converted { pub book: mbook::Book, pub report: Report }
 
 #[non_exhaustive]
 pub struct Report { pub format: Format, pub warnings: Vec<Warning> }
@@ -243,7 +243,7 @@ impl FromStr for Format { /* the same names, and common file extensions */ }
 
 // The four structs of options and limits; see "Options and limits".
 
-pub use mbook_core;
+pub use mbook;
 ```
 
 - `convert(source, sink)` is `load(source)` followed by
@@ -253,8 +253,8 @@ pub use mbook_core;
   serves any number of conversions.
 - `Format` has every variant whatever features are enabled, so a `match` on
   it does not depend on the feature set.
-- `mbook_core` is re-exported: `Book`, `WriteOptions`, `Limits` and
-  `mbook_core::Error` appear in this API. No type of any other dependency
+- `mbook` is re-exported: `Book`, `WriteOptions`, `Limits` and
+  `mbook::Error` appear in this API. No type of any other dependency
   does; the rule of RFC 0002 applies to this crate as well.
 
 ### Formats and features
@@ -272,7 +272,7 @@ pub use mbook_core;
 
 - `default` enables every feature of the table.
 - A build **MUST** enable at least one of them; otherwise compilation fails
-  with a message, as in `mbook-core`.
+  with a message, as in `mbook`.
 - A feature enables only the dependencies its format needs. Shared mechanisms
   have no feature of their own: the HTML-to-Markdown crate comes with `epub`
   and `html`, the picture codecs with every format that carries
@@ -283,7 +283,7 @@ pub use mbook_core;
   chapter.
 - Every single-feature build **MUST** compile without warnings, including its
   documentation.
-- `mbook-core` is used with its `write` feature only.
+- `mbook` is used with its `write` feature only.
 
 Not in the first version, for lack of a maintained crate that meets the
 license and the minimum Rust version: Mobipocket, KF8/AZW3, DjVu, RTF, CBR
@@ -306,7 +306,7 @@ Consequences that hold for every format:
 
 - **Peak memory is about the source plus the converted book.** The result is
   a `Book`, and a `Book` holds every chapter and picture
-  ([RFC 0002](0002-mbook-core-api.md#drawbacks)). Conversion is streaming at
+  ([RFC 0002](0002-mbook-api.md#drawbacks)). Conversion is streaming at
   its edges, a `Read` in and a `Write` out; it is not a constant-memory
   pipeline.
 - The pictures of the source are held, as the front end extracted them,
@@ -373,7 +373,7 @@ the source format.
 #### Markdown
 
 Every chapter is parsed with `markdown` 1.0.0, configured for the
-[dialect](0001-mbook-format.md#dialect) as in `mbook-core`, and changed at the
+[dialect](0001-mbook-format.md#dialect) as in `mbook`, and changed at the
 positions the parser reports:
 
 | Found | Becomes | Warning |
@@ -401,14 +401,14 @@ to the line.
 | Target in the source | Destination after conversion | Warning |
 | --- | --- | --- |
 | A file, a section or a page | The chapter that starts there | No |
-| A heading | That heading: the chapter's path and the anchor `mbook-core` computed | No |
+| A heading | That heading: the chapter's path and the anchor `mbook` computed | No |
 | Any other block: a paragraph, a figure, a list item, a block quote, a table | That block, named by an anchor definition in front of it | No |
 | An element inside a block, such as a word of a paragraph or a row of a table | The block that contains it, named the same way | No |
 | Nothing that was converted | The link becomes its text | `LinkDropped` |
 
 - A front end marks every element that has an identifier. The assembler
   keeps a mark only when a link of the book, or an entry of the contents,
-  leads to it, and removes the others. `mbook-core` finds the definitions
+  leads to it, and removes the others. `mbook` finds the definitions
   that are kept and fills the anchor table of the chapter; the converter
   handles no byte offsets.
 - The name is the identifier of the source, with everything but letters,
@@ -444,7 +444,7 @@ to the line.
 #### Metadata
 
 Values come from the front end and are passed to the setters of
-[`Meta`](0002-mbook-core-api.md#meta). A value that a setter refuses is
+[`Meta`](0002-mbook-api.md#meta). A value that a setter refuses is
 dropped with a `MetadataDropped` warning; it does not fail the conversion.
 
 | Key | Rule |
@@ -483,7 +483,7 @@ A cell is filled only as far as the front-end crate exposes the field.
 - With an outline in the draft, the contents are `Toc::Explicit`: one item
   per outline entry. An entry leads to a chapter or to a heading, because a
   contents item cannot name an extra anchor
-  ([RFC 0002](0002-mbook-core-api.md#extra-anchors)): an entry whose target
+  ([RFC 0002](0002-mbook-api.md#extra-anchors)): an entry whose target
   is another element leads to the nearest heading above it, or to the start
   of its chapter, with a `LinkRetargeted` warning.
 - An entry whose target was not converted is left out with a `LinkDropped`
@@ -585,7 +585,7 @@ pub struct ConvertOptions {
     pub format: Option<Format>,             // None: detect
     pub pictures: PictureOptions,
     pub limits: ConvertLimits,
-    pub write: mbook_core::WriteOptions,    // used by convert and convert_slice
+    pub write: mbook::WriteOptions,    // used by convert and convert_slice
 }
 
 #[non_exhaustive]
@@ -598,7 +598,7 @@ pub struct PictureOptions {
 pub struct ConvertLimits {
     pub max_source_bytes: u64,
     pub max_picture_pixels: u64,
-    pub book: mbook_core::Limits,
+    pub book: mbook::Limits,
 }
 ```
 
@@ -611,7 +611,7 @@ pub struct ConvertLimits {
 | `limits.book` | `Limits::default()` | The same limits the written file is read with. |
 
 - All three structs implement `Default` and are changed by assigning their
-  fields, like `ReadOptions` of `mbook-core`.
+  fields, like `ReadOptions` of `mbook`.
 - A value outside its range is brought into the range.
 - `limits.book.max_resource_bytes` also bounds one unpacked entry of an
   archive and one decoded Base64 picture; `limits.book.max_file_bytes` bounds
@@ -631,7 +631,7 @@ One `Error` enum, non-exhaustive, built with `thiserror`, and
 | `Protected(Format)` | The source is encrypted or under rights management. |
 | `Empty` | Nothing in the source could be converted. |
 | `Limit` | A limit of `ConvertLimits` was exceeded. |
-| `Book` | `mbook-core` refused a call, the final check or the write. Its error is the `source()`. |
+| `Book` | `mbook` refused a call, the final check or the write. Its error is the `source()`. |
 
 ```rust
 #[non_exhaustive]
@@ -669,10 +669,10 @@ release" shows how alive the crate is.
 | XML events (FictionBook, `ComicInfo.xml`) | `quick-xml` 0.42 with `encoding` | MIT | 2026-08 | |
 | Word to Markdown | `undoc` 0.28, with `docx` only | MIT | 2026-11 | Headings need an outline level in their style. Bookmarks are not read, so links inside a document become text. Notes are plain text. |
 | ZIP archives | `zip` 9 | MIT | 2026-11 | |
-| Dialect parsing with byte offsets | `markdown` 1.0.0 | MIT | 2025-04 | Already used by `mbook-core`. |
+| Dialect parsing with byte offsets | `markdown` 1.0.0 | MIT | 2025-04 | Already used by `mbook`. |
 | Picture decoding and AVIF encoding | `image` 0.25 with `avif`, which encodes through `ravif` 0.13 and `rav1e` 0.8 | MIT OR Apache-2.0; BSD-3-Clause; BSD-2-Clause | 2026-03 | |
 | Base64 (pictures of FictionBook and of `data:` addresses) | `base64` 0.23 | MIT OR Apache-2.0 | 2026-08 | |
-| Names of headings by GitHub's rule (Markdown) | `github-slugger` 0.1 | MIT | 2023-06 | One release; a port of a frozen algorithm. Already used by `mbook-core`. |
+| Names of headings by GitHub's rule (Markdown) | `github-slugger` 0.1 | MIT | 2023-06 | One release; a port of a frozen algorithm. Already used by `mbook`. |
 | The order of the pages of a comic | `alphanumeric-sort` 1.5 | MIT | 2026-07 | |
 | Unicode NFC | `unicode-normalization` 0.1 | MIT OR Apache-2.0 | 2026-10 | |
 | Text encodings | `encoding_rs` 0.8, `chardetng` 1 | Apache-2.0 OR MIT | 2026-10, 2026-03 | |
@@ -800,7 +800,7 @@ Crates that were looked at and ruled out:
 | --- | --- | --- | --- |
 | Where formats are parsed | An established crate per format | Parsers of this crate over `zip` and `quick-xml` | Decided by the format author. Less code to keep correct; the cost is memory and a larger tree. |
 | What a front end returns | A draft in the source's terms; one assembler | Each front end builds a `Book` | Paths, links, the dialect and pictures would be implemented once per format. |
-| Result of a conversion | A `Book`, then `Book::write` | A writer that emits resources while the source is read | Decided by the format author: a `Read` in and a `Write` out is enough. The tables are the first resources of a file and describe everything after them; `mbook-core` writes only from a `Book`. |
+| Result of a conversion | A `Book`, then `Book::write` | A writer that emits resources while the source is read | Decided by the format author: a `Read` in and a `Write` out is enough. The tables are the first resources of a file and describe everything after them; `mbook` writes only from a `Book`. |
 | Sources | `Read` and `&[u8]` | Paths | A caller opens a file in one line; a stream has no path. |
 | | | One entry point over a `Source` enum | `&[u8]` is itself a `Read`, so a conversion from both cannot be chosen by a trait. |
 | Sources that could seek | Buffered like any `Read` | A third entry point for `Read + Seek` | Decided by the format author: the API stays at two kinds of source. A caller that minds the copy maps the file into memory and passes the slice. |
@@ -811,7 +811,7 @@ Crates that were looked at and ruled out:
 | Constructs that cannot be kept | Dropped with a warning | An error | A book without one table is more useful than no book. |
 | Links to elements that are not headings | Kept, as anchor definitions in the target chapter | Sent to the nearest heading | Decided by the format author, who changed the format for it ([ADR-0008](adr/0008-chapter-anchor-tables.md), [ADR-0009](adr/0009-anchor-definitions.md)). |
 | Missing title or language | A stand-in value and a warning | An error | The caller can correct a `Book`; it cannot correct a failed conversion. |
-| Final validation | `Book::check` of `mbook-core` | Checks of this crate | One definition of a valid book. |
+| Final validation | `Book::check` of `mbook` | Checks of this crate | One definition of a valid book. |
 
 ## Prior art
 
@@ -820,7 +820,7 @@ Crates that were looked at and ruled out:
 | Calibre `ebook-convert` | Input plugins that produce one intermediate book; one output stage | An intermediate of XHTML and CSS |
 | Pandoc | Readers, one document model, writers | A model that covers every construct of every format |
 | `unpdf`, `undoc`, MarkItDown | Markdown as the result of extraction; pictures as separate resources | Raw HTML as a fallback |
-| `mbook-core` | `open`-like entry points, `Limits`, non-exhaustive options and errors | |
+| `mbook` | `open`-like entry points, `Limits`, non-exhaustive options and errors | |
 
 ## Unresolved questions
 
@@ -831,14 +831,14 @@ implementation:
 | Question | Outcome |
 | --- | --- |
 | Which crate writes Markdown for FB2 and text? | None: escaping is a function of this crate, tested against `markdown` 1.0.0 ([Dependencies](#dependencies)). |
-| How does this crate keep its `markdown` configuration equal to that of `mbook-core`? | Both call `markdown::ParseOptions::gfm()`, and every converted book passes `Book::check`, which parses each chapter with the configuration of `mbook-core`. |
+| How does this crate keep its `markdown` configuration equal to that of `mbook`? | Both call `markdown::ParseOptions::gfm()`, and every converted book passes `Book::check`, which parses each chapter with the configuration of `mbook`. |
 
 Still *proposed*: the names of the public items, and every front-end crate
 marked so in [Formats and features](#formats-and-features).
 
 ## Future possibilities
 
-- **Conversion in bounded memory**: a writer in `mbook-core` that spools
+- **Conversion in bounded memory**: a writer in `mbook` that spools
   encoded resources to a temporary file and writes the tables last, fed by
   front ends that emit sections as they parse.
 - **Progress and cancellation**, for the minutes a large comic takes.
@@ -849,4 +849,4 @@ marked so in [Formats and features](#formats-and-features).
 - **A strict mode** that turns chosen warnings into errors.
 - **Metadata from the front matter of a Markdown document**, and pictures
   given to a Markdown or HTML document as `data:` addresses or by a caller.
-- **A command-line tool** on top of this crate and `mbook-core`.
+- **A command-line tool** on top of this crate and `mbook`.
