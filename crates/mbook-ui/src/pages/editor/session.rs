@@ -1,0 +1,729 @@
+//! The state of an editing session as the page sees it, without a window.
+//!
+//! The page holds an [`Outline`] of the book, which chapter is open, which
+//! text is not yet sent or saved, the error of each control and the pictures
+//! that are being encoded. Its transitions are plain methods, and the words
+//! the views show are plain functions, so that both can be tested without a
+//! window.
+
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::error::Error as _;
+
+use crate::features::edit_book::command::MetaChange;
+use crate::features::edit_book::error::EditError;
+use crate::features::edit_book::outline::{
+    ChapterOutline, MetaOutline, Outline, PictureOutline, ProblemOutline,
+};
+use crate::shared::layout::SizeClass;
+
+/// A part of the book the editor shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum Section {
+    /// The metadata form.
+    Details,
+    /// The cover picture.
+    Cover,
+    /// The list of chapters and the chapter being edited.
+    Chapters,
+    /// The pictures of the book.
+    Pictures,
+    /// What the last check or save found.
+    Problems,
+}
+
+impl Section {
+    /// Every section, in the order the list shows them.
+    pub(super) const ALL: [Self; 5] = [
+        Self::Details,
+        Self::Cover,
+        Self::Chapters,
+        Self::Pictures,
+        Self::Problems,
+    ];
+
+    /// The name of the section.
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::Details => "Details",
+            Self::Cover => "Cover",
+            Self::Chapters => "Chapters",
+            Self::Pictures => "Pictures",
+            Self::Problems => "Problems",
+        }
+    }
+
+    /// The identifier of the control that opens the section.
+    pub(super) const fn id(self) -> &'static str {
+        match self {
+            Self::Details => "section-details",
+            Self::Cover => "section-cover",
+            Self::Chapters => "section-chapters",
+            Self::Pictures => "section-pictures",
+            Self::Problems => "section-problems",
+        }
+    }
+}
+
+/// What the chapter area shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ViewMode {
+    /// The Markdown editor alone.
+    Source,
+    /// The editor and the preview side by side.
+    Split,
+    /// The preview alone.
+    Preview,
+}
+
+impl ViewMode {
+    /// The name of the choice.
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::Source => "Source",
+            Self::Split => "Split",
+            Self::Preview => "Preview",
+        }
+    }
+
+    /// The choices a window of this size class offers: all three when it is
+    /// expanded, and one or the other below it.
+    pub(super) const fn available(class: SizeClass) -> &'static [Self] {
+        match class {
+            SizeClass::Expanded => &[Self::Source, Self::Split, Self::Preview],
+            SizeClass::Medium | SizeClass::Compact => &[Self::Source, Self::Preview],
+        }
+    }
+
+    /// The choice that is drawn: split is only for an expanded window and
+    /// shows the source below it.
+    pub(super) const fn effective(self, class: SizeClass) -> Self {
+        match (self, class) {
+            (Self::Split, SizeClass::Medium | SizeClass::Compact) => Self::Source,
+            _ => self,
+        }
+    }
+}
+
+/// Where a compact window is in its stack of screens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Level {
+    /// The list of sections.
+    Sections,
+    /// One section.
+    Section,
+    /// One chapter, inside the section of chapters.
+    Chapter,
+}
+
+/// A field of the Details form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) enum MetaField {
+    /// The title.
+    Title,
+    /// The authors, one per line.
+    Authors,
+    /// The language.
+    Language,
+    /// The series and its number.
+    Series,
+    /// The publisher.
+    Publisher,
+    /// The publication date.
+    Date,
+    /// The annotation.
+    Annotation,
+}
+
+impl MetaField {
+    /// Every field, in the order of the form.
+    #[cfg(test)]
+    pub(super) const ALL: [Self; 7] = [
+        Self::Title,
+        Self::Authors,
+        Self::Language,
+        Self::Series,
+        Self::Publisher,
+        Self::Date,
+        Self::Annotation,
+    ];
+}
+
+/// The control an error belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) enum Control {
+    /// A field of the Details form.
+    Meta(MetaField),
+    /// The text of the open chapter.
+    ChapterText,
+    /// Adding, moving, renaming or removing a chapter.
+    Chapters,
+    /// Adding or removing a picture.
+    Pictures,
+    /// Replacing the cover.
+    Cover,
+    /// The contents.
+    Contents,
+    /// The save.
+    Save,
+}
+
+/// Where the opening of the book is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Phase {
+    /// The book is being opened.
+    Loading,
+    /// The outline has arrived.
+    Ready,
+    /// The book could not be opened; the reason is in words.
+    Failed(String),
+}
+
+/// What an outline changed besides the lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(super) struct Applied {
+    /// The outline was newer than the last one and was taken.
+    pub(super) taken: bool,
+    /// It was the first outline of the session.
+    pub(super) first: bool,
+    /// The chapter that is open changed, so its text must be loaded.
+    pub(super) open_changed: bool,
+}
+
+/// The state of the page.
+#[derive(Debug)]
+pub(super) struct Session {
+    /// How far the opening is.
+    pub(super) phase: Phase,
+    /// The book as the last command left it.
+    pub(super) outline: Option<Outline>,
+    /// The section in front.
+    pub(super) section: Section,
+    /// The screen of a compact window.
+    pub(super) level: Level,
+    /// The chapter in the editor.
+    pub(super) open: Option<String>,
+    /// What the chapter area shows.
+    pub(super) mode: ViewMode,
+    /// Chapters whose text was changed since the last save.
+    edited: BTreeSet<String>,
+    /// The chapter whose text was typed and not sent.
+    pending: Option<String>,
+    /// Texts the book refused, kept so that nothing typed is lost.
+    drafts: BTreeMap<String, String>,
+    /// What went wrong, by control.
+    errors: HashMap<Control, String>,
+    /// Pictures that are queued or being encoded.
+    pub(super) encoding: usize,
+    /// The request number of the outline that was taken last.
+    applied: u64,
+    /// The place of a problem in words, by chapter and offset.
+    pub(super) places: HashMap<(String, u32), (usize, usize)>,
+}
+
+impl Session {
+    /// A session that has not heard from the book yet.
+    pub(super) fn new() -> Self {
+        Self {
+            phase: Phase::Loading,
+            outline: None,
+            section: Section::Chapters,
+            level: Level::Sections,
+            open: None,
+            mode: ViewMode::Split,
+            edited: BTreeSet::new(),
+            pending: None,
+            drafts: BTreeMap::new(),
+            errors: HashMap::new(),
+            encoding: 0,
+            applied: 0,
+            places: HashMap::new(),
+        }
+    }
+
+    /// Takes the outline that answers request `seq`, unless a newer one was
+    /// taken already. A chapter that is open and gone gives way to its
+    /// neighbour; with none open, the first is opened.
+    pub(super) fn apply_outline(&mut self, seq: u64, outline: Outline) -> Applied {
+        if seq <= self.applied {
+            return Applied::default();
+        }
+        self.applied = seq;
+        let first = self.outline.is_none();
+        let before = self.open.clone();
+        let old_index = before.as_deref().and_then(|path| self.chapter_index(path));
+        if !outline.unsaved {
+            self.edited.clear();
+        }
+        self.phase = Phase::Ready;
+        self.outline = Some(outline);
+        let chapters = self.chapters();
+        let still_there = before
+            .as_deref()
+            .is_some_and(|path| chapters.iter().any(|chapter| chapter.path == path));
+        if !still_there {
+            let index = old_index.unwrap_or(0).min(chapters.len().saturating_sub(1));
+            self.open = chapters.get(index).map(|chapter| chapter.path.clone());
+        }
+        if self.problems().is_empty() {
+            self.places.clear();
+        }
+        Applied {
+            taken: true,
+            first,
+            open_changed: self.open != before,
+        }
+    }
+
+    /// The book could not be opened.
+    pub(super) fn fail(&mut self, reason: String) {
+        self.phase = Phase::Failed(reason);
+    }
+
+    /// The chapters in reading order; empty before the outline arrives.
+    pub(super) fn chapters(&self) -> &[ChapterOutline] {
+        self.outline
+            .as_ref()
+            .map_or(&[], |outline| outline.chapters.as_slice())
+    }
+
+    /// The pictures of the book.
+    pub(super) fn pictures(&self) -> &[PictureOutline] {
+        self.outline
+            .as_ref()
+            .map_or(&[], |outline| outline.pictures.as_slice())
+    }
+
+    /// The problems the last check or save found.
+    pub(super) fn problems(&self) -> &[ProblemOutline] {
+        self.outline
+            .as_ref()
+            .map_or(&[], |outline| outline.problems.as_slice())
+    }
+
+    /// The metadata of the book.
+    pub(super) fn meta(&self) -> Option<&MetaOutline> {
+        self.outline.as_ref().map(|outline| &outline.meta)
+    }
+
+    /// The position of a chapter in reading order.
+    pub(super) fn chapter_index(&self, path: &str) -> Option<usize> {
+        self.chapters()
+            .iter()
+            .position(|chapter| chapter.path == path)
+    }
+
+    /// The title of the book as the editor has it.
+    pub(super) fn title(&self) -> Option<&str> {
+        self.meta().map(|meta| meta.title.as_str())
+    }
+
+    /// Whether leaving would lose something: a change of the book, a text
+    /// that was typed, a text the book refused, or a picture on its way.
+    pub(super) fn has_unsaved(&self) -> bool {
+        self.outline.as_ref().is_some_and(|outline| outline.unsaved)
+            || !self.edited.is_empty()
+            || self.pending.is_some()
+            || !self.drafts.is_empty()
+            || self.encoding > 0
+    }
+
+    /// The words of the header about the state of the book.
+    pub(super) fn status(&self, saving: bool) -> Option<&'static str> {
+        if saving {
+            Some("Saving")
+        } else if self.has_unsaved() {
+            Some("Unsaved changes")
+        } else {
+            None
+        }
+    }
+
+    /// Whether a chapter has text that was typed and not saved.
+    pub(super) fn is_edited(&self, path: &str) -> bool {
+        self.edited.contains(path) || self.drafts.contains_key(path)
+    }
+
+    /// The text of the open chapter was changed by typing.
+    pub(super) fn text_typed(&mut self, path: &str) {
+        self.pending = Some(path.to_owned());
+        self.edited.insert(path.to_owned());
+    }
+
+    /// Takes the chapter whose text must be sent, if any.
+    pub(super) fn take_pending(&mut self) -> Option<String> {
+        self.pending.take()
+    }
+
+    /// Whether text was typed and not sent.
+    #[cfg(test)]
+    pub(super) fn has_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// The book took the text of a chapter.
+    pub(super) fn text_accepted(&mut self, path: &str) {
+        self.drafts.remove(path);
+        if self.open.as_deref() == Some(path) {
+            self.errors.remove(&Control::ChapterText);
+        }
+    }
+
+    /// The book refused the text of a chapter: it is kept as a draft.
+    pub(super) fn text_refused(&mut self, path: &str, text: String, message: String) {
+        self.drafts.insert(path.to_owned(), text);
+        self.edited.insert(path.to_owned());
+        if self.open.as_deref() == Some(path) {
+            self.errors.insert(Control::ChapterText, message);
+        }
+    }
+
+    /// The text a refused chapter keeps, to show again when it is reopened.
+    pub(super) fn draft(&self, path: &str) -> Option<&str> {
+        self.drafts.get(path).map(String::as_str)
+    }
+
+    /// Whether the book refused some text and has not taken it since.
+    #[cfg(test)]
+    pub(super) fn has_refused_text(&self) -> bool {
+        !self.drafts.is_empty()
+    }
+
+    /// The first chapter with a refused text.
+    pub(super) fn first_refused(&self) -> Option<&str> {
+        self.drafts.keys().next().map(String::as_str)
+    }
+
+    /// A chapter got another path: what was kept under the old one follows.
+    pub(super) fn rename(&mut self, from: &str, to: &str) {
+        if self.open.as_deref() == Some(from) {
+            self.open = Some(to.to_owned());
+        }
+        if self.edited.remove(from) {
+            self.edited.insert(to.to_owned());
+        }
+        if self.pending.as_deref() == Some(from) {
+            self.pending = Some(to.to_owned());
+        }
+        if let Some(text) = self.drafts.remove(from) {
+            self.drafts.insert(to.to_owned(), text);
+        }
+    }
+
+    /// A chapter is gone: nothing is kept for it.
+    pub(super) fn forget(&mut self, path: &str) {
+        self.edited.remove(path);
+        self.drafts.remove(path);
+        if self.pending.as_deref() == Some(path) {
+            self.pending = None;
+        }
+    }
+
+    /// Shows the section, in a compact window as its own screen.
+    pub(super) fn show_section(&mut self, section: Section) {
+        self.section = section;
+        self.level = Level::Section;
+    }
+
+    /// Opens a chapter in the editor.
+    pub(super) fn show_chapter(&mut self, path: &str) {
+        self.section = Section::Chapters;
+        self.level = Level::Chapter;
+        self.open = Some(path.to_owned());
+    }
+
+    /// Goes one screen back in a compact window; `false` when there is none
+    /// before the list of sections.
+    pub(super) fn step_back(&mut self) -> bool {
+        match self.level {
+            Level::Chapter => {
+                self.level = Level::Section;
+                true
+            }
+            Level::Section => {
+                self.level = Level::Sections;
+                true
+            }
+            Level::Sections => false,
+        }
+    }
+
+    /// Records what went wrong at a control.
+    pub(super) fn set_error(&mut self, control: Control, message: String) {
+        self.errors.insert(control, message);
+    }
+
+    /// Clears the error of a control.
+    pub(super) fn clear_error(&mut self, control: &Control) {
+        self.errors.remove(control);
+    }
+
+    /// What went wrong at a control, in words.
+    pub(super) fn error(&self, control: &Control) -> Option<&str> {
+        self.errors.get(control).map(String::as_str)
+    }
+
+    /// The error of a control as a clone, for a view that moves it.
+    pub(super) fn error_text(&self, control: &Control) -> Option<String> {
+        self.error(control).map(str::to_owned)
+    }
+}
+
+/// Words for what went wrong in a command.
+pub(super) fn edit_error_words(error: &EditError) -> String {
+    let detail = chain(error);
+    match error {
+        EditError::Open(_) => format!("The book could not be opened: {detail}."),
+        EditError::Book(_) => format!("The book refused the change: {detail}."),
+        EditError::Save(_) => format!("The book could not be saved: {detail}."),
+        EditError::NoSuchPath(path) => format!("Nothing in the book has the path {path}."),
+        EditError::Ended => {
+            "The editing session has ended. Go back and open the book again.".to_owned()
+        }
+    }
+}
+
+/// The messages of the sources of an error, joined.
+fn chain(error: &EditError) -> String {
+    let mut parts = Vec::new();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        parts.push(cause.to_string());
+        source = cause.source();
+    }
+    if parts.is_empty() {
+        error.to_string()
+    } else {
+        parts.join(": ")
+    }
+}
+
+/// The line and the column, both counted from 1, of a byte offset in a text.
+/// An offset past the end is the end; one inside a character is the start of
+/// that character.
+pub(super) fn line_and_column(text: &str, offset: usize) -> (usize, usize) {
+    let end = clamp_to_boundary(text, offset);
+    let before = &text[..end];
+    let line = before.matches('\n').count() + 1;
+    let start = before.rfind('\n').map_or(0, |at| at + 1);
+    (line, before[start..].chars().count() + 1)
+}
+
+/// The largest character boundary of the text that is not past `offset`.
+pub(super) fn clamp_to_boundary(text: &str, offset: usize) -> usize {
+    let mut at = offset.min(text.len());
+    while !text.is_char_boundary(at) {
+        at -= 1;
+    }
+    at
+}
+
+/// The place of a problem in words, when the chapter and the position are
+/// known.
+pub(super) fn problem_words(problem: &ProblemOutline, place: Option<(usize, usize)>) -> String {
+    let location = match (&problem.path, problem.offset, place) {
+        (Some(path), Some(_), Some((line, column))) => {
+            format!("{path}, line {line}, column {column}: ")
+        }
+        (Some(path), Some(offset), None) => format!("{path}, byte {offset}: "),
+        (Some(path), None, _) => format!("{path}: "),
+        (None, _, _) => String::new(),
+    };
+    format!("{location}{}", problem.message)
+}
+
+/// Whether a problem is about the contents of the book, which the contents
+/// can be rebuilt from the headings to settle.
+pub(super) fn is_contents_problem(problem: &ProblemOutline) -> bool {
+    problem.message.contains("contents item")
+}
+
+/// What the announcement of a failed save says.
+pub(super) fn unsaved_announcement(problems: usize) -> String {
+    let noun = if problems == 1 { "problem" } else { "problems" };
+    format!("The book has {problems} {noun} and was not saved")
+}
+
+/// The name of a chapter as its control says it: with the state that colour
+/// or a mark also shows.
+pub(super) fn chapter_label(
+    path: &str,
+    heading: Option<&str>,
+    current: bool,
+    edited: bool,
+) -> String {
+    let mut label = path.to_owned();
+    if let Some(heading) = heading {
+        label.push_str(", ");
+        label.push_str(heading);
+    }
+    if current {
+        label.push_str(", current chapter");
+    }
+    if edited {
+        label.push_str(", edited");
+    }
+    label
+}
+
+/// The size of a file in the units a person reads.
+pub(super) fn size_label(len: usize) -> String {
+    const KIB: usize = 1024;
+    const MIB: usize = 1024 * 1024;
+    if len < KIB {
+        format!("{len} bytes")
+    } else if len < MIB {
+        format!("{}.{} KiB", len / KIB, len % KIB * 10 / KIB)
+    } else {
+        format!("{}.{} MiB", len / MIB, len % MIB * 10 / MIB)
+    }
+}
+
+/// The path proposed for a new chapter: `chNN.md`, the first number after the
+/// count of chapters that is free.
+pub(super) fn propose_chapter_path(chapters: &[ChapterOutline]) -> String {
+    let mut number = chapters.len() + 1;
+    loop {
+        let path = format!("ch{number:02}.md");
+        if chapters.iter().all(|chapter| chapter.path != path) {
+            return path;
+        }
+        number += 1;
+    }
+}
+
+/// The path proposed for a picture taken from a file: its name with the
+/// extension `.avif`, and a number when the book has that path already.
+pub(super) fn propose_picture_path(file_name: &str, pictures: &[PictureOutline]) -> String {
+    let stem = file_name
+        .rsplit_once('.')
+        .map_or(file_name, |(stem, _)| stem)
+        .trim();
+    let stem = if stem.is_empty() { "picture" } else { stem };
+    let mut path = format!("{stem}.avif");
+    let mut number = 1;
+    while pictures.iter().any(|picture| picture.path == path) {
+        number += 1;
+        path = format!("{stem}-{number}.avif");
+    }
+    path
+}
+
+/// The path the user typed, or what is wrong with it.
+///
+/// # Errors
+///
+/// The words that say what to enter, when nothing was.
+pub(super) fn clean_path(input: &str) -> Result<String, &'static str> {
+    let path = input.trim();
+    if path.is_empty() {
+        Err("Enter a path, such as ch01.md.")
+    } else {
+        Ok(path.to_owned())
+    }
+}
+
+/// The authors as the form holds them: one name per line.
+pub(super) fn authors_from_text(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// What the fields of the Details form hold.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct MetaValues {
+    /// The title.
+    pub(super) title: String,
+    /// The authors, one per line.
+    pub(super) authors: String,
+    /// The language.
+    pub(super) language: String,
+    /// The name of the series.
+    pub(super) series_name: String,
+    /// The position in the series.
+    pub(super) series_index: String,
+    /// The publisher.
+    pub(super) publisher: String,
+    /// The publication date.
+    pub(super) date: String,
+    /// The annotation.
+    pub(super) annotation: String,
+}
+
+impl MetaValues {
+    /// The values the form shows for a book.
+    pub(super) fn of(meta: &MetaOutline) -> Self {
+        Self {
+            title: meta.title.clone(),
+            authors: meta.authors.join("\n"),
+            language: meta.language.clone(),
+            series_name: meta
+                .series
+                .as_ref()
+                .map_or_default(|series| series.name.clone()),
+            series_index: meta
+                .series
+                .as_ref()
+                .and_then(|series| series.index.clone())
+                .unwrap_or_default(),
+            publisher: meta.publisher.clone().unwrap_or_default(),
+            date: meta.date.clone().unwrap_or_default(),
+            annotation: meta.annotation.clone().unwrap_or_default(),
+        }
+    }
+}
+
+/// `Some` of the text without its edges, or `None` when nothing is left.
+fn optional(text: &str) -> Option<String> {
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
+/// The change that makes the book agree with a field, or `None` when it
+/// agrees already.
+pub(super) fn meta_change(
+    field: MetaField,
+    values: &MetaValues,
+    meta: &MetaOutline,
+) -> Option<MetaChange> {
+    match field {
+        MetaField::Title => {
+            let title = values.title.trim();
+            (title != meta.title).then(|| MetaChange::Title(title.to_owned()))
+        }
+        MetaField::Authors => {
+            let authors = authors_from_text(&values.authors);
+            (authors != meta.authors).then_some(MetaChange::Authors(authors))
+        }
+        MetaField::Language => {
+            let language = values.language.trim();
+            (language != meta.language).then(|| MetaChange::Language(language.to_owned()))
+        }
+        MetaField::Series => {
+            let wanted =
+                optional(&values.series_name).map(|name| (name, optional(&values.series_index)));
+            let current = meta
+                .series
+                .as_ref()
+                .map(|series| (series.name.clone(), series.index.clone()));
+            (wanted != current).then_some(MetaChange::Series(wanted))
+        }
+        MetaField::Publisher => {
+            let publisher = optional(&values.publisher);
+            (publisher != meta.publisher).then_some(MetaChange::Publisher(publisher))
+        }
+        MetaField::Date => {
+            let date = optional(&values.date);
+            (date != meta.date).then_some(MetaChange::Date(date))
+        }
+        MetaField::Annotation => {
+            let annotation = optional(&values.annotation);
+            (annotation != meta.annotation).then_some(MetaChange::Annotation(annotation))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

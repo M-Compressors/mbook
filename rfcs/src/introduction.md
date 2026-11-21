@@ -12,7 +12,8 @@ container.
 | understand why the format looks this way | [Decision records](adr/overview.md) |
 | read or write books from Rust | [RFC 0002, guide-level explanation](0002-mbook-api.md#guide-level-explanation) |
 | convert EPUB, FB2 or PDF into mbook | [RFC 0003, guide-level explanation](0003-mbook-converter-api.md#guide-level-explanation) |
-| know what is still open | Unresolved questions of [RFC 0001](0001-mbook-format.md#unresolved-questions) and [RFC 0003](0003-mbook-converter-api.md#unresolved-questions) |
+| see how the reading application is meant to work | [RFC 0004, guide-level explanation](0004-mbook-ui.md#guide-level-explanation) |
+| know what is still open | Unresolved questions of [RFC 0001](0001-mbook-format.md#unresolved-questions), [RFC 0003](0003-mbook-converter-api.md#unresolved-questions) and [RFC 0004](0004-mbook-ui.md#unresolved-questions) |
 
 ## Documents
 
@@ -20,7 +21,8 @@ container.
 | --- | --- | --- |
 | [RFC 0001](0001-mbook-format.md) | The mbook file format, version 1 | Draft |
 | [RFC 0002](0002-mbook-api.md) | The mbook API | Draft |
-| [RFC 0003](0003-mbook-converter-api.md) | The mbook-converter API | Draft; not implemented |
+| [RFC 0003](0003-mbook-converter-api.md) | The mbook-converter API | Draft |
+| [RFC 0004](0004-mbook-ui.md) | The mbook application | Draft |
 | [ADR-0001 … ADR-0010](adr/overview.md) | Decisions behind RFC 0001 | See the overview |
 
 An **RFC** specifies behaviour: it is what an implementation is checked

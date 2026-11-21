@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/mbook", "crates/mbook-converter"]
+members = ["crates/mbook", "crates/mbook-converter", "crates/mbook-ui"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,38 +11,19 @@ repository = "https://github.com/M-Compressors/mbook"
 homepage = "https://m-compressors.github.io/mbook/"
 
 [workspace.dependencies]
+# Only what more than one crate uses. A dependency of a single crate is
+# declared in that crate's own manifest.
 thiserror = "2"
 uuid = { version = "1", features = ["v7"] }
-# Each crate picks `compression` and `decompression` itself. 0.2.6 is the
-# first version with `FramedIndex`, which `BookReader` is built on.
-mopenzl = { version = "0.2.6", default-features = false, features = ["std", "framed", "all-codecs"] }
 markdown = "1.0.0"
-bytes = "1.10"
 tempfile = "3.10"
 percent-encoding = "2"
 github-slugger = "0.1"
-
-# `mbook-converter`. Every front-end crate is optional there, behind the
-# feature of its format.
 mbook = { path = "crates/mbook", version = "0.1.0", default-features = false }
-unicode-normalization = "0.1"
-zip = { version = "9", default-features = false, features = ["deflate"] }
-# Decodes the pictures of a source and encodes them as AVIF; `avif` is the
-# encoder, built on `ravif` and `rav1e`.
+# Decodes pictures and encodes them as AVIF; `avif` is the encoder, built on
+# `ravif` and `rav1e`. The converter uses it for the pictures of a source,
+# the application for a picture added in its editor.
 image = { version = "0.25", default-features = false, features = ["avif", "bmp", "gif", "jpeg", "png", "rayon", "webp"] }
-encoding_rs = "0.8"
-chardetng = "1"
-base64 = "0.23"
-htmd = "0.6"
-rbook = { version = "0.7", default-features = false }
-# Reads FictionBook and `ComicInfo.xml`. `encoding` is for documents that are
-# not UTF-8, which is common for FictionBook; `escape-html` for the entities
-# of HTML, such as `&nbsp;`, that FictionBook files use although XML has none.
-quick-xml = { version = "0.42", features = ["encoding", "escape-html"] }
-# The order of the pages of a comic: `page2` before `page10`.
-alphanumeric-sort = "1.5"
-unpdf = { version = "0.55", default-features = false, features = ["raster"] }
-undoc = { version = "0.28", default-features = false, features = ["docx"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

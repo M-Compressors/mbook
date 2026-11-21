@@ -41,9 +41,10 @@ These instructions apply to all repository-owned code and documents.
   (`From`, `Default`, `Display`, `IntoIterator`) over inherent methods.
 - Document every public item, with `# Errors`, `# Panics` and `# Examples`
   sections where they apply. Examples are doc tests.
-- Shared dependencies and package metadata live in the workspace
-  `Cargo.toml` (`[workspace.dependencies]`, `[workspace.package]`); crates
-  refer to them with `workspace = true`.
+- Package metadata and the dependencies that more than one crate uses live
+  in the workspace `Cargo.toml` (`[workspace.package]`,
+  `[workspace.dependencies]`); crates refer to them with `workspace = true`.
+  A dependency of a single crate is declared in that crate's own manifest.
 - Use an established crate for a mechanism; write only what is a rule of the
   mbook format. Byte cursors, encoders and decoders of standard encodings,
   temporary files, identifiers and parsers of other formats come from

@@ -4,6 +4,11 @@
 
 ### Changed
 
+- A dependency that only one crate uses is declared in that crate's own
+  manifest; the manifest of the workspace keeps what several crates share.
+- Continuous integration installs the libraries GPUI links on Linux, and
+  checks the minimum Rust version of the libraries without `mbook-ui`,
+  which declares its own.
 - The library crate `mbook-core` is renamed `mbook`: the package, the
   folder `crates/mbook/`, the import path `mbook::` and RFC 0002
   (`0002-mbook-api.md`). `mbook-converter` re-exports it as
@@ -11,6 +16,29 @@
 
 ### Added
 
+- RFC 0004, the design of `mbook-ui`: a reading application with a library,
+  a reader and an editor, built with GPUI Kit, usable without a pointer and
+  with a screen reader.
+- `mbook-ui`, a first version of the application of RFC 0004. The package
+  requires Rust 1.100 and is not published to crates.io.
+  - A library kept under the data directory of the platform, with a `redb`
+    catalogue that is rebuilt from the books when it is lost or damaged.
+  - Opening a file adds it: an mbook file is copied, a file in any format of
+    `mbook-converter` is converted first. A book the library has is not
+    added twice.
+  - A reader that takes one chapter and the pictures on screen from the
+    file, keeps the place a book was left at, and has page tones, a choice of
+    typeface and size, and a table of contents.
+  - An editor for the metadata, the cover, the chapters as Markdown with a
+    preview, and the pictures; a picture that is not AVIF is encoded with the
+    `image` crate.
+  - Updates from the releases of this repository through `self_update`,
+    verified against a key built into the application.
+- `.github/workflows/release.yml`: builds the installers of the application
+  for a tag, signed, when a maintainer starts it. It has not been run.
+- `mbook`: tests that count the bytes a reader takes from a large book. To
+  open it takes less than a twentieth of the file; one chapter, less than
+  two thirty-seconds.
 - RFC 0001, the mbook file format, version 1.0, with seven decision records.
 - RFC 0002, the API of `mbook`.
 - RFC 0001 and ADR-0010: a book can list its notable places as *landmarks*,

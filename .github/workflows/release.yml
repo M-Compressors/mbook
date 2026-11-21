@@ -1,0 +1,257 @@
+name: Release
+
+# Builds the installers of the application for a tag and attaches them to the
+# release of that tag. A maintainer starts it by hand; no push builds a
+# release:
+#
+#   gh workflow run release.yml -f tag=v0.1.0
+#
+# The tag must be the version of the workspace, with a `v` in front. The
+# workflow builds the tag itself, not the branch it is started from.
+#
+# Actions are pinned to a commit, and the job that signs uses none but
+# `actions/checkout`.
+#
+# Secrets:
+#   BINARY_SIGN            a code-signing certificate, a .p12 file in Base64
+#   BINARY_SIGN_PASSWORD   the password of that file
+#   ZIPSIGN_KEY            the private key of zipsign, in Base64; its public
+#                          half is crates/mbook-ui/assets/update.pub
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to build, such as v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUNDLE_VERSION: 0.11.0
+  ZIPSIGN_VERSION: 0.2.2
+  APP_NAME: mbook
+  PACKAGE: mbook-ui
+  TAG: ${{ inputs.tag }}
+
+jobs:
+  release:
+    name: release of the tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.TAG }}
+
+      # A release is named after the version the binaries report. A tag that
+      # says something else would be offered as an update for ever.
+      - name: The tag is the version of the workspace
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r --arg package "$PACKAGE" '.packages[] | select(.name == $package).version')"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::The tag is $TAG, the version of $PACKAGE is $version"
+            exit 1
+          fi
+
+      - name: Create the release when the tag has none
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+
+  bundle:
+    name: ${{ matrix.name }}
+    needs: release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # On macOS only the .app is built: the disk image is packed here,
+          # after the bundle is signed.
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            format: osx
+          # Built on the arm64 runner: both architectures share one SDK.
+          - name: macos-x64
+            os: macos-latest
+            target: x86_64-apple-darwin
+            format: osx
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            format: wxsmsi
+    defaults:
+      run:
+        shell: bash
+    env:
+      # aws-lc-sys wants NASM on Windows x64; take its prebuilt objects.
+      AWS_LC_SYS_PREBUILT_NASM: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.TAG }}
+
+      # This job holds the signing secrets, so it runs no action of a third
+      # party and restores no cache: rustup is part of the runner's image.
+      - name: Install the Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+
+      - name: Install cargo-bundle and zipsign
+        run: |
+          cargo bundle --version 2>/dev/null | grep -q "$CARGO_BUNDLE_VERSION" \
+            || cargo install cargo-bundle --version "$CARGO_BUNDLE_VERSION" --locked --force
+          zipsign --version 2>/dev/null | grep -q "$ZIPSIGN_VERSION" \
+            || cargo install zipsign --version "$ZIPSIGN_VERSION" --locked --force
+
+      # The installer must contain the signed executable, so on Windows it is
+      # built and signed before cargo-bundle, which then skips its own build.
+      # The certificate is self-signed: SmartScreen does not trust it. The
+      # step exists so that a certificate of an authority only has to replace
+      # the secrets (and then gets a time stamp: /tr <server> /td SHA256).
+      - name: Build and sign the executable
+        if: runner.os == 'Windows'
+        env:
+          BINARY_SIGN: ${{ secrets.BINARY_SIGN }}
+          BINARY_SIGN_PASSWORD: ${{ secrets.BINARY_SIGN_PASSWORD }}
+        run: |
+          if [ -z "$BINARY_SIGN" ] || [ -z "$BINARY_SIGN_PASSWORD" ]; then
+            echo "::error::The secrets BINARY_SIGN and BINARY_SIGN_PASSWORD are needed"
+            exit 1
+          fi
+          cargo build --release --locked -p "$PACKAGE" --target ${{ matrix.target }}
+          # signtool is part of the Windows SDK and not on the PATH.
+          signtool="$(find "/c/Program Files (x86)/Windows Kits/10/bin" -path "*/x64/signtool.exe" | sort -V | tail -n 1)"
+          if [ -z "$signtool" ]; then
+            echo "::error::signtool.exe was not found in the Windows SDK"
+            exit 1
+          fi
+          echo "SIGNTOOL=$signtool" >> "$GITHUB_ENV"
+          # cargo-bundle only looks whether the variable exists.
+          echo "CARGO_BUNDLE_SKIP_BUILD=1" >> "$GITHUB_ENV"
+          printf '%s' "$BINARY_SIGN" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/sign.p12"
+          # MSYS_NO_PATHCONV: Git Bash would turn options like /fd into paths.
+          MSYS_NO_PATHCONV=1 "$signtool" sign /fd SHA256 /f "$(cygpath -w "$RUNNER_TEMP/sign.p12")" \
+            /p "$BINARY_SIGN_PASSWORD" "target/${{ matrix.target }}/release/$APP_NAME.exe"
+
+      # Run in the folder of the package: cargo-bundle looks for the icon
+      # relative to the folder it is started in, and leaves it out silently
+      # when it is not there.
+      - name: Bundle
+        working-directory: crates/mbook-ui
+        run: cargo bundle --release --target ${{ matrix.target }} --format ${{ matrix.format }}
+
+      - name: Sign the installer
+        if: runner.os == 'Windows'
+        env:
+          BINARY_SIGN_PASSWORD: ${{ secrets.BINARY_SIGN_PASSWORD }}
+        run: |
+          msi="$(find "target/${{ matrix.target }}/release/bundle" -type f -name "*.msi" | head -n 1)"
+          MSYS_NO_PATHCONV=1 "$SIGNTOOL" sign /fd SHA256 /f "$(cygpath -w "$RUNNER_TEMP/sign.p12")" \
+            /p "$BINARY_SIGN_PASSWORD" "$msi"
+          rm -f "$RUNNER_TEMP/sign.p12"
+
+      # cargo-bundle does not sign: the executable has only the ad-hoc
+      # signature of the linker, without sealed resources, and a downloaded
+      # application counts as damaged on Apple silicon. The whole bundle is
+      # signed, then packed.
+      #
+      # It is signed with a certificate, not ad hoc: the identity of an ad-hoc
+      # signature is the hash of the executable and changes with every build.
+      # With a certificate it is the bundle identifier and the certificate,
+      # which an update keeps.
+      - name: Sign the application and pack the disk image
+        if: matrix.format == 'osx'
+        env:
+          BINARY_SIGN: ${{ secrets.BINARY_SIGN }}
+          BINARY_SIGN_PASSWORD: ${{ secrets.BINARY_SIGN_PASSWORD }}
+        run: |
+          bundle_dir="target/${{ matrix.target }}/release/bundle"
+          app="$(find "$bundle_dir" -type d -name "*.app" | head -n 1)"
+          if [ -z "$BINARY_SIGN" ] || [ -z "$BINARY_SIGN_PASSWORD" ]; then
+            echo "::error::The secrets BINARY_SIGN and BINARY_SIGN_PASSWORD are needed"
+            exit 1
+          fi
+
+          # The certificate lives in a keychain of its own for this step only.
+          work="$(mktemp -d)"
+          keychain="$work/sign.keychain-db"
+          keychain_password="$(uuidgen)"
+          trap 'security delete-keychain "$keychain" 2>/dev/null; rm -rf "$work"' EXIT
+          printf '%s' "$BINARY_SIGN" | tr -d '[:space:]' | base64 --decode > "$work/sign.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$work/sign.p12" -k "$keychain" -P "$BINARY_SIGN_PASSWORD" -T /usr/bin/codesign
+          # Without the partition list codesign waits for access to the key.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # Without -v: a self-signed certificate is not trusted, but it signs.
+          hashes="$(security find-identity -p codesigning "$keychain" | sed -nE 's/.*([0-9A-F]{40}).*/\1/p')"
+          identity="${hashes%%$'\n'*}"
+          if [ -z "$identity" ]; then
+            echo "::error::BINARY_SIGN holds no certificate for code signing"
+            exit 1
+          fi
+
+          codesign --force --deep --keychain "$keychain" --sign "$identity" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          # The log should say `certificate leaf = H"…"`, not a cdhash.
+          codesign -d -r- "$app"
+          staging="$(mktemp -d)"
+          cp -R "$app" "$staging/"
+          ln -s /Applications "$staging/Applications"
+          hdiutil create -volname "$(basename "$app" .app)" -srcfolder "$staging" \
+            -fs HFS+ -format UDZO -ov "$bundle_dir/installer.dmg"
+
+      # Two files per platform: the installer a person downloads, and the
+      # archive the application updates itself from. The archive is named by
+      # the target and signed with zipsign; the application verifies it
+      # against crates/mbook-ui/assets/update.pub before it installs anything.
+      # zipsign salts the signature with the name of the file, so the archive
+      # is not renamed after it is signed.
+      - name: Collect and sign
+        env:
+          ZIPSIGN_KEY: ${{ secrets.ZIPSIGN_KEY }}
+        run: |
+          if [ -z "$ZIPSIGN_KEY" ]; then
+            echo "::error::The secret ZIPSIGN_KEY is needed"
+            exit 1
+          fi
+          bundle_dir="target/${{ matrix.target }}/release/bundle"
+          mkdir dist
+          archive="dist/$APP_NAME-$TAG-${{ matrix.target }}.tar.gz"
+          if [ "${{ matrix.format }}" = osx ]; then
+            cp "$bundle_dir/installer.dmg" "dist/$APP_NAME-$TAG-${{ matrix.name }}.dmg"
+            app="$(find "$bundle_dir" -type d -name "*.app" | head -n 1)"
+            # Without COPYFILE_DISABLE bsdtar adds `._*` files to the archive.
+            COPYFILE_DISABLE=1 tar -czf "$archive" -C "$(dirname "$app")" "$(basename "$app")"
+          else
+            msi="$(find "$bundle_dir" -type f -name "*.msi" | head -n 1)"
+            if [ -z "$msi" ]; then
+              echo "::error::No .msi in $bundle_dir"
+              exit 1
+            fi
+            cp "$msi" "dist/$APP_NAME-$TAG-${{ matrix.name }}.msi"
+            cp "$msi" "dist/$APP_NAME.msi"
+            tar -czf "$archive" -C dist "$APP_NAME.msi"
+            rm "dist/$APP_NAME.msi"
+          fi
+          printf '%s' "$ZIPSIGN_KEY" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/update.key"
+          zipsign sign tar "$archive" "$RUNNER_TEMP/update.key"
+          rm -f "$RUNNER_TEMP/update.key"
+          zipsign verify tar "$archive" crates/mbook-ui/assets/update.pub
+          ls -l dist
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/* --clobber

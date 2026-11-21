@@ -6,8 +6,8 @@ container.**
 An mbook file opens without being read in full, decodes only what is on
 screen, and needs neither a web engine nor an XML parser to show. This
 repository holds the format specification, `mbook`, the Rust library
-that reads and writes it, and `mbook-converter`, which turns books in other
-formats into mbook.
+that reads and writes it, `mbook-converter`, which turns books in other
+formats into mbook, and `mbook-ui`, an application to read and edit them.
 
 [![Tests](https://github.com/M-Compressors/mbook/actions/workflows/ci.yml/badge.svg?branch=main)][ci]
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
@@ -23,7 +23,9 @@ mbook is not released yet, and the format may still change.
 | File format, version 1.0 | Draft: [RFC 0001][format] |
 | Library API | Draft: [RFC 0002][api] |
 | Converter API | Draft: [RFC 0003][converter] |
+| Application | Draft: [RFC 0004][app] |
 | `mbook` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including anchor tables of chapters. Tested against files built by hand and against real AVIF pictures. Not published to crates.io. |
+| `mbook-ui` | A first version of RFC 0004: a library that imports every format the converter reads, a reader that takes one chapter at a time from the file, an editor, settings, and updates from the releases of this repository. Tested in headless windows; what it does not do yet, and what has not been tried on a real screen, a screen reader or Windows, is listed in [RFC 0004][app-status]. No release has been built. |
 | `mbook-converter` | Implements RFC 0003: EPUB, FB2, PDF, comic archives, Word, HTML, Markdown and plain text are converted into mbook, with pictures encoded as AVIF. The limits of each format are listed in [RFC 0003][converter-status]. Tested against sources its tests build in memory; not yet against a collection of real books. Not published to crates.io. |
 
 ## Why another book format
@@ -129,6 +131,7 @@ Every source format is one Cargo feature, all on by default: `epub`, `fb2`,
 | [`rfcs/`](rfcs/) | The design documents, an mdBook published at the [site]. |
 | [`crates/mbook/`](crates/mbook/) | The library. |
 | [`crates/mbook-converter/`](crates/mbook-converter/) | The converter from EPUB, FB2, PDF and other formats. |
+| [`crates/mbook-ui/`](crates/mbook-ui/) | The reading application, built with GPUI Kit. |
 
 ## Development
 
@@ -168,6 +171,8 @@ conditions.
 [format]: https://m-compressors.github.io/mbook/0001-mbook-format.html
 [api]: https://m-compressors.github.io/mbook/0002-mbook-api.html
 [converter]: https://m-compressors.github.io/mbook/0003-mbook-converter-api.html
+[app]: https://m-compressors.github.io/mbook/0004-mbook-ui.html
+[app-status]: https://m-compressors.github.io/mbook/0004-mbook-ui.html#what-is-implemented
 [converter-status]: https://m-compressors.github.io/mbook/0003-mbook-converter-api.html#what-is-implemented
 [adr]: https://m-compressors.github.io/mbook/adr/overview.html
 [mopenzl]: https://github.com/M-Compressors/mopenzl

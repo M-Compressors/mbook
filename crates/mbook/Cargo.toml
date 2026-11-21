@@ -28,10 +28,12 @@ write = [
 
 [dependencies]
 thiserror.workspace = true
-mopenzl = { workspace = true, optional = true }
+# Each feature picks `compression` or `decompression`. 0.2.6 is the first
+# version with `FramedIndex`, which `BookReader` is built on.
+mopenzl = { version = "0.2.6", default-features = false, features = ["std", "framed", "all-codecs"], optional = true }
 markdown = { workspace = true, optional = true }
 uuid = { workspace = true, optional = true }
-bytes = { workspace = true, optional = true }
+bytes = { version = "1.10", optional = true }
 tempfile = { workspace = true, optional = true }
 github-slugger = { workspace = true, optional = true }
 percent-encoding.workspace = true
@@ -39,7 +41,7 @@ percent-encoding.workspace = true
 [dev-dependencies]
 # The tests build containers by hand, to give the reader files that the
 # writer of this crate never produces.
-mopenzl = { workspace = true, features = ["compression", "decompression"] }
+mopenzl = { version = "0.2.6", default-features = false, features = ["std", "framed", "all-codecs", "compression", "decompression"] }
 tempfile.workspace = true
 
 [lints]

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="navy" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34406e"/>
+      <stop offset="1" stop-color="#161923"/>
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.82" stop-color="#f4f5fa"/>
+      <stop offset="1" stop-color="#d5d9e8"/>
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#cfd4e4"/>
+      <stop offset="0.18" stop-color="#eef0f7"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
+  <!-- The plate: the navy of the design documents. -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#navy)"/>
+  <!-- The cover, seen under the pages. -->
+  <path d="M512 758 C434 708 322 698 204 726 L204 372 C210 366 222 360 236 356 L236 690 C330 664 440 674 512 724 C584 674 694 664 788 690 L788 356 C802 360 814 366 820 372 L820 726 C702 698 590 708 512 758 Z" fill="#8c93ff"/>
+  <!-- The two pages. -->
+  <path d="M512 372 C440 322 330 312 236 338 L236 690 C330 664 440 674 512 724 Z" fill="url(#left)"/>
+  <path d="M512 372 C584 322 694 312 788 338 L788 690 C694 664 584 674 512 724 Z" fill="url(#right)"/>
+</svg>

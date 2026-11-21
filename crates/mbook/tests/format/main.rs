@@ -8,6 +8,9 @@ mod checking;
 #[cfg(feature = "read")]
 mod conformance;
 #[cfg(test)]
+#[cfg(all(feature = "read", feature = "write"))]
+mod lazy;
+#[cfg(test)]
 #[cfg(feature = "read")]
 mod raw;
 #[cfg(test)]
