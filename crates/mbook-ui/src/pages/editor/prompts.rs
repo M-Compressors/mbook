@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{
     AppContext as _, Context, Entity, Focusable as _, ParentElement as _, SharedString,
@@ -26,6 +27,8 @@ pub(super) struct PathRequest {
     pub(super) initial: String,
     /// The name of the button that goes on.
     pub(super) ok: &'static str,
+    /// Chapter names and link destinations to copy into the field.
+    pub(super) chapters: Vec<(String, String)>,
 }
 
 /// Asks for a path in a dialog. `on_ok` gets the path that was entered;
@@ -47,6 +50,7 @@ pub(super) fn ask_path(
     let (on_ok, on_cancel) = (Rc::new(on_ok), Rc::new(on_cancel));
     let first = Cell::new(true);
     let (title, label, ok) = (request.title, request.label, request.ok);
+    let chapters = Rc::new(request.chapters.clone());
     window.open_alert_dialog(cx, move |alert, window, cx| {
         if first.replace(false) {
             input.focus_handle(cx).focus(window, cx);
@@ -55,6 +59,26 @@ pub(super) fn ask_path(
         let danger = cx.theme().danger;
         let field = v_flex()
             .gap_2()
+            .children((!chapters.is_empty()).then(|| {
+                let chapters = chapters.clone();
+                let input = input.clone();
+                Button::new("link-choose-chapter")
+                    .label("Choose chapter")
+                    .dropdown_caret(true)
+                    .dropdown_menu(move |menu, _, _| {
+                        chapters.iter().fold(menu, |menu, (label, destination)| {
+                            let input = input.clone();
+                            let destination = destination.clone();
+                            menu.item(PopupMenuItem::new(label.clone()).on_click(
+                                move |_, window, cx| {
+                                    input.update(cx, |field, cx| {
+                                        field.set_value(destination.clone(), window, cx);
+                                    });
+                                },
+                            ))
+                        })
+                    })
+            }))
             .child(div().child(label))
             .child(Input::new(&input).aria_label(label))
             .children(message.map(|message| status_line("path-error", message).text_color(danger)));

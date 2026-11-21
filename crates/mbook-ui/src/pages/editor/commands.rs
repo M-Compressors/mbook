@@ -103,6 +103,7 @@ impl EditorPage {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
+        let picture_applied = matches!(origin, Origin::AddPicture | Origin::SetCover);
         match (origin, result) {
             (Origin::Load, Err(error)) => {
                 self.session.fail(edit_error_words(&error));
@@ -126,6 +127,7 @@ impl EditorPage {
             (Origin::Chapter(op), Ok(outline)) => self.chapter_done(seq, &op, outline, window, cx),
             (Origin::Chapter(_), Err(error)) => self.fail(Control::Chapters, &error, cx),
             (Origin::AddPicture | Origin::RemovePicture, Ok(outline)) => {
+                self.visual.pictures = std::sync::Arc::default();
                 self.session.clear_error(&Control::Pictures);
                 self.take(seq, outline, window, cx);
             }
@@ -133,6 +135,7 @@ impl EditorPage {
                 self.fail(Control::Pictures, &error, cx);
             }
             (Origin::SetCover, Ok(outline)) => {
+                self.visual.pictures = std::sync::Arc::default();
                 self.session.clear_error(&Control::Cover);
                 self.take(seq, outline, window, cx);
             }
@@ -144,6 +147,9 @@ impl EditorPage {
             (Origin::Contents, Err(error)) => self.fail(Control::Contents, &error, cx),
             (Origin::Check, Err(error)) => self.fail(Control::Save, &error, cx),
             (Origin::Save, result) => self.saved(seq, result, window, cx),
+        }
+        if picture_applied {
+            self.picture_applied(window, cx);
         }
     }
 

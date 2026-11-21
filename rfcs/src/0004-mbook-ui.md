@@ -224,16 +224,19 @@ Compact: a stack that opens in the chapter. Back reaches the chapters and sectio
   controls for insertion, deletion and alignment. Tables and code blocks can
   move between top-level blocks by dragging their handles. Task items can
   be checked in the editor.
-- Visual represents picture atoms as placeholders. Source can edit their
-  alternative text and destinations, and can edit footnote and reference
-  definitions.
+- The Visual link dialog can fill in a relative destination from the chapter
+  picker. The destination remains editable.
+- The Visual toolbar opens a preview of pictures referenced in the chapter.
+  Source can edit picture alternative text and destinations, and can edit
+  footnote and reference definitions.
 - **Source** and the source side of **Split** highlight Markdown syntax.
 - **Details** is a form over the metadata of RFC 0001: title, authors,
   language, series, publisher, date, annotation.
 - **Chapters** are a list in reading order: add, remove, move up and down.
-- **Pictures** and the **Cover** take a file in AVIF, JPEG, PNG, GIF, WebP or
-  BMP. Anything but AVIF is encoded as AVIF when it is added; the list shows
-  the picture as being encoded until it is ready.
+- **Pictures** shows a gallery with a preview, dimensions, size and a remove
+  control for each picture. Pictures and the **Cover** accept AVIF, JPEG,
+  PNG, GIF, WebP and BMP. The add dialog accepts quality and maximum output
+  dimensions. It starts at quality 80 and the original dimensions.
 - **Problems** lists what `Book::check` reports, each with its chapter and
   place; choosing one opens that place. A book with problems is not saved.
 - **Save** replaces the book in the library. Use Command+S on macOS or
@@ -572,15 +575,17 @@ GPUI decodes no AVIF, so the application does:
    the rotation and the mirroring an AVIF file may ask for, so the
    application does, by the rules `mbook` reads the size of a picture with:
    the decoded picture then has the size the tables of the book give.
-3. The picture is scaled down to the width it is shown at, in device pixels.
+3. The picture is scaled down to fit the text column and the available page
+   height, keeping its proportions.
 4. The result is given to GPUI as a rendered image.
 
 - A picture is requested when the Markdown view lays it out. The three
   steps run off the main thread. The AVIF decoder runs on a scoped thread
   with its own stack because native executor threads can have small stacks.
   The view reserves the picture's space from its size in the book tables.
-- Decoded pictures are kept in a cache bounded by their bytes, the least
-  recently shown leaving first. The bound depends on the size class
+- Decoded pictures are cached by their fitted dimensions. After a resize,
+  the placeholder and the decode use the new size. The cache is bounded by
+  bytes, with the least recently shown leaving first. The bound depends on the size class
   (*proposed*: 256 MiB expanded, 64 MiB compact).
 - The thumbnail of a cover is made once, at import or after a save, 400 px
   wide, and stored as a JPEG file that GPUI loads by its path.
@@ -745,8 +750,8 @@ sequenceDiagram
   with `similar`. Unchanged blocks keep their original Markdown whenever
   they can be put back without changing the block structure. If the
   initial import changes the top-level block structure, the chapter is
-  available in Source. Picture placeholders keep Visual from resolving
-  image sources.
+  available in Source. The Visual picture preview and the gallery use the
+  same bounded cache and load pictures by book path through the editing task.
 - The source text is
   sent to the task as `Chapter::set_text` when typing pauses for 400 ms,
   when another chapter is opened, and before a check or a save.
@@ -775,14 +780,11 @@ sequenceDiagram
   or BMP, the formats `mbook-converter` reads
   ([RFC 0003](0003-mbook-converter-api.md#pictures)). The native picker and
   its selection check use the extensions of these formats.
-  - An AVIF file is passed to `Book::add_picture` or `Book::set_cover` as it
-    is.
-  - Any other file is decoded, turned upright by its orientation tag, and
-    encoded as AVIF by the `image` crate, with quality 80 and speed 6, the
-    defaults of the converter. Of an animated file the first frame is kept. This happens in a
-    task of its own, not in the task that owns the book, so that typing and
-    saving do not wait for an encoder. The command that adds the picture is
-    sent when the bytes are ready.
+  - The application decodes and orients every selected file, takes the first
+    frame of an animation, and encodes AVIF at the chosen quality and speed
+    6. Optional width and height limits fit the result without upscaling
+    or changing its proportions. The encoding runs on a separate task.
+    The command that adds the picture is sent when the bytes are ready.
   - The path the user gives ends in `.avif`; the editor proposes the name of
     the file with that extension.
   - A picture of more than 100,000,000 pixels, the limit of the converter,
@@ -944,8 +946,8 @@ can break in its middle.
 | --- | --- |
 | Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
-| Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. A block taller than the page can be clipped through a line. Pictures keep the decode width of their first draw. |
-| Editor | Editing opens the first chapter in Visual. Visual supports tables, nested and task lists, quotes, links, code blocks, and picture insertion. Tables and code blocks support drag to reorder. Footnotes and reference definitions are preserved and edited in Source. Pictures appear as placeholders. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. |
+| Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures scale to fit a page. Other tall blocks can be clipped through a line. |
+| Editor | Editing opens the first chapter in Visual. Visual supports tables, nested and task lists, quotes, code blocks, chapter link selection, and a picture preview. The picture gallery shows thumbnails and picture import offers encoding settings. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. No real release exists, so neither has met the network; the Windows part has never been compiled. |
 | Release workflow | Written; never run. A local `cargo bundle` on macOS produces the application with its icon. |

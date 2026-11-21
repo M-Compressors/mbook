@@ -81,6 +81,11 @@ pub(super) struct Analysis {
     pub(super) pictures: Vec<String>,
 }
 
+/// Image destinations in the chapter, including reference-style images.
+pub(crate) fn picture_destinations(text: &str) -> Vec<String> {
+    analyse(text).pictures
+}
+
 /// Parses a chapter as the dialect of RFC 0001, `CommonMark` with the GFM
 /// extensions, as `mbook` does.
 ///

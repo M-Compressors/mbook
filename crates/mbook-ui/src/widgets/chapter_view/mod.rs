@@ -29,7 +29,7 @@
 //!   measures the image at a small square, so the text would jump when the
 //!   picture arrives. The widget therefore answers with a transparent image of
 //!   the size the picture will have until the real one is ready, and the text
-//!   keeps its place ([`layout::placeholder_size`]). A picture the owner does
+//!   keeps its place ([`layout::picture_size`]). A picture the owner does
 //!   not know is not fetched: nothing is drawn for it and the view never
 //!   reaches the network.
 //! * **Structure for assistive technology.** The Kit's Markdown view reports
@@ -70,7 +70,7 @@ use crate::entities::picture::Bitmap;
 use crate::features::appearance::Appearance;
 use crate::shared::ui::page_colors;
 
-pub(crate) use layout::{column_width, device_width};
+pub(crate) use layout::{column_width, picture_size};
 
 /// The gap the Kit leaves under a paragraph, in rems: the `paragraph_gap` of
 /// its text style, which the view does not change. A test measures it.
@@ -98,14 +98,15 @@ pub(crate) enum PictureState {
     Failed,
 }
 
-/// Finds a picture of the text: its destination as written in the Markdown,
-/// and the width of the text column in logical pixels. `None` for a
-/// destination that is no picture of the book.
+/// Finds a picture by its Markdown destination, available column width and,
+/// in paged mode, available height in logical pixels. `None` for a destination
+/// that is no picture of the book.
 ///
 /// Called when the picture is drawn, so asking for it again is cheap and the
 /// first ask is the request.
-pub(crate) type PictureResolver =
-    Arc<dyn Fn(&str, f32, &mut Window, &mut App) -> Option<PictureState> + Send + Sync>;
+pub(crate) type PictureResolver = Arc<
+    dyn Fn(&str, f32, Option<f32>, &mut Window, &mut App) -> Option<PictureState> + Send + Sync,
+>;
 
 /// What happens when a link of the text is followed, with its destination as
 /// written.
@@ -190,6 +191,7 @@ pub(crate) struct ChapterView {
     blocks_ready: bool,
     label: SharedString,
     pictures: Option<PictureResolver>,
+    picture_height: Option<f32>,
     on_link: Option<LinkHandler>,
     placeholders: Placeholders,
     failures: Failures,
@@ -289,6 +291,7 @@ impl ChapterView {
             blocks_ready: true,
             label: SharedString::default(),
             pictures: None,
+            picture_height: None,
             on_link: None,
             placeholders: Arc::default(),
             failures: Arc::default(),
@@ -852,6 +855,7 @@ impl ChapterView {
         cx: &Context<'_, Self>,
     ) -> impl Fn(&SharedUri) -> ImageSource + Send + Sync + 'static + use<> {
         let resolver = self.pictures.clone();
+        let height = self.picture_height;
         let placeholders = Arc::clone(&self.placeholders);
         let failures = Arc::clone(&self.failures);
         let this = cx.entity().downgrade();
@@ -862,12 +866,15 @@ impl ChapterView {
             let failures = Arc::clone(&failures);
             let this = this.clone();
             ImageSource::Custom(Arc::new(move |window, cx| {
+                if column < 1.0 || height.is_some_and(|height| height < 1.0) {
+                    return None;
+                }
                 let state = resolver
                     .as_ref()
-                    .and_then(|resolver| resolver(&destination, column, window, cx));
+                    .and_then(|resolver| resolver(&destination, column, height, window, cx));
                 picture_image(
                     state,
-                    column,
+                    (column, height),
                     &destination,
                     &placeholders,
                     &failures,
@@ -882,7 +889,7 @@ impl ChapterView {
 /// What the Kit is given for a picture in `state`.
 fn picture_image(
     state: Option<PictureState>,
-    column: f32,
+    (column, height): (f32, Option<f32>),
     destination: &str,
     placeholders: &Placeholders,
     failures: &Failures,
@@ -892,7 +899,7 @@ fn picture_image(
     match state {
         Some(PictureState::Ready(image)) => Some(Ok(image)),
         Some(PictureState::Pending(known)) => {
-            let size = layout::placeholder_size(known, column)?;
+            let size = picture_size(known, column, height)?;
             let mut placeholders = placeholders.lock().ok()?;
             let image = placeholders
                 .entry(size)
@@ -951,6 +958,20 @@ impl Render for ChapterView {
         // What GPUI makes of a relative line height: whole pixels.
         let line = (settings.text_size * settings.line_height).round();
         let gap = window.rem_size().as_f32() * PARAGRAPH_GAP_REMS;
+        if self.paging.is_some() && self.pictures.is_some() {
+            let list = self.state.read(cx).list_state();
+            let page = list.viewport_bounds().size.height.as_f32();
+            // Leave room for the paragraph gap and the line that can precede an inline image.
+            let height = if page >= 1.0 {
+                (page - gap - line).max(1.0)
+            } else {
+                0.0
+            };
+            if self.picture_height != Some(height) {
+                self.picture_height = Some(height);
+                list.remeasure();
+            }
+        }
         self.repaginate(line, gap, cx);
         self.settle(window, cx);
         let (page, ink) = tone.map_or((cx.theme().background, cx.theme().foreground), page_colors);

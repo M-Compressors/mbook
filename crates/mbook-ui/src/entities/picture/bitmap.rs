@@ -41,6 +41,11 @@ impl Bitmap {
         &self.rgba
     }
 
+    /// Takes the RGBA pixels without copying them.
+    pub(crate) fn into_rgba(self) -> Vec<u8> {
+        self.rgba
+    }
+
     /// The bytes the pixels take; what the cache counts.
     pub(crate) fn byte_len(&self) -> usize {
         self.rgba.len()
@@ -57,6 +62,14 @@ impl Bitmap {
         }
         let height = u64::from(self.height) * u64::from(width) / u64::from(self.width);
         let height = u32::try_from(height).unwrap_or(u32::MAX).max(1);
+        self.resize(width, height)
+    }
+
+    /// Resizes to the already fitted dimensions of the destination.
+    pub(crate) fn resize(self, width: u32, height: u32) -> Self {
+        if (self.width, self.height) == (width, height) {
+            return self;
+        }
         let Self {
             width: source_width,
             height: source_height,

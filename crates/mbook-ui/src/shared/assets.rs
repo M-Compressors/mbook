@@ -30,7 +30,13 @@ icon_assets!(
         Link,
         Link2Off,
         Image,
-        FileCode
+        FileCode,
+        Bold,
+        Italic,
+        Strikethrough,
+        TextQuote,
+        ListIndentDecrease,
+        ListIndentIncrease
     ]
 );
 
@@ -122,6 +128,12 @@ mod tests {
             "file-code",
             "undo-2",
             "redo-2",
+            "bold",
+            "italic",
+            "strikethrough",
+            "text-quote",
+            "list-indent-decrease",
+            "list-indent-increase",
         ] {
             assert!(
                 Assets.load(&format!("icons/{name}.svg")).unwrap().is_some(),

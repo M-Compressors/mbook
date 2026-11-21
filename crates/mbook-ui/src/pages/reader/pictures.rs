@@ -20,7 +20,7 @@ use crate::entities::book::error::BookError;
 use crate::entities::book::source::BookSource;
 use crate::entities::picture::{PictureCache, PictureError, decode_avif};
 use crate::shared::layout::SizeClass;
-use crate::widgets::chapter_view::{PictureState, device_width};
+use crate::widgets::chapter_view::{PictureState, picture_size};
 
 /// The most pixels a picture may have. A picture with more is not decoded.
 const MAX_PIXELS: u64 = 40_000_000;
@@ -53,17 +53,16 @@ pub(super) enum LoadError {
 /// What a job gives back: the image and the bytes it takes.
 pub(super) type Loaded = (Arc<RenderImage>, usize);
 
-/// Reads, decodes and scales a picture to `width` device pixels. Runs on the
-/// background.
+/// Reads, decodes and scales a picture to its fitted dimensions.
 pub(super) fn load(
     source: &BookSource,
     picture: PictureRef,
-    width: u32,
+    (width, height): (u32, u32),
 ) -> Result<Loaded, LoadError> {
     let bytes = source.read_picture(picture).map_err(LoadError::Read)?;
     let bitmap = decode_avif(&bytes, MAX_PIXELS)
         .map_err(LoadError::Decode)?
-        .fit_width(width);
+        .resize(width, height);
     let bytes = bitmap.byte_len();
     Ok((bitmap.into_render_image(), bytes))
 }
@@ -74,8 +73,8 @@ pub(super) struct Job {
     /// The destination as written in the text.
     pub(super) destination: String,
     pub(super) picture: PictureRef,
-    /// The width the picture is made for, in device pixels.
-    pub(super) width: u32,
+    /// The dimensions the picture is made for, in logical pixels.
+    pub(super) size: (u32, u32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,8 +85,6 @@ enum Phase {
     Queued,
     /// Being decoded.
     Loading,
-    /// In the cache, made for this width.
-    Loaded(u32),
     /// It cannot be shown.
     Failed,
 }
@@ -99,7 +96,7 @@ struct Slot {
 
 struct Inner {
     slots: HashMap<String, Slot>,
-    cache: PictureCache<(PictureRef, u32), RenderImage>,
+    cache: PictureCache<(PictureRef, (u32, u32)), RenderImage>,
     queue: VecDeque<Job>,
 }
 
@@ -154,14 +151,13 @@ impl Pictures {
         }
     }
 
-    /// What the view draws for `destination` in a column of `column` logical
-    /// pixels on a window with the scale factor `scale`. The first ask for a
-    /// picture queues it.
+    /// What the view draws within the column width and available page height.
+    /// A size missing from the cache queues a decode.
     pub(super) fn resolve(
         &self,
         destination: &str,
         column: f32,
-        scale: f32,
+        page: Option<f32>,
     ) -> Option<PictureState> {
         let mut inner = self.inner.lock().ok()?;
         let Inner {
@@ -171,26 +167,22 @@ impl Pictures {
         } = &mut *inner;
         let slot = slots.get_mut(destination)?;
         let known = (slot.picture.width, slot.picture.height);
-        let width = device_width(column, scale);
-        let wanted = (slot.picture, width);
-        let shown = match slot.phase {
-            Phase::Failed => return Some(PictureState::Failed),
-            Phase::Queued | Phase::Loading => return Some(PictureState::Pending(known)),
-            Phase::Loaded(made) => cache.get(&(slot.picture, made)),
-            Phase::Idle => cache.get(&wanted),
-        };
-        if let Some(image) = shown {
-            if slot.phase == Phase::Idle {
-                slot.phase = Phase::Loaded(width);
-            }
+        if slot.phase == Phase::Failed {
+            return Some(PictureState::Failed);
+        }
+        let size = picture_size(known, column, page)?;
+        if let Some(image) = cache.get(&(slot.picture, size)) {
             return Some(PictureState::Ready(image));
+        }
+        if slot.phase != Phase::Idle {
+            return Some(PictureState::Pending(known));
         }
         // Never loaded, or pushed out of the cache.
         slot.phase = Phase::Queued;
         queue.push_back(Job {
             destination: destination.to_owned(),
             picture: slot.picture,
-            width,
+            size,
         });
         // The page ends with its task; a failed send then means nobody is
         // left to load for.
@@ -229,8 +221,8 @@ impl Pictures {
         }
         match result {
             Ok((image, bytes)) => {
-                cache.insert((job.picture, job.width), image, bytes);
-                slot.phase = Phase::Loaded(job.width);
+                cache.insert((job.picture, job.size), image, bytes);
+                slot.phase = Phase::Idle;
             }
             Err(_) => slot.phase = Phase::Failed,
         }
@@ -302,7 +294,7 @@ mod tests {
         let s = sample(10_000)?;
         assert!(
             s.pictures
-                .resolve("https://example.org/x.png", 300.0, 1.0)
+                .resolve("https://example.org/x.png", 300.0, None)
                 .is_none()
         );
         Ok(())
@@ -312,20 +304,20 @@ mod tests {
     fn the_first_ask_queues_the_picture_and_says_how_big_it_will_be() -> TestResult {
         let mut s = sample(10_000)?;
         let size = (s.known[FIGURE].width, s.known[FIGURE].height);
-        let state = s.pictures.resolve(FIGURE, 300.0, 2.0);
+        let state = s.pictures.resolve(FIGURE, 300.0, None);
         assert!(matches!(state, Some(PictureState::Pending(known)) if known == size));
         assert!(s.wake.try_recv().is_ok(), "the page is woken");
         let job = s.pictures.next_job().ok_or("no job")?;
         assert_eq!(job.destination, FIGURE);
-        assert_eq!(job.width, 600);
+        assert_eq!(job.size, size);
         Ok(())
     }
 
     #[test]
     fn asking_again_does_not_queue_it_twice() -> TestResult {
         let s = sample(10_000)?;
-        s.pictures.resolve(FIGURE, 300.0, 1.0);
-        s.pictures.resolve(FIGURE, 300.0, 1.0);
+        s.pictures.resolve(FIGURE, 300.0, None);
+        s.pictures.resolve(FIGURE, 300.0, None);
         assert!(s.pictures.next_job().is_some());
         assert!(s.pictures.next_job().is_none());
         Ok(())
@@ -334,11 +326,11 @@ mod tests {
     #[test]
     fn a_loaded_picture_is_ready_and_is_not_queued_again() -> TestResult {
         let s = sample(10_000)?;
-        s.pictures.resolve(FIGURE, 300.0, 1.0);
+        s.pictures.resolve(FIGURE, 300.0, None);
         let job = s.pictures.next_job().ok_or("no job")?;
         assert!(s.pictures.finish(&job, Ok(image())));
         assert!(matches!(
-            s.pictures.resolve(FIGURE, 300.0, 1.0),
+            s.pictures.resolve(FIGURE, 300.0, None),
             Some(PictureState::Ready(_))
         ));
         assert!(s.pictures.next_job().is_none());
@@ -347,14 +339,37 @@ mod tests {
     }
 
     #[test]
+    fn a_picture_is_fitted_again_when_the_page_gets_shorter() -> TestResult {
+        let s = sample(10_000)?;
+        s.pictures.resolve(FIGURE, 300.0, None);
+        let original = s.pictures.next_job().ok_or("no original job")?;
+        assert!(s.pictures.finish(&original, Ok(image())));
+        assert!(matches!(
+            s.pictures.resolve(FIGURE, 300.0, Some(4.0)),
+            Some(PictureState::Pending(_))
+        ));
+        let smaller = s.pictures.next_job().ok_or("no resized job")?;
+        assert!(smaller.size.0 < original.size.0);
+        assert!((1..=4).contains(&smaller.size.1));
+        let loaded = load(&s.source, smaller.picture, smaller.size)?;
+        assert_eq!(loaded.0.size(0).height.0, i32::try_from(smaller.size.1)?);
+        assert!(s.pictures.finish(&smaller, Ok(loaded)));
+        assert!(matches!(
+            s.pictures.resolve(FIGURE, 300.0, Some(4.0)),
+            Some(PictureState::Ready(_))
+        ));
+        Ok(())
+    }
+
+    #[test]
     fn a_picture_that_cannot_be_decoded_is_failed_for_good() -> TestResult {
         let s = sample(10_000)?;
-        s.pictures.resolve(FIGURE, 300.0, 1.0);
+        s.pictures.resolve(FIGURE, 300.0, None);
         let job = s.pictures.next_job().ok_or("no job")?;
         let error = LoadError::Decode(PictureError::UnsupportedFormat);
         assert!(s.pictures.finish(&job, Err(error)));
         assert!(matches!(
-            s.pictures.resolve(FIGURE, 300.0, 1.0),
+            s.pictures.resolve(FIGURE, 300.0, None),
             Some(PictureState::Failed)
         ));
         assert!(s.pictures.next_job().is_none());
@@ -364,7 +379,7 @@ mod tests {
     #[test]
     fn a_result_after_the_chapter_changed_is_dropped() -> TestResult {
         let s = sample(10_000)?;
-        s.pictures.resolve(FIGURE, 300.0, 1.0);
+        s.pictures.resolve(FIGURE, 300.0, None);
         let job = s.pictures.next_job().ok_or("no job")?;
         s.pictures.reset(&s.known);
         assert!(!s.pictures.finish(&job, Ok(image())));
@@ -375,12 +390,12 @@ mod tests {
     #[test]
     fn a_picture_pushed_out_of_the_cache_is_asked_for_again() -> TestResult {
         let s = sample(10_000)?;
-        s.pictures.resolve(FIGURE, 300.0, 1.0);
+        s.pictures.resolve(FIGURE, 300.0, None);
         let job = s.pictures.next_job().ok_or("no job")?;
         s.pictures.finish(&job, Ok(image()));
         s.pictures.set_budget(10);
         assert!(matches!(
-            s.pictures.resolve(FIGURE, 300.0, 1.0),
+            s.pictures.resolve(FIGURE, 300.0, None),
             Some(PictureState::Pending(_))
         ));
         assert!(s.pictures.next_job().is_some());
@@ -390,12 +405,12 @@ mod tests {
     #[test]
     fn a_picture_kept_in_the_cache_is_ready_in_the_next_chapter_without_a_job() -> TestResult {
         let s = sample(10_000)?;
-        s.pictures.resolve(FIGURE, 300.0, 1.0);
+        s.pictures.resolve(FIGURE, 300.0, None);
         let job = s.pictures.next_job().ok_or("no job")?;
         s.pictures.finish(&job, Ok(image()));
         s.pictures.reset(&s.known);
         assert!(matches!(
-            s.pictures.resolve(FIGURE, 300.0, 1.0),
+            s.pictures.resolve(FIGURE, 300.0, None),
             Some(PictureState::Ready(_))
         ));
         Ok(())
@@ -404,7 +419,7 @@ mod tests {
     #[test]
     fn a_job_for_a_slot_that_is_gone_is_skipped() -> TestResult {
         let s = sample(10_000)?;
-        s.pictures.resolve(FIGURE, 300.0, 1.0);
+        s.pictures.resolve(FIGURE, 300.0, None);
         s.pictures.reset(&HashMap::new());
         assert!(s.pictures.next_job().is_none());
         Ok(())
@@ -414,7 +429,7 @@ mod tests {
     fn a_picture_of_the_book_is_read_decoded_and_scaled_to_the_width() -> TestResult {
         let s = sample(10_000)?;
         let picture = s.known[FIGURE];
-        let (image, bytes) = load(&s.source, picture, 4)?;
+        let (image, bytes) = load(&s.source, picture, (4, 2))?;
         assert!(bytes > 0 && bytes <= 4 * picture.height as usize * 4 * 4);
         assert!(image.size(0).width.0 <= 4);
         Ok(())
@@ -425,7 +440,10 @@ mod tests {
         let s = sample(10_000)?;
         let picture = s.known[FIGURE];
         let other = write_other(&s)?;
-        assert!(matches!(load(&other, picture, 4), Err(LoadError::Read(_))));
+        assert!(matches!(
+            load(&other, picture, (4, 2)),
+            Err(LoadError::Read(_))
+        ));
         Ok(())
     }
 

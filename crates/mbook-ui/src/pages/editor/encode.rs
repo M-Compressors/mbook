@@ -26,6 +26,10 @@ pub(super) struct Job {
     pub(super) file: PathBuf,
     /// What it is for.
     pub(super) target: Target,
+    /// The path selected for the picture inside the book.
+    pub(super) path: String,
+    /// The output options selected for this file.
+    pub(super) options: EncodeOptions,
 }
 
 impl Job {
@@ -35,17 +39,6 @@ impl Job {
             .file_name()
             .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
     }
-}
-
-/// A picture that is ready to be added once it has a path.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Encoded {
-    /// The name of the file it came from.
-    pub(super) name: String,
-    /// What it is for.
-    pub(super) target: Target,
-    /// The AVIF file.
-    pub(super) avif: Vec<u8>,
 }
 
 /// Why a file could not be turned into an AVIF picture.
@@ -75,7 +68,7 @@ pub(super) enum FileError {
 /// [`FileError::Read`] when the file cannot be read, [`FileError::TooLarge`]
 /// above [`MAX_FILE_BYTES`] and [`FileError::Picture`] when its content is
 /// not a picture that can be used.
-pub(super) fn encode_file(path: &Path) -> Result<Vec<u8>, FileError> {
+pub(super) fn encode_file(path: &Path, options: EncodeOptions) -> Result<Vec<u8>, FileError> {
     let file = File::open(path).map_err(FileError::Read)?;
     let len = file.metadata().map_err(FileError::Read)?.len();
     if len > MAX_FILE_BYTES {
@@ -88,7 +81,7 @@ pub(super) fn encode_file(path: &Path) -> Result<Vec<u8>, FileError> {
     file.take(MAX_FILE_BYTES)
         .read_to_end(&mut bytes)
         .map_err(FileError::Read)?;
-    encode_avif(&bytes, EncodeOptions::default()).map_err(FileError::Picture)
+    encode_avif(&bytes, options).map_err(FileError::Picture)
 }
 
 /// Words for what went wrong with a file, at the control that took it.

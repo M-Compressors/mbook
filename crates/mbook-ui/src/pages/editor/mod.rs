@@ -21,6 +21,7 @@ mod encode;
 mod files;
 mod keys;
 mod panels;
+mod picture_prompt;
 mod preview;
 mod prompts;
 mod sections;
@@ -29,6 +30,8 @@ mod session;
 mod tests;
 mod view;
 mod visual;
+mod visual_formatting;
+mod visual_pictures;
 mod visual_source;
 
 use std::collections::{HashMap, VecDeque};
@@ -48,7 +51,7 @@ use crate::shared::model::BookKey;
 use crate::widgets::chapter_view::ChapterView;
 
 use self::details::Fields;
-use self::encode::{Encoded, Job, Target};
+use self::encode::{Job, Target};
 use self::session::{MetaField, Session, ViewMode};
 use self::visual::VisualEditor;
 
@@ -80,14 +83,14 @@ struct CoverView {
 /// The pictures that are being turned into AVIF, one at a time.
 #[derive(Default)]
 struct Encoder {
-    /// Files waiting for their turn.
-    queue: VecDeque<Job>,
+    /// Files waiting for their output settings.
+    queue: VecDeque<(std::path::PathBuf, Target)>,
     /// The job in flight and the task that does it.
     running: Option<(Job, Task<()>)>,
-    /// Pictures that are encoded and wait for a path.
-    ready: VecDeque<Encoded>,
-    /// A dialog asks for the path of one of them.
+    /// A dialog asks for the settings of one picture.
     prompting: bool,
+    /// The encoded picture has been sent to the book.
+    waiting_for_book: bool,
 }
 
 impl Encoder {
@@ -96,7 +99,6 @@ impl Encoder {
         self.running
             .iter()
             .map(|(job, _)| job)
-            .chain(self.queue.iter())
             .filter(|job| job.target == target)
             .map(Job::name)
             .collect()

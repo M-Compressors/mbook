@@ -32,52 +32,41 @@ pub(crate) fn column_width(viewport: f32, text_size: f32, class: SizeClass) -> f
         .max(0.0)
 }
 
-/// The size, in pixels, of the transparent image that holds the place of a
-/// picture of `known` pixels in a column `column` pixels wide: the width the
-/// picture will have, and its height in proportion. `None` for a picture
-/// without an area.
-///
-/// GPUI sizes an image by its pixels, so a placeholder that has the size the
-/// picture will be shown at keeps the text from moving when the picture
-/// arrives.
-pub(super) fn placeholder_size(known: (u32, u32), column: f32) -> Option<(u32, u32)> {
+/// Fits a picture inside the column and, in the reader, the height of a page.
+/// GPUI lays out a raw bitmap in logical pixels according to its pixel size.
+pub(crate) fn picture_size(
+    known: (u32, u32),
+    column: f32,
+    page: Option<f32>,
+) -> Option<(u32, u32)> {
     let (width, height) = known;
-    if width == 0 || height == 0 || !column.is_finite() || column < 1.0 {
+    if width == 0
+        || height == 0
+        || !column.is_finite()
+        || column < 1.0
+        || page.is_some_and(|page| !page.is_finite() || page < 1.0)
+    {
         return None;
     }
-    let shown = f64::from(width).min(f64::from(column).floor());
-    let scaled = (f64::from(height) * shown / f64::from(width))
-        .round()
-        .max(1.0);
+    let mut shown = f64::from(width).min(f64::from(column).floor());
+    if let Some(page) = page {
+        shown = shown.min(f64::from(page).floor() * f64::from(width) / f64::from(height));
+    }
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
-        reason = "both are positive and at most the size of a picture, which is a u32"
+        reason = "shown is positive and no wider than the original u32 width"
     )]
-    let size = (shown as u32, scaled as u32);
+    let shown = (shown as u32).max(1);
+    let scaled = (f64::from(height) * f64::from(shown) / f64::from(width))
+        .min(page.map_or(f64::from(height), f64::from));
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "scaled is positive and no taller than the original u32 height"
+    )]
+    let size = (shown, (scaled as u32).max(1));
     (u64::from(size.0) * u64::from(size.1) <= PLACEHOLDER_PIXELS).then_some(size)
-}
-
-/// How wide, in device pixels, a picture is made for a column of `column`
-/// logical pixels on a window with the scale factor `scale`.
-pub(crate) fn device_width(column: f32, scale: f32) -> u32 {
-    let scale = if scale.is_finite() && scale > 0.0 {
-        scale
-    } else {
-        1.0
-    };
-    let width = (column * scale).round();
-    if width.is_finite() && width >= 1.0 {
-        #[expect(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            reason = "a positive number of pixels of a window"
-        )]
-        let pixels = width.min(65_535.0) as u32;
-        pixels
-    } else {
-        1
-    }
 }
 
 #[cfg(test)]
@@ -121,51 +110,52 @@ mod tests {
 
     #[test]
     fn a_wide_picture_is_held_at_the_width_of_the_column() {
-        assert_eq!(placeholder_size((1600, 800), 400.0), Some((400, 200)));
+        assert_eq!(picture_size((1600, 800), 400.0, None), Some((400, 200)));
     }
 
     #[test]
     fn a_narrow_picture_keeps_its_own_size() {
-        assert_eq!(placeholder_size((100, 50), 400.0), Some((100, 50)));
+        assert_eq!(picture_size((100, 50), 400.0, None), Some((100, 50)));
     }
 
     #[test]
     fn a_placeholder_is_at_least_one_pixel_high() {
-        assert_eq!(placeholder_size((1000, 1), 100.0), Some((100, 1)));
+        assert_eq!(picture_size((1000, 1), 100.0, None), Some((100, 1)));
     }
 
     #[test]
     fn a_picture_without_an_area_has_no_placeholder() {
-        assert_eq!(placeholder_size((0, 10), 100.0), None);
-        assert_eq!(placeholder_size((10, 0), 100.0), None);
+        assert_eq!(picture_size((0, 10), 100.0, None), None);
+        assert_eq!(picture_size((10, 0), 100.0, None), None);
     }
 
     #[test]
     fn a_column_that_is_not_there_has_no_placeholder() {
-        assert_eq!(placeholder_size((10, 10), 0.0), None);
-        assert_eq!(placeholder_size((10, 10), f32::NAN), None);
+        assert_eq!(picture_size((10, 10), 0.0, None), None);
+        assert_eq!(picture_size((10, 10), f32::NAN, None), None);
     }
 
     #[test]
     fn a_placeholder_of_an_absurd_size_is_refused() {
-        assert_eq!(placeholder_size((60_000, 60_000), 60_000.0), None);
+        assert_eq!(picture_size((60_000, 60_000), 60_000.0, None), None);
     }
 
     #[test]
-    fn a_picture_is_made_for_the_device_pixels_of_the_column() {
-        assert_eq!(device_width(400.0, 2.0), 800);
-        assert_eq!(device_width(400.0, 1.0), 400);
+    fn a_square_picture_scales_to_the_page_height() {
+        assert_eq!(
+            picture_size((1024, 1024), 760.0, Some(515.7)),
+            Some((515, 515))
+        );
     }
 
     #[test]
-    fn a_scale_that_is_no_number_counts_as_one() {
-        assert_eq!(device_width(400.0, f32::NAN), 400);
-        assert_eq!(device_width(400.0, 0.0), 400);
+    fn a_page_without_space_cannot_hold_a_picture() {
+        assert_eq!(picture_size((100, 100), 400.0, Some(0.0)), None);
+        assert_eq!(picture_size((100, 100), 400.0, Some(f32::NAN)), None);
     }
 
     #[test]
-    fn a_picture_is_never_made_zero_pixels_wide() {
-        assert_eq!(device_width(0.0, 2.0), 1);
-        assert_eq!(device_width(f32::NAN, 2.0), 1);
+    fn a_very_tall_picture_is_at_least_one_pixel_wide() {
+        assert_eq!(picture_size((1, 4096), 100.0, Some(500.0)), Some((1, 500)));
     }
 }

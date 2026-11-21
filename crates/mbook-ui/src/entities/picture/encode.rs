@@ -5,8 +5,10 @@
 //! the first frame of an animation is kept, and a picture has transparency in
 //! the result only if it had it.
 
+use super::decode::decode_avif;
 use super::error::{PictureError, check_pixels};
 use image::codecs::avif::AvifEncoder;
+use image::imageops::FilterType;
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader};
 use std::io::Cursor;
 
@@ -40,6 +42,10 @@ pub(crate) struct EncodeOptions {
     pub(crate) speed: u8,
     /// The most pixels a source picture may declare.
     pub(crate) max_pixels: u64,
+    /// Maximum output width and height, if supplied.
+    pub(crate) resolution: (Option<u32>, Option<u32>),
+    /// Apply quality and resolution to AVIF input as well.
+    pub(crate) recompress_avif: bool,
 }
 
 impl Default for EncodeOptions {
@@ -48,6 +54,8 @@ impl Default for EncodeOptions {
             quality: 80,
             speed: 6,
             max_pixels: 100_000_000,
+            resolution: (None, None),
+            recompress_avif: false,
         }
     }
 }
@@ -59,9 +67,9 @@ fn is_avif(bytes: &[u8]) -> bool {
 
 /// The bytes of a picture in AVIF, JPEG, PNG, GIF, WebP or BMP, as AVIF.
 ///
-/// An AVIF file is returned as it is. Anything else is decoded, turned upright
-/// by its orientation tag and encoded; of an animation the first frame is
-/// kept. The pixel count the file declares is compared with
+/// An AVIF file can pass through if recompression was not requested. Other
+/// pictures are decoded, turned upright and encoded. Animations use their
+/// first frame. The declared pixel count is compared with
 /// `options.max_pixels` before its pixels are decoded.
 ///
 /// # Errors
@@ -71,10 +79,36 @@ fn is_avif(bytes: &[u8]) -> bool {
 /// [`PictureError::Undecodable`] when the picture is damaged and
 /// [`PictureError::Encoding`] when the AVIF cannot be written.
 pub(crate) fn encode_avif(source: &[u8], options: EncodeOptions) -> Result<Vec<u8>, PictureError> {
-    if is_avif(source) {
-        return Ok(source.to_vec());
-    }
-    let picture = decode(source, options.max_pixels)?;
+    let picture = if is_avif(source) {
+        if !options.recompress_avif && options.resolution == (None, None) {
+            return Ok(source.to_vec());
+        }
+        let bitmap = decode_avif(source, options.max_pixels)?;
+        let image = image::RgbaImage::from_raw(bitmap.width(), bitmap.height(), bitmap.into_rgba())
+            .ok_or_else(|| {
+                PictureError::undecodable(std::io::Error::other("invalid bitmap size"))
+            })?;
+        DynamicImage::ImageRgba8(image)
+    } else {
+        decode(source, options.max_pixels)?
+    };
+    let width = options
+        .resolution
+        .0
+        .unwrap_or(picture.width())
+        .max(1)
+        .min(picture.width());
+    let height = options
+        .resolution
+        .1
+        .unwrap_or(picture.height())
+        .max(1)
+        .min(picture.height());
+    let picture = if width < picture.width() || height < picture.height() {
+        picture.resize(width, height, FilterType::Lanczos3)
+    } else {
+        picture
+    };
     encode(&picture, options)
 }
 
@@ -213,6 +247,19 @@ mod tests {
         let avif = encode_avif(&file(8, 8, ImageFormat::Png), quick()).unwrap();
         let again = encode_avif(&avif, quick()).unwrap();
         assert!(avif == again);
+    }
+
+    #[test]
+    fn custom_resolution_and_quality_are_applied_to_avif_input() {
+        let source = encode_avif(&file(24, 16, ImageFormat::Png), quick()).unwrap();
+        let options = EncodeOptions {
+            quality: 30,
+            resolution: (None, Some(8)),
+            recompress_avif: true,
+            ..quick()
+        };
+        let fitted = encode_avif(&source, options).unwrap();
+        assert_eq!(stored_size(fitted), (12, 8));
     }
 
     #[test]

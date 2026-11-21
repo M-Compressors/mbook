@@ -10,7 +10,8 @@ use gpui_kit::{AppContext as _, Context, RenderImage, Window};
 
 use super::EditorPage;
 use super::commands::{ChapterOp, Origin};
-use super::encode::{Encoded, Job, Target, encode_file, words};
+use super::encode::{Job, Target, encode_file, words};
+use super::picture_prompt::ask_picture;
 use super::prompts::{PathRequest, ask_path};
 use super::session::{Control, line_and_column, propose_chapter_path, propose_picture_path};
 use crate::entities::catalogue::{BookRow, Catalogue, CatalogueError, Store};
@@ -68,7 +69,7 @@ impl EditorPage {
         }));
     }
 
-    /// Queues picture files for encoding, one at a time.
+    /// Offers the path and output settings for each selected file, one at a time.
     pub(super) fn encode_files(
         &mut self,
         files: Vec<PathBuf>,
@@ -77,28 +78,23 @@ impl EditorPage {
         cx: &mut Context<'_, Self>,
     ) {
         self.session.clear_error(&control_of(target));
-        for file in files {
-            self.session.encoding += 1;
-            self.encoder.queue.push_back(Job { file, target });
-        }
-        self.encode_next(window, cx);
+        self.encoder
+            .queue
+            .extend(files.into_iter().map(|file| (file, target)));
+        self.prompt_next_picture(window, cx);
         cx.notify();
     }
 
-    /// Starts the next file, when none is being encoded.
-    fn encode_next(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if self.encoder.running.is_some() {
-            return;
-        }
-        let Some(job) = self.encoder.queue.pop_front() else {
-            return;
-        };
+    /// Starts the configured file on the background executor.
+    fn encode_picture(&mut self, job: Job, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.session.encoding += 1;
         let file = job.file.clone();
+        let options = job.options;
         let done = job.clone();
         let task = cx.spawn_in(window, async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    encode_file(&file).map_err(|error| words(&name_of(&file), &error))
+                    encode_file(&file, options).map_err(|error| words(&name_of(&file), &error))
                 })
                 .await;
             this.update_in(cx, |this, window, cx| {
@@ -107,6 +103,7 @@ impl EditorPage {
             .ok();
         });
         self.encoder.running = Some((job, task));
+        cx.notify();
     }
 
     /// A file was encoded, or could not be.
@@ -120,68 +117,72 @@ impl EditorPage {
         self.encoder.running = None;
         self.session.encoding = self.session.encoding.saturating_sub(1);
         match result {
-            Ok(avif) => self.encoder.ready.push_back(Encoded {
-                name: job.name(),
-                target: job.target,
-                avif,
-            }),
-            Err(message) => self.session.set_error(control_of(job.target), message),
+            Ok(avif) => {
+                self.encoder.waiting_for_book = true;
+                let path = job.path.clone();
+                let (command, origin) = match job.target {
+                    Target::Picture => (Command::AddPicture { path, avif }, Origin::AddPicture),
+                    Target::Cover => (Command::SetCover { path, avif }, Origin::SetCover),
+                };
+                self.send(command, origin, window, cx);
+            }
+            Err(message) => {
+                self.session.set_error(control_of(job.target), message);
+                self.prompt_next_picture(window, cx);
+            }
         }
-        self.encode_next(window, cx);
-        self.prompt_next(window, cx);
         self.continue_save(window, cx);
         cx.notify();
     }
 
-    /// Asks for the path of the next picture that is ready.
-    pub(super) fn prompt_next(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if self.encoder.prompting {
+    /// Asks for the output settings of the next selected picture.
+    fn prompt_next_picture(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        if self.encoder.prompting || self.encoder.running.is_some() || self.encoder.waiting_for_book
+        {
             return;
         }
-        let Some(picture) = self.encoder.ready.pop_front() else {
+        let Some((file, target)) = self.encoder.queue.pop_front() else {
             return;
         };
         self.encoder.prompting = true;
-        let proposal = propose_picture_path(&picture.name, self.session.pictures());
-        let title = match picture.target {
+        let name = name_of(&file);
+        let proposal = propose_picture_path(&name, self.session.pictures());
+        let title = match target {
             Target::Picture => "Add a picture",
             Target::Cover => "Replace the cover",
         };
-        ask_path(
-            &PathRequest {
-                title,
-                label: "Path of the picture in the book",
-                initial: proposal,
-                ok: "Add",
-            },
+        ask_picture(
+            title,
+            name,
+            proposal,
             window,
             cx,
-            move |this, path, window, cx| {
+            move |this, settings, window, cx| {
                 this.encoder.prompting = false;
-                let command = match picture.target {
-                    Target::Picture => (
-                        Command::AddPicture {
-                            path,
-                            avif: picture.avif.clone(),
-                        },
-                        Origin::AddPicture,
-                    ),
-                    Target::Cover => (
-                        Command::SetCover {
-                            path,
-                            avif: picture.avif.clone(),
-                        },
-                        Origin::SetCover,
-                    ),
-                };
-                this.send(command.0, command.1, window, cx);
-                this.prompt_next(window, cx);
+                this.encode_picture(
+                    Job {
+                        file: file.clone(),
+                        target,
+                        path: settings.path,
+                        options: settings.options,
+                    },
+                    window,
+                    cx,
+                );
             },
             |this, window, cx| {
                 this.encoder.prompting = false;
-                this.prompt_next(window, cx);
+                let editor = cx.entity();
+                window.defer(cx, move |window, cx| {
+                    editor.update(cx, |this, cx| this.prompt_next_picture(window, cx));
+                });
             },
         );
+    }
+
+    pub(super) fn picture_applied(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.encoder.waiting_for_book = false;
+        self.prompt_next_picture(window, cx);
     }
 
     /// Asks for the path of a new chapter.
@@ -193,6 +194,7 @@ impl EditorPage {
                 label: "Path of the chapter in the book",
                 initial,
                 ok: "Add",
+                chapters: Vec::new(),
             },
             window,
             cx,
@@ -220,6 +222,7 @@ impl EditorPage {
                 label: "New path of the chapter",
                 initial: from.clone(),
                 ok: "Change",
+                chapters: Vec::new(),
             },
             window,
             cx,

@@ -396,13 +396,32 @@ fn visual_formatting_can_be_undone_and_redone_before_switching_to_source(cx: &mu
     focus_editor(&setup, cx);
     select_visual(&setup, "First text.", 0..5, cx);
     let mac = cx.update(|cx| cx.platform_info().os == gpui_kit::OperatingSystem::Mac);
-    press(&setup, if mac { "cmd-b" } else { "ctrl-b" }, cx);
+    click(&setup, "format-bold", cx);
     assert_eq!(editor_text(&setup, cx), "# One\n\n**First** text.\n");
     press(&setup, if mac { "cmd-z" } else { "ctrl-z" }, cx);
     assert_eq!(editor_text(&setup, cx), CHAPTERS[0].1);
     click(&setup, "visual-redo", cx);
     click(&setup, "mode-source", cx);
     assert_eq!(editor_text(&setup, cx), "# One\n\n**First** text.\n");
+}
+
+#[gpui_kit::test]
+fn visual_paragraph_style_changes_the_heading_level(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    focus_editor(&setup, cx);
+    select_visual(&setup, "One", 0..0, cx);
+    click(&setup, "visual-paragraph-style", cx);
+    click_named(&setup, "Heading 2", cx);
+    assert_eq!(editor_text(&setup, cx), "## One\n\nFirst text.\n");
+}
+
+#[gpui_kit::test]
+fn visual_quote_formats_the_current_paragraph(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    focus_editor(&setup, cx);
+    select_visual(&setup, "First text.", 0..0, cx);
+    click(&setup, "format-quote", cx);
+    assert_eq!(editor_text(&setup, cx), "# One\n\n> First text.\n");
 }
 
 #[gpui_kit::test]
@@ -469,7 +488,7 @@ fn visual_table_edits_keep_other_blocks_and_save_the_table(cx: &mut TestAppConte
 
 #[gpui_kit::test]
 fn the_visual_insert_menu_creates_a_table(cx: &mut TestAppContext) {
-    let setup = start_with(cx, 1280.0, &[("ch01.md", "")]);
+    let setup = start_with(cx, 390.0, &[("ch01.md", "")]);
     cx.run_until_parked();
     click(&setup, "mode-visual", cx);
     focus_editor(&setup, cx);
@@ -511,6 +530,39 @@ fn the_visual_link_dialog_wraps_selected_text(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_link_can_use_a_chapter_from_the_picker(cx: &mut TestAppContext) {
+    let setup = start_with(
+        cx,
+        1280.0,
+        &[
+            ("part/a.md", "Read more."),
+            ("extras/next chapter.md", "More text."),
+        ],
+    );
+    cx.run_until_parked();
+    focus_editor(&setup, cx);
+    select_visual(&setup, "Read more.", 0..9, cx);
+    click(&setup, "visual-link", cx);
+    click_named(&setup, "Choose chapter", cx);
+    frame(&setup, cx, |window, cx| {
+        let item = window
+            .find_all_by_label("extras/next chapter.md")
+            .into_iter()
+            .find(|item| item.role() == Some(Role::MenuItem))
+            .unwrap();
+        let point = item.bounds().center();
+        window.pointer_down(point, gpui_kit::MouseButton::Left, cx);
+        window.pointer_up(point, gpui_kit::MouseButton::Left, cx);
+    });
+    cx.run_until_parked();
+    click_named(&setup, "Apply", cx);
+    assert_eq!(
+        editor_text(&setup, cx),
+        "[Read more](../extras/next%20chapter.md)."
+    );
+}
+
+#[gpui_kit::test]
 fn removing_a_visual_link_keeps_its_text(cx: &mut TestAppContext) {
     let setup = start_with(
         cx,
@@ -538,7 +590,7 @@ fn cancelling_the_visual_link_dialog_keeps_the_chapter(cx: &mut TestAppContext) 
 }
 
 #[gpui_kit::test]
-fn visual_inserts_an_existing_picture_relative_to_the_chapter(cx: &mut TestAppContext) {
+fn visual_inserts_and_previews_a_picture_relative_to_the_chapter(cx: &mut TestAppContext) {
     let fixture = Fixture::new();
     let key = BookKey::generate();
     let mut book = Book::new("Dune", "en").unwrap();
@@ -551,11 +603,54 @@ fn visual_inserts_an_existing_picture_relative_to_the_chapter(cx: &mut TestAppCo
     click(&setup, "mode-visual", cx);
     click(&setup, "visual-image", cx);
     click_named(&setup, "img/sand.avif", cx);
+    click(&setup, "visual-image-preview", cx);
+    frame(&setup, cx, |_, _| ());
+    cx.run_until_parked();
+    assert!(state(&setup, cx, |page| page
+        .visual
+        .pictures
+        .lock()
+        .unwrap()
+        .has_cached("img/sand.avif", (8, 6))));
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("chapter-picture-preview").label(),
+            Some("Preview of img/sand.avif")
+        );
+    });
+    click_named(&setup, "Close", cx);
     click(&setup, "save", cx);
     assert_eq!(
         saved_titles_and_texts(&setup).1,
         ["![sand](../img/sand.avif)"]
     );
+}
+
+#[gpui_kit::test]
+fn the_chapter_picture_preview_can_switch_images(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let key = BookKey::generate();
+    let mut book = Book::new("Pictures", "en").unwrap();
+    book.add_chapter(
+        "ch01.md",
+        "![A pond](first.avif)\n\n![A forest][forest]\n\n[forest]: second.avif",
+    )
+    .unwrap();
+    book.add_picture("first.avif", avif_of(8, 6)).unwrap();
+    book.add_picture("second.avif", avif_of(6, 8)).unwrap();
+    book.save(fixture.roots.book(key)).unwrap();
+    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    let setup = open(cx, fixture, key, 1280.0);
+    cx.run_until_parked();
+    click(&setup, "visual-image-preview", cx);
+    click_named(&setup, "Choose picture", cx);
+    click_named(&setup, "second.avif", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("chapter-picture-preview").label(),
+            Some("Preview of second.avif")
+        );
+    });
 }
 
 #[gpui_kit::test]
@@ -804,6 +899,7 @@ fn the_current_chapter_and_an_edited_one_are_told_in_words(cx: &mut TestAppConte
 #[gpui_kit::test]
 fn typing_updates_the_preview_at_once_and_the_book_after_a_pause(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-split", cx);
     focus_editor(&setup, cx);
     frame(&setup, cx, |window, cx| window.input("Hello ", cx));
     assert!(editor_text(&setup, cx).starts_with("Hello "));
@@ -827,6 +923,7 @@ fn typing_updates_the_preview_at_once_and_the_book_after_a_pause(cx: &mut TestAp
 #[gpui_kit::test]
 fn opening_another_chapter_sends_the_text_first(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-source", cx);
     focus_editor(&setup, cx);
     frame(&setup, cx, |window, cx| window.input("Hello ", cx));
     click(&setup, "chapter-ch02.md", cx);
@@ -939,6 +1036,7 @@ fn cancelling_the_question_keeps_the_editor_open(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn saving_from_the_question_saves_and_then_leaves(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-source", cx);
     focus_editor(&setup, cx);
     frame(&setup, cx, |window, cx| window.input("x", cx));
     click(&setup, "back", cx);
@@ -955,6 +1053,7 @@ fn saving_from_the_question_saves_and_then_leaves(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn the_save_key_saves_what_was_typed_without_waiting_for_the_pause(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-source", cx);
     focus_editor(&setup, cx);
     frame(&setup, cx, |window, cx| window.input("Typed. ", cx));
     press_save(&setup, cx);
@@ -1235,6 +1334,7 @@ fn the_first_chapter_cannot_move_up_and_the_last_cannot_move_down(cx: &mut TestA
 #[gpui_kit::test]
 fn a_chapter_that_gets_another_path_keeps_its_text_and_its_place(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-source", cx);
     focus_editor(&setup, cx);
     frame(&setup, cx, |window, cx| window.input("Kept. ", cx));
     act(&setup, cx, |page, window, cx| {
@@ -1459,26 +1559,37 @@ fn the_cover_section_says_when_there_is_no_cover_and_offers_to_add_one(cx: &mut 
 }
 
 #[gpui_kit::test]
-fn the_pictures_section_lists_each_picture_with_its_size_and_a_remove_control(
-    cx: &mut TestAppContext,
-) {
+fn the_picture_gallery_shows_a_thumbnail_and_a_remove_control(cx: &mut TestAppContext) {
     let fixture = Fixture::new();
     let key = BookKey::generate();
     let mut book = Book::new("Dune", "en").unwrap();
     book.add_chapter("ch01.md", "# One\n").unwrap();
-    let avif = avif_of(8, 6);
+    let avif = avif_of(280, 280);
     book.set_cover("img/p.avif", avif).unwrap();
     book.save(fixture.roots.book(key)).unwrap();
     record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
     let setup = open(cx, fixture, key, 1280.0);
     cx.run_until_parked();
     click(&setup, "section-pictures", cx);
+    frame(&setup, cx, |_, _| ());
+    cx.run_until_parked();
     frame(&setup, cx, |window, _| {
-        assert_eq!(
-            window.find_by_label("Remove img/p.avif").role(),
-            Some(Role::Button)
+        let thumb = window.find("preview-img/p.avif");
+        let remove = window.find_by_label("Remove img/p.avif");
+        assert_eq!(thumb.role(), Some(Role::Image));
+        assert_eq!(remove.role(), Some(Role::Button));
+        assert!(
+            thumb.bounds().bottom() <= remove.bounds().top(),
+            "{thumb:?} overlaps {remove:?}"
         );
     });
+    cx.run_until_parked();
+    assert!(state(&setup, cx, |page| page
+        .visual
+        .pictures
+        .lock()
+        .unwrap()
+        .has_cached("img/p.avif", (192, 192))));
     click(&setup, "section-cover", cx);
     frame(&setup, cx, |window, _| {
         assert_eq!(window.find("cover-image").role(), Some(Role::Image));
@@ -1503,23 +1614,48 @@ fn avif_of(width: u32, height: u32) -> Vec<u8> {
 }
 
 #[gpui_kit::test]
-fn a_picture_file_is_encoded_in_a_task_of_its_own_and_then_its_path_is_asked(
-    cx: &mut TestAppContext,
-) {
+fn a_picture_file_is_encoded_at_the_resolution_selected_in_the_dialog(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("pond.png");
-    let picture = image::RgbImage::from_pixel(8, 8, image::Rgb([1, 2, 3]));
+    let picture = image::RgbImage::from_pixel(16, 8, image::Rgb([1, 2, 3]));
     picture.save(&file).unwrap();
     act(&setup, cx, |page, window, cx| {
         page.encode_files(vec![file.clone()], Target::Picture, window, cx);
     });
     assert_eq!(state(&setup, cx, |page| page.session.encoding), 0);
-    assert!(
-        dialog_is_open(&setup, cx),
-        "the path is asked when the picture is ready"
-    );
-    assert_eq!(state(&setup, cx, |page| page.encoder.ready.len()), 0);
+    assert!(dialog_is_open(&setup, cx));
+    click_named(&setup, "Max width (px)", cx);
+    frame(&setup, cx, |window, cx| window.input("8", cx));
+    click_named(&setup, "Add", cx);
+    click(&setup, "save", cx);
+    let reader = BookReader::open(setup.fixture.roots.book(setup.key)).unwrap();
+    let picture = reader.find_picture("pond.avif").unwrap();
+    assert_eq!((picture.size.width, picture.size.height), (8, 4));
+}
+
+#[gpui_kit::test]
+fn an_invalid_picture_resolution_keeps_the_dialog_open(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    let file = setup.fixture.roots.data().join("pond.png");
+    act(&setup, cx, |page, window, cx| {
+        page.encode_files(vec![file.clone()], Target::Picture, window, cx);
+    });
+    click_named(&setup, "Max height (px)", cx);
+    frame(&setup, cx, |window, cx| window.input("0", cx));
+    click_named(&setup, "Add", cx);
+    assert!(dialog_is_open(&setup, cx));
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .find("picture-settings-error")
+                .label()
+                .unwrap()
+                .contains("positive number")
+        );
+    });
+    click_named(&setup, "Cancel", cx);
+    assert!(!state(&setup, cx, |page| page.session.has_unsaved()));
 }
 
 #[gpui_kit::test]
@@ -1540,6 +1676,11 @@ fn a_picture_that_is_being_encoded_is_shown_as_encoding_and_counts_as_unsaved(
         });
     })
     .unwrap();
+    frame(&setup, cx, |window, cx| {
+        let point = window.find_by_label("Add").bounds().center();
+        window.pointer_down(point, gpui_kit::MouseButton::Left, cx);
+        window.pointer_up(point, gpui_kit::MouseButton::Left, cx);
+    });
     assert!(state(&setup, cx, |page| page.session.has_unsaved()));
     frame(&setup, cx, |window, _| {
         assert_eq!(
@@ -1562,6 +1703,7 @@ fn a_file_that_is_not_a_picture_is_reported_at_the_control_and_nothing_is_added(
     act(&setup, cx, |page, window, cx| {
         page.encode_files(vec![file.clone()], Target::Picture, window, cx);
     });
+    click_named(&setup, "Add", cx);
     frame(&setup, cx, |window, _| {
         let message = window.find("pictures-error").label().unwrap().to_owned();
         assert_eq!(
@@ -1581,6 +1723,7 @@ fn a_cover_file_that_cannot_be_read_is_reported_at_the_cover(cx: &mut TestAppCon
     act(&setup, cx, |page, window, cx| {
         page.encode_files(vec![missing.clone()], Target::Cover, window, cx);
     });
+    click_named(&setup, "Add", cx);
     frame(&setup, cx, |window, _| {
         let message = window.find("cover-error").label().unwrap().to_owned();
         assert!(
@@ -1678,6 +1821,7 @@ fn dropping_the_task_that_owns_the_book_ends_the_session(cx: &mut TestAppContext
 #[gpui_kit::test]
 fn the_preview_is_the_chapter_view_of_the_reader(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-preview", cx);
     frame(&setup, cx, |window, _| {
         let preview = window.find("chapter-text");
         assert_eq!(preview.role(), Some(Role::Article));

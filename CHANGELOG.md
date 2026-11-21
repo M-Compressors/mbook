@@ -33,6 +33,7 @@
 
 ### Fixed
 
+- Fit tall pictures within a reader page while keeping their proportions.
 - Command+S is available through File > Save on macOS. Save includes
   pending edits in the Details form.
 - Enter in Visual starts a new paragraph without showing Markdown's blank
@@ -46,6 +47,9 @@
 
 ### Added
 
+- Offer a chapter picker in the Visual link dialog and a chapter picture
+  preview in its toolbar. The Pictures section displays a thumbnail gallery. Picture
+  and cover import offer quality and resolution controls before encoding.
 - Visual uses `gpui-kit-markdown-editor` with editable GFM tables, nested
   lists and task items, link editing, picture insertion, and fenced code
   blocks with a language picker.

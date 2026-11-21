@@ -1,10 +1,12 @@
 //! The sections of the cover, the pictures and the problems.
 
+use gpui_kit::assets::IconName;
 use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::{
-    AnyElement, Context, ImageSource, InteractiveElement as _, IntoElement, ParentElement as _,
-    Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, img, px,
+    AnyElement, Context, ImageSource, InteractiveElement as _, IntoElement, ObjectFit,
+    ParentElement as _, Role, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
+    TestSupportExt as _, Window, div, img, px,
 };
 
 use super::EditorPage;
@@ -12,7 +14,7 @@ use super::encode::Target;
 use super::prompts::confirm_remove;
 use super::sections::{control, list_item};
 use super::session::{Control, ViewMode, is_contents_problem, problem_words, size_label};
-use crate::shared::ui::status_line;
+use crate::shared::ui::{icon_button, status_line};
 
 impl EditorPage {
     /// The Cover section: the picture, and the control that replaces it.
@@ -73,61 +75,34 @@ impl EditorPage {
             .into_any_element()
     }
 
-    /// The Pictures section: the list, and the control that adds one.
+    /// The picture gallery and the control that adds a file.
     pub(super) fn render_pictures(&mut self, cx: &mut Context<'_, Self>) -> AnyElement {
         let theme = cx.theme().clone();
-        let mut list = v_flex()
+        let gallery = h_flex()
             .id("pictures-list")
             .role(Role::Group)
             .aria_label("Pictures")
-            .gap_1();
-        for picture in self.session.pictures().to_vec() {
-            let summary = format!(
-                "{}, {} by {} pixels, {}",
-                picture.path,
-                picture.width,
-                picture.height,
-                size_label(picture.len)
+            .flex_wrap()
+            .gap_3()
+            .children(
+                self.session
+                    .pictures()
+                    .iter()
+                    .map(|picture| self.render_picture_card(picture, cx)),
             );
-            let path = picture.path.clone();
-            list = list.child(
-                h_flex()
-                    .id(format!("picture-{}", picture.path))
-                    .gap_2()
-                    .items_center()
-                    .child(div().flex_1().min_w_0().truncate().child(summary))
-                    .child(
-                        control(format!("remove-picture-{}", picture.path), "Remove")
-                            .ghost()
-                            .accessibility_label(format!("Remove {}", picture.path))
-                            .on_click(cx.listener(move |_, _, window, cx| {
-                                let path = path.clone();
-                                confirm_remove(
-                                    &path.clone(),
-                                    window,
-                                    cx,
-                                    move |this, window, cx| {
-                                        this.remove_picture(path.clone(), window, cx);
-                                    },
-                                );
-                            })),
-                    ),
-            );
-        }
-        for name in self.encoder.names(Target::Picture) {
-            list = list.child(status_line(
-                format!("encoding-{name}"),
-                format!("Encoding {name}…"),
-            ));
-        }
-        if self.session.pictures().is_empty() && self.encoder.names(Target::Picture).is_empty() {
-            list = list.child(status_line("no-pictures", "This book has no pictures."));
-        }
+        let encoding = self.encoder.names(Target::Picture);
+        let empty = self.session.pictures().is_empty() && encoding.is_empty();
         v_flex()
             .id("pictures")
             .gap_3()
             .p_4()
-            .child(list)
+            .child(gallery)
+            .children(
+                encoding.into_iter().map(|name| {
+                    status_line(format!("encoding-{name}"), format!("Encoding {name}…"))
+                }),
+            )
+            .children(empty.then(|| status_line("no-pictures", "This book has no pictures.")))
             .child(
                 control("add-picture", "Add a picture…")
                     .w(px(180.0))
@@ -141,6 +116,86 @@ impl EditorPage {
                     .map(|message| status_line("pictures-error", message).text_color(theme.danger)),
             )
             .into_any_element()
+    }
+
+    fn render_picture_card(
+        &self,
+        picture: &crate::features::edit_book::outline::PictureOutline,
+        cx: &mut Context<'_, Self>,
+    ) -> impl IntoElement + use<> {
+        let theme = cx.theme().clone();
+        let resolution = format!("{} × {} px", picture.width, picture.height);
+        let file_size = size_label(picture.len);
+        let preview_height = px(96.0);
+        let path = picture.path.clone();
+        let thumbnail = self.picture_thumbnail(picture);
+        v_flex()
+            .id(format!("picture-{}", picture.path))
+            .role(Role::Group)
+            .aria_label(format!("{}, {resolution}, {file_size}", picture.path))
+            .w(px(156.0))
+            .max_w_full()
+            .p_2()
+            .rounded_lg()
+            .border_1()
+            .border_color(theme.border)
+            .child(
+                div()
+                    .id(format!("preview-{}", picture.path))
+                    .role(Role::Image)
+                    .aria_label(format!("Preview of {}", picture.path))
+                    .test_support()
+                    .relative()
+                    .flex_none()
+                    .w_full()
+                    .h(preview_height)
+                    .overflow_hidden()
+                    .bg(theme.muted)
+                    .rounded_md()
+                    .child(
+                        img(thumbnail)
+                            .object_fit(ObjectFit::Contain)
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .w_full()
+                            .h(preview_height),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_sm()
+                            .child(picture.path.clone()),
+                    )
+                    .child(
+                        icon_button(
+                            format!("remove-picture-{}", picture.path),
+                            IconName::Trash,
+                            format!("Remove {}", picture.path),
+                        )
+                        .on_click(cx.listener(move |_, _, window, cx| {
+                            let path = path.clone();
+                            let title = path.clone();
+                            confirm_remove(&title, window, cx, move |this, window, cx| {
+                                this.remove_picture(path.clone(), window, cx);
+                            });
+                        })),
+                    ),
+            )
+            .child(
+                v_flex()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(resolution)
+                    .child(file_size),
+            )
     }
 
     /// The Problems section: what the last check or save found, and the

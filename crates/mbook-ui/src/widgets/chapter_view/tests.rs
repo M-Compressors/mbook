@@ -282,7 +282,7 @@ fn the_list_has_one_item_for_each_block_the_book_found(cx: &mut TestAppContext) 
 fn picture_resolver(
     state: impl Fn() -> Option<PictureState> + Send + Sync + 'static,
 ) -> PictureResolver {
-    Arc::new(move |_, _, _, _| state())
+    Arc::new(move |_, _, _, _, _| state())
 }
 
 const WITH_PICTURE: &str = "Before.\n\n![A grey cat](cat.avif)\n\nAfter.\n";
@@ -303,6 +303,24 @@ fn a_picture_that_is_not_ready_holds_its_place_at_its_size(cx: &mut TestAppConte
         .read_with(cx, |view, _| view.placeholder_sizes());
     // The window width minus its two 32-pixel margins, with the picture at half that height.
     assert_eq!(sizes, vec![(736, 368)]);
+}
+
+#[gpui_kit::test]
+fn a_square_picture_taller_than_the_page_stays_on_one_page(cx: &mut TestAppContext) {
+    let started = start_paged(cx, 1000.0, 400.0);
+    started.view.update(cx, |view, cx| {
+        view.set_pictures(
+            picture_resolver(|| Some(PictureState::Pending((1024, 1024)))),
+            cx,
+        );
+        view.set_text(WITH_PICTURE, cx);
+    });
+    settle(&started, cx);
+    started.view.read_with(cx, |view, _| {
+        let paging = view.paging.as_ref().unwrap();
+        assert!(paging.heights[1] <= 400.0, "{:?}", paging.heights);
+        assert!(paging.pages.iter().all(|page| page.offset == 0.0));
+    });
 }
 
 #[gpui_kit::test]

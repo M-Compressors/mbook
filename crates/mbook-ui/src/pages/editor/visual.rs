@@ -1,5 +1,7 @@
 //! The block editor and its connection to the chapter's Markdown buffer.
 
+use std::sync::{Arc, Mutex};
+
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::{Copy, Cut, Redo, SelectAll, Undo};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
@@ -11,7 +13,7 @@ use gpui_kit::{
 };
 use markdown_editor::{
     BlockEditor, BlockEditorEvent, BlockEditorState, BlockEditorStyle, BlockKind, BlockSelection,
-    EditorCommand, EditorToolbar, ImagePolicy,
+    EditorCommand, ImagePolicy,
 };
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
@@ -19,6 +21,8 @@ use super::EditorPage;
 use super::keys::VISUAL_CONTEXT;
 use super::prompts::{PathRequest, ask_path};
 use super::session::ViewMode;
+use super::visual_formatting::formatting;
+use super::visual_pictures::VisualPictures;
 use super::visual_source::VisualSource;
 use crate::features::appearance::Appearance;
 use crate::shared::ui::{announce, empty_state, icon_button, page_colors, status_line};
@@ -29,6 +33,7 @@ impl Global for KeysInstalled {}
 
 pub(super) struct VisualEditor {
     pub(super) input: Entity<BlockEditorState>,
+    pub(super) pictures: Arc<Mutex<VisualPictures>>,
     scroll: ScrollHandle,
     baseline: Option<VisualSource>,
     /// The text last loaded from or copied into Source.
@@ -52,6 +57,7 @@ impl VisualEditor {
         });
         Self {
             input,
+            pictures: Arc::default(),
             scroll,
             baseline: None,
             mirrored: None,
@@ -188,6 +194,20 @@ impl EditorPage {
         let Ok(selection) = editor.capture_selection() else {
             return;
         };
+        let Some(current) = &self.loaded else {
+            return;
+        };
+        let chapters = self
+            .session
+            .chapters()
+            .iter()
+            .map(|chapter| {
+                (
+                    chapter.path.clone(),
+                    relative_book_path(current, &chapter.path),
+                )
+            })
+            .collect();
         ask_path(
             &PathRequest {
                 title: if url.is_some() {
@@ -198,6 +218,7 @@ impl EditorPage {
                 label: "Link destination",
                 initial: url.map_or_else(String::new, ToString::to_string),
                 ok: "Apply",
+                chapters,
             },
             window,
             cx,
@@ -304,17 +325,12 @@ impl EditorPage {
                 (name, markdown)
             })
             .collect();
+        let has_pictures = !pictures.is_empty();
         let input = self.visual.input.clone();
         v_flex()
             .border_b_1()
             .border_color(cx.theme().border)
-            .child(
-                div()
-                    .id("visual-formatting")
-                    .max_w_full()
-                    .overflow_x_scroll()
-                    .child(EditorToolbar::new(&self.visual.input)),
-            )
+            .child(formatting(&self.visual.input, cx))
             .child(
                 h_flex()
                     .px_2()
@@ -355,7 +371,7 @@ impl EditorPage {
                     )
                     .child(
                         icon_button("visual-image", IconName::Image, "Insert a book picture")
-                            .disabled(!enabled || pictures.is_empty())
+                            .disabled(!enabled || !has_pictures)
                             .dropdown_menu(move |menu, _, _| {
                                 pictures.iter().fold(menu, |menu, (name, source)| {
                                     let input = input.clone();
@@ -374,6 +390,17 @@ impl EditorPage {
                                     ))
                                 })
                             }),
+                    )
+                    .child(
+                        icon_button(
+                            "visual-image-preview",
+                            IconName::Eye,
+                            "Preview chapter pictures",
+                        )
+                        .disabled(!enabled || !has_pictures)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.preview_chapter_pictures(window, cx);
+                        })),
                     )
                     .children(code.then(|| self.code_language())),
             )
@@ -436,14 +463,28 @@ fn visual_clipboard_action(name: &str, window: &mut Window, cx: &mut App) {
     }
 }
 
-fn picture_markdown(chapter: &str, picture: &str) -> String {
+fn relative_book_path(from: &str, to: &str) -> String {
     const ESCAPED: &AsciiSet = &NON_ALPHANUMERIC
         .remove(b'/')
         .remove(b'.')
         .remove(b'-')
         .remove(b'_');
-    let directory = "../".repeat(chapter.bytes().filter(|&byte| byte == b'/').count());
-    let encoded = utf8_percent_encode(picture, ESCAPED);
+    let from = from.split('/').collect::<Vec<_>>();
+    let to = to.split('/').collect::<Vec<_>>();
+    let folders = &from[..from.len() - 1];
+    let common = folders
+        .iter()
+        .zip(&to[..to.len() - 1])
+        .take_while(|(left, right)| left == right)
+        .count();
+    let directory = "../".repeat(folders.len() - common);
+    let path = to[common..].join("/");
+    let encoded = utf8_percent_encode(&path, ESCAPED);
+    format!("{directory}{encoded}")
+}
+
+fn picture_markdown(chapter: &str, picture: &str) -> String {
+    let path = relative_book_path(chapter, picture);
     let name = picture.rsplit('/').next().unwrap_or(picture);
     let alt: String = name
         .strip_suffix(".avif")
@@ -457,7 +498,7 @@ fn picture_markdown(chapter: &str, picture: &str) -> String {
             }
         })
         .collect();
-    format!("![{}]({directory}{encoded})", alt.trim())
+    format!("![{}]({path})", alt.trim())
 }
 
 #[cfg(test)]

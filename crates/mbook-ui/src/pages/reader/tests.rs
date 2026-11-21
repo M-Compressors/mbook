@@ -1262,17 +1262,18 @@ fn a_picture_that_cannot_be_decoded_shows_its_alternative_text(cx: &mut TestAppC
                     .unwrap(),
                 _ => unreachable!(),
             },
-            width: 100,
+            size: (100, 100),
         }
     });
     started.page.update(cx, |page, cx| {
         let generation = page.chapter_generation;
         // A picture that is loading, then fails.
+        page.pictures.set_budget(10_000);
         page.pictures.reset(&std::collections::HashMap::from([(
             FIGURE.to_owned(),
             job.picture,
         )]));
-        page.pictures.resolve(FIGURE, 300.0, 1.0);
+        page.pictures.resolve(FIGURE, 300.0, None);
         let job = page.pictures.next_job().unwrap();
         page.picture_done(
             generation,

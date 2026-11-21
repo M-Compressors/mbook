@@ -233,8 +233,8 @@ impl ReaderPage {
         let for_links = page.clone();
         view.update(cx, |view, cx| {
             view.set_pictures(
-                Arc::new(move |destination, column, window, _| {
-                    table.resolve(destination, column, window.scale_factor())
+                Arc::new(move |destination, column, page, _, _| {
+                    table.resolve(destination, column, page)
                 }),
                 cx,
             );
@@ -512,7 +512,7 @@ impl ReaderPage {
                 let loaded = cx
                     .background_spawn(async move {
                         match source.upgrade() {
-                            Some(source) => pictures::load(&source, work.picture, work.width),
+                            Some(source) => pictures::load(&source, work.picture, work.size),
                             None => Err(pictures::LoadError::Read(BookError::Unusable)),
                         }
                     })
@@ -840,7 +840,8 @@ impl ReaderPage {
 
 /// The key of a picture job in the tasks that run.
 fn task_key(job: &Job) -> String {
-    format!("{}@{}", job.destination, job.width)
+    let (width, height) = job.size;
+    format!("{}@{width}x{height}", job.destination)
 }
 
 /// An error and its causes, as one line.
