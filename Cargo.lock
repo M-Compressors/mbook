@@ -180,6 +180,8 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 [[package]]
 name = "mopenzl"
 version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ecb6122da2e5482d02c204ba3c3dfd452339c318c28938867ba94500027bf6e"
 dependencies = [
  "borrowed-buf",
  "fearless_simd",
