@@ -9,7 +9,7 @@ use gpui_kit::{
     Action, App, KeyBinding, Menu, MenuItem, OperatingSystem, OsAction, SystemMenuType,
 };
 
-use crate::shared::actions::{About, GoBack, OpenFile, OpenSettings, Quit};
+use crate::shared::actions::{About, GoBack, OpenFile, OpenSettings, Quit, Save};
 
 /// The name of the application in its menus.
 const NAME: &str = "mbook";
@@ -26,14 +26,15 @@ pub(super) fn install(cx: &mut App) {
 
 /// What a key does.
 fn table(os: OperatingSystem) -> Vec<(&'static str, Box<dyn Action>)> {
-    let back = if os == OperatingSystem::Mac {
-        "cmd-["
+    let (back, save) = if os == OperatingSystem::Mac {
+        ("cmd-[", "cmd-s")
     } else {
-        "alt-left"
+        ("alt-left", "ctrl-s")
     };
     vec![
         ("secondary-q", Box::new(Quit)),
         ("secondary-o", Box::new(OpenFile)),
+        (save, Box::new(Save)),
         ("secondary-,", Box::new(OpenSettings)),
         ("escape", Box::new(GoBack)),
         (back, Box::new(GoBack)),
@@ -66,7 +67,11 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action(format!("Quit {NAME}"), Quit),
         ]),
-        Menu::new("File").items([MenuItem::action("Add a book…", OpenFile)]),
+        Menu::new("File").items([
+            MenuItem::action("Add a book…", OpenFile),
+            MenuItem::separator(),
+            MenuItem::action("Save", Save),
+        ]),
         Menu::new("Edit").items([
             MenuItem::os_action("Undo", Undo, OsAction::Undo),
             MenuItem::os_action("Redo", Redo, OsAction::Redo),
@@ -114,9 +119,36 @@ mod tests {
     }
 
     #[test]
+    fn save_uses_command_on_mac_and_control_on_windows_and_linux() {
+        for (os, expected) in [
+            (OperatingSystem::Mac, "cmd-s"),
+            (OperatingSystem::Windows, "ctrl-s"),
+            (OperatingSystem::Linux, "ctrl-s"),
+        ] {
+            let binding = table(os)
+                .into_iter()
+                .find(|(_, action)| action.partial_eq(&Save))
+                .map(|(key, _)| key);
+            assert_eq!(binding, Some(expected), "{os:?}");
+        }
+    }
+
+    #[test]
     fn the_menu_bar_has_the_application_file_and_edit() {
         let names: Vec<_> = menus().into_iter().map(|menu| menu.name).collect();
         assert_eq!(names, ["mbook", "File", "Edit"]);
+    }
+
+    #[test]
+    fn the_file_menu_uses_the_save_action() {
+        let file = menus()
+            .into_iter()
+            .find(|menu| menu.name == "File")
+            .unwrap();
+        assert!(file.items.iter().any(|item| matches!(
+            item,
+            MenuItem::Action { name, action, .. } if name == "Save" && action.partial_eq(&Save)
+        )));
     }
 
     #[gpui_kit::test]
@@ -143,6 +175,7 @@ mod tests {
             };
             assert!(find(Keystroke::parse("escape").unwrap(), &GoBack, cx));
             assert!(find(key("cmd-o", "ctrl-o"), &OpenFile, cx));
+            assert!(find(key("cmd-s", "ctrl-s"), &Save, cx));
             assert!(find(key("cmd-,", "ctrl-,"), &OpenSettings, cx));
             assert!(find(key("cmd-q", "ctrl-q"), &Quit, cx));
         });

@@ -50,12 +50,16 @@ mbook = { workspace = true, features = ["read", "write"] }
 mbook-converter = { path = "../mbook-converter", version = "0.1.0" }
 image.workspace = true
 markdown.workspace = true
+percent-encoding.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 # GPUI, its component library and their assets behind one name. `gpui-fast`
 # selects the GPUI Fast engine; application code imports `gpui_kit` only.
 gpui-kit = { version = "0.10", features = ["gpui-fast", "tree-sitter-markdown"] }
+gpui-kit-markdown-editor = { version = "0.3.1", features = ["gpui-fast"] }
+# Keep original source blocks when updating Markdown from the visual editor.
+similar = { version = "3", default-features = false }
 mimalloc3 = "0.1"
 # The data and cache directories of the platform.
 dirs = "7"
@@ -71,7 +75,7 @@ futures = "0.3"
 # verifies an archive against a key built into the application.
 self_update = { version = "1.3", default-features = false, features = ["ureq", "rustls", "github", "archive-tar", "compression-tar-gz", "signatures"], optional = true }
 # Native file pickers with extension filters.
-rfd = "0.17.2"
+rfd = "0.18"
 
 [dev-dependencies]
 gpui-kit = { version = "0.10", features = ["gpui-fast", "test-support"] }

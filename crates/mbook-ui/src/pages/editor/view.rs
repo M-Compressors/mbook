@@ -11,12 +11,12 @@ use gpui_kit::{
 };
 
 use super::EditorPage;
-use super::keys::{LeaveEditor, LeaveEditorBackward, PAGE_CONTEXT, Save};
+use super::keys::{LeaveEditor, LeaveEditorBackward, PAGE_CONTEXT};
 use super::sections::control;
 use super::session::{Level, Phase, Section};
 use crate::entities::catalogue::Library;
 use crate::features::appearance::Appearance;
-use crate::shared::actions::GoBack;
+use crate::shared::actions::{GoBack, Save};
 use crate::shared::layout::SizeClass;
 use crate::shared::ui::{back_button, empty_state, page_header, status_line};
 

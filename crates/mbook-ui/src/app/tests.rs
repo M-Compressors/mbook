@@ -314,6 +314,18 @@ fn an_editor_opened_from_the_library_returns_to_it(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn editing_an_existing_book_opens_its_chapter_in_visual(cx: &mut TestAppContext) {
+    let started = start(cx, 1200.0, &["Dune"]);
+    finish(&started, cx);
+    edit_from_the_shelf(&started, started.keys[0], cx);
+
+    testing::frame(cx, started.window, |window, _| {
+        assert!(window.try_find("visual-viewport").is_some());
+        assert!(window.try_find("chapter-source").is_none());
+    });
+}
+
+#[gpui_kit::test]
 fn a_new_book_opens_in_the_editor_and_keeps_its_first_chapter(cx: &mut TestAppContext) {
     let started = start(cx, 1200.0, &["Dune"]);
     let root = finish(&started, cx);

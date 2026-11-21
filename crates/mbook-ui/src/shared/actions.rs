@@ -14,6 +14,8 @@ actions!(
         Quit,
         /// Asks for files to add to the library.
         OpenFile,
+        /// Saves the book open in the editor.
+        Save,
         /// Goes to the settings.
         OpenSettings,
         /// Goes back to the previous screen. The root handles it unless the

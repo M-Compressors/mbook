@@ -8,7 +8,7 @@ mod window;
 
 use gpui_kit::Application;
 
-#[cfg(feature = "visual")]
+#[cfg(any(feature = "visual", test))]
 pub(crate) use keys::bind as bind_keys;
 #[cfg(feature = "visual")]
 pub(crate) use root::{Root, show_about};

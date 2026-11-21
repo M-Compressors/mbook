@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use gpui_kit::Action as _;
 use gpui_kit::component::WindowExt;
+use gpui_kit::component::input::SelectAll;
 
 use super::stage::Stage;
 use crate::app::show_about;
@@ -98,7 +99,9 @@ pub(super) fn all() -> Vec<Shot> {
         }),
         shot("08b-editor-split", Library::Books, |stage| {
             open_editor(stage)?;
-            open_chapter(stage)
+            open_chapter(stage)?;
+            let split = stage.has("mode-split")?;
+            stage.click_label(if split { "Split" } else { "Source" })
         }),
         shot("08c-editor-source", Library::Books, |stage| {
             open_editor(stage)?;
@@ -284,7 +287,7 @@ fn open_section(stage: &mut Stage, id: &'static str) -> Result<()> {
 
 /// Shows the text of the second chapter, whatever the size of the window.
 fn open_chapter(stage: &mut Stage) -> Result<()> {
-    if stage.has("chapter-source")? || stage.has("chapter-text")? {
+    if stage.has("visual-viewport")? || stage.has("chapter-source")? || stage.has("chapter-text")? {
         return Ok(());
     }
     if !stage.has("chapter-ch02.md")? {
@@ -297,9 +300,7 @@ fn open_chapter(stage: &mut Stage) -> Result<()> {
 fn editor_unsaved(stage: &mut Stage) -> Result<()> {
     open_editor(stage)?;
     open_chapter(stage)?;
-    if stage.has("chapter-source")? {
-        stage.click("chapter-source")?;
-    }
+    stage.click("visual-viewport")?;
     stage.type_text(" More words. ")?;
     for _ in 0..3 {
         stage.click("back")?;
@@ -313,6 +314,10 @@ fn editor_unsaved(stage: &mut Stage) -> Result<()> {
 fn editor_visual(stage: &mut Stage) -> Result<()> {
     open_editor(stage)?;
     open_chapter(stage)?;
+    stage.click_label("Source")?;
+    stage.click("chapter-source")?;
+    stage.with_window(|window, cx| window.dispatch_action(SelectAll.boxed_clone(), cx))?;
+    stage.type_text("# The harvest\n\nThe apples came late that year.\n\n| Fruit | Count |\n| :--- | ---: |\n| Apples | 27 |\n| Pears | 12 |\n\n- [x] Count the baskets\n- [ ] Mark the crates\n")?;
     stage.click_label("Visual")
 }
 
@@ -320,9 +325,8 @@ fn editor_visual(stage: &mut Stage) -> Result<()> {
 fn editor_problems(stage: &mut Stage) -> Result<()> {
     open_editor(stage)?;
     open_chapter(stage)?;
-    if stage.has("chapter-source")? {
-        stage.click("chapter-source")?;
-    }
+    stage.click_label("Source")?;
+    stage.click("chapter-source")?;
     stage.type_text("\n\nSee [the gone page](nowhere.md).\n")?;
     open_section(stage, "section-problems")?;
     stage.click("check")

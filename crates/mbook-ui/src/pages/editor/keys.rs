@@ -7,8 +7,6 @@ use gpui_kit::{App, Global, KeyBinding, KeyBindingContextPredicate, actions};
 actions!(
     mbook_editor,
     [
-        /// Saves the book.
-        Save,
         /// Moves the focus on from the Markdown editor, after Escape.
         LeaveEditor,
         /// Moves the focus back from the Markdown editor, after Escape.
@@ -22,8 +20,13 @@ pub(super) const PAGE_CONTEXT: &str = "EditorPage";
 pub(super) const SOURCE_CONTEXT: &str = "EditorSource";
 /// The key context of the editor's frame while Escape was pressed in it.
 pub(super) const ESCAPED_CONTEXT: &str = "EditorEscaped";
+/// The frame of the block editor.
+pub(super) const VISUAL_CONTEXT: &str = "VisualEditor";
+/// The frame of the block editor after Escape.
+pub(super) const VISUAL_ESCAPED_CONTEXT: &str = "VisualEditorEscaped";
 /// Where Tab leaves the editor: inside the frame that Escape marked.
 const ESCAPED_INPUT: &str = "EditorEscaped > Input";
+const VISUAL_ESCAPED_INPUT: &str = "VisualEditorEscaped > BlockEditor";
 
 /// Remembers that the keys are bound, so that a second editor does not bind
 /// them again.
@@ -33,27 +36,27 @@ impl Global for Bound {}
 
 /// Binds the keys of the editor once for the application.
 ///
-/// Save is the platform's Save key. Tab and Shift+Tab leave the Markdown
-/// editor only after Escape, as RFC 0004 ("Accessibility") says; before it,
-/// Tab indents.
+/// Tab and Shift+Tab leave the Markdown editor only after Escape, as RFC
+/// 0004 ("Accessibility") says. Before it, Tab indents.
 pub(super) fn bind(cx: &mut App) {
     if cx.has_global::<Bound>() {
         return;
     }
     cx.set_global(Bound);
-    let bindings = [
-        (
-            "secondary-s",
-            Box::new(Save) as Box<dyn gpui_kit::Action>,
-            PAGE_CONTEXT,
-        ),
+    let bindings: [(&str, Box<dyn gpui_kit::Action>, &str); 4] = [
         ("tab", Box::new(LeaveEditor), ESCAPED_INPUT),
         ("shift-tab", Box::new(LeaveEditorBackward), ESCAPED_INPUT),
+        ("tab", Box::new(LeaveEditor), VISUAL_ESCAPED_INPUT),
+        (
+            "shift-tab",
+            Box::new(LeaveEditorBackward),
+            VISUAL_ESCAPED_INPUT,
+        ),
     ];
     let bindings: Vec<KeyBinding> = bindings
         .into_iter()
-        .filter_map(|(keys, action, context)| {
-            let predicate = KeyBindingContextPredicate::parse(context).ok()?;
+        .filter_map(|(keys, action, scope)| {
+            let predicate = KeyBindingContextPredicate::parse(scope).ok()?;
             KeyBinding::load(keys, action, Some(Rc::new(predicate)), false, None, cx).ok()
         })
         .collect();

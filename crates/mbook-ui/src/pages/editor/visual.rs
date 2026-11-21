@@ -1,143 +1,62 @@
-//! The visual chapter editor and its link to the Markdown buffer.
-
-use std::collections::VecDeque;
-use std::ops::Range;
+//! The block editor and its connection to the chapter's Markdown buffer.
 
 use gpui_kit::assets::IconName;
-use gpui_kit::component::input::{
-    Editor, EditorState, InputEditsEvent, Redo, TextDecoration, TextDecorationCollection, Undo,
-};
+use gpui_kit::component::input::{Copy, Cut, Redo, SelectAll, Undo};
+use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, Context, Entity, Focusable as _, FontStyle, FontWeight,
-    HighlightStyle, InteractiveElement as _, IntoElement, ParentElement as _, Role, SharedString,
-    StatefulInteractiveElement as _, StrikethroughStyle, Styled as _, TestSupportExt as _,
-    UnderlineStyle, Window, div, px, relative,
+    AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, Focusable as _, Global,
+    InteractiveElement as _, IntoElement, ParentElement as _, Role, ScrollHandle, SharedString,
+    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, px, relative,
 };
+use markdown_editor::{
+    BlockEditor, BlockEditorEvent, BlockEditorState, BlockEditorStyle, BlockKind, BlockSelection,
+    EditorCommand, EditorToolbar, ImagePolicy,
+};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
 use super::EditorPage;
-use super::keys::{ESCAPED_CONTEXT, SOURCE_CONTEXT};
+use super::keys::VISUAL_CONTEXT;
+use super::prompts::{PathRequest, ask_path};
 use super::session::ViewMode;
-use super::visual_document::{Document, Format, Style, changed_range};
+use super::visual_source::VisualSource;
 use crate::features::appearance::Appearance;
-use crate::shared::ui::{icon_button, page_colors};
+use crate::shared::ui::{announce, empty_state, icon_button, page_colors, status_line};
 
-const HISTORY_LIMIT: usize = 40;
-const HISTORY_BYTES: usize = 8 * 1024 * 1024;
+struct KeysInstalled;
 
-struct Revision {
-    source: SharedString,
-    selection: Range<usize>,
-}
-
-#[derive(Default)]
-struct History {
-    undo: VecDeque<Revision>,
-    redo: VecDeque<Revision>,
-}
-
-fn remember(stack: &mut VecDeque<Revision>, revision: Revision) {
-    stack.push_back(revision);
-    let mut bytes: usize = stack.iter().map(|item| item.source.len()).sum();
-    while stack.len() > 1 && (stack.len() > HISTORY_LIMIT || bytes > HISTORY_BYTES) {
-        if let Some(oldest) = stack.pop_front() {
-            bytes -= oldest.source.len();
-        }
-    }
-}
+impl Global for KeysInstalled {}
 
 pub(super) struct VisualEditor {
-    pub(super) input: Entity<EditorState>,
-    decorations: TextDecorationCollection,
-    source: SharedString,
-    document: Document,
-    history: History,
+    pub(super) input: Entity<BlockEditorState>,
+    scroll: ScrollHandle,
+    baseline: Option<VisualSource>,
+    /// The text last loaded from or copied into Source.
+    mirrored: Option<SharedString>,
+    error: Option<SharedString>,
 }
 
 impl VisualEditor {
     pub(super) fn new(window: &mut Window, cx: &mut Context<'_, EditorPage>) -> Self {
+        if !cx.has_global::<KeysInstalled>() {
+            markdown_editor::init(cx);
+            cx.set_global(KeysInstalled);
+        }
+        let scroll = ScrollHandle::new();
         let input = cx.new(|cx| {
-            let mut state = EditorState::new(window, cx)
-                .placeholder("Start writing…")
-                .line_number(false)
-                .indent_guides(false)
-                .soft_wrap(true)
-                .searchable(false);
-            state.set_disabled(true, cx);
-            state
-        });
-        let decorations = input.update(cx, |state, cx| {
-            state.create_decorations_collection(Vec::new(), cx)
+            let mut editor =
+                BlockEditorState::new(window, cx).with_image_policy(ImagePolicy::Placeholder);
+            editor.set_scroll_handle(scroll.clone());
+            editor.set_readonly(true, cx);
+            editor
         });
         Self {
             input,
-            decorations,
-            source: SharedString::default(),
-            document: Document::default(),
-            history: History::default(),
+            scroll,
+            baseline: None,
+            mirrored: None,
+            error: None,
         }
-    }
-
-    fn update(
-        &mut self,
-        source: SharedString,
-        selection: Range<usize>,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        if self.source != source {
-            self.document = Document::parse(&source);
-            self.source = source;
-        }
-        let selected = self.document.display_offset(selection.start)
-            ..self.document.display_offset(selection.end);
-        self.input.update(cx, |state, cx| {
-            if state.value().as_str() != self.document.text {
-                state.set_value(self.document.text.as_str(), window, cx);
-            }
-            if state.selected_range() != selected {
-                state.set_selected_range(selected, cx);
-            }
-        });
-        let theme = cx.theme();
-        self.decorations.set(
-            self.document
-                .styles
-                .iter()
-                .map(|(range, style)| {
-                    let style = match style {
-                        Style::Heading | Style::Bold => HighlightStyle {
-                            font_weight: Some(FontWeight::BOLD),
-                            ..Default::default()
-                        },
-                        Style::Italic | Style::Quote => HighlightStyle {
-                            font_style: Some(FontStyle::Italic),
-                            ..Default::default()
-                        },
-                        Style::Image => HighlightStyle {
-                            font_style: Some(FontStyle::Italic),
-                            color: Some(theme.muted_foreground),
-                            ..Default::default()
-                        },
-                        Style::Strike => HighlightStyle {
-                            strikethrough: Some(StrikethroughStyle::default()),
-                            ..Default::default()
-                        },
-                        Style::Code => HighlightStyle {
-                            background_color: Some(theme.muted.opacity(0.5)),
-                            ..Default::default()
-                        },
-                        Style::Link => HighlightStyle {
-                            color: Some(theme.link),
-                            underline: Some(UnderlineStyle::default()),
-                            ..Default::default()
-                        },
-                    };
-                    TextDecoration::new(range.clone(), style)
-                })
-                .collect(),
-            cx,
-        );
     }
 }
 
@@ -148,31 +67,23 @@ impl EditorPage {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
-        if mode == self.session.mode {
-            return;
+        if mode != self.session.mode {
+            self.session.mode = mode;
+            self.escaped = false;
+            if mode == ViewMode::Visual && self.loaded.is_some() {
+                self.sync_visual(window, cx);
+            }
+            cx.notify();
         }
-        if self.session.mode == ViewMode::Visual && self.loaded.is_some() {
-            let selected = self.visual.input.read(cx).selected_range();
-            let range = self.visual.document.source_range(selected);
-            self.text
-                .update(cx, |state, cx| state.set_selected_range(range, cx));
-        }
-        self.session.mode = mode;
-        if mode == ViewMode::Visual {
-            self.sync_visual(window, cx);
-        }
-        cx.notify();
     }
 
-    pub(super) fn sync_visual(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if self.session.mode == ViewMode::Visual {
-            let source = self.text.read(cx).value();
-            let selection = self.text.read(cx).selected_range();
-            if self.visual.source != source {
-                self.visual.history = History::default();
-            }
-            self.visual.update(source, selection, window, cx);
-        }
+    pub(super) fn visual_loading(&mut self, cx: &mut Context<'_, Self>) {
+        self.visual.mirrored = None;
+        self.visual.baseline = None;
+        self.visual.error = None;
+        self.visual
+            .input
+            .update(cx, |state, cx| state.set_readonly(true, cx));
     }
 
     pub(super) fn visual_loaded(
@@ -181,142 +92,125 @@ impl EditorPage {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
-        self.visual.history = History::default();
-        self.visual
-            .input
-            .update(cx, |state, cx| state.set_disabled(!editable, cx));
-        self.sync_visual(window, cx);
+        self.visual_loading(cx);
+        if editable && self.session.mode == ViewMode::Visual {
+            self.sync_visual(window, cx);
+        }
     }
 
-    /// Applies the input's actual edits, so repeated letters on the two
-    /// sides of a format boundary do not move an edit to the other side.
-    pub(super) fn visual_typed(
+    fn sync_visual(&mut self, window: &Window, cx: &mut Context<'_, Self>) {
+        let source = self.text.read(cx).value();
+        if self.visual.mirrored.as_ref() == Some(&source) {
+            return;
+        }
+        let appearance = Appearance::global(cx);
+        let (_, ink) = page_colors(appearance.read(cx).page_tone(window));
+        let baseline = self.visual.input.update(cx, |state, cx| {
+            state.set_source(&source, cx)?;
+            let canonical = state.source_snapshot();
+            let baseline =
+                VisualSource::new(source.clone(), canonical.text().clone()).ok_or_else(|| {
+                    SharedString::from(
+                        "This chapter uses Markdown blocks Visual could not preserve.",
+                    )
+                })?;
+            state.set_editor_style(BlockEditorStyle::default().with_foreground(ink), cx);
+            state.set_readonly(false, cx);
+            Ok::<_, SharedString>(baseline)
+        });
+        self.visual.mirrored = Some(source);
+        match baseline {
+            Ok(source) => {
+                self.visual.baseline = Some(source);
+                self.visual.error = None;
+                self.visual
+                    .scroll
+                    .set_offset(gpui_kit::point(px(0.), px(0.)));
+            }
+            Err(error) => {
+                self.visual.baseline = None;
+                self.visual.error = Some(error);
+                self.visual
+                    .input
+                    .update(cx, |state, cx| state.set_readonly(true, cx));
+            }
+        }
+    }
+
+    pub(super) fn on_visual_event(
         &mut self,
-        event: &InputEditsEvent,
+        event: &BlockEditorEvent,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
         if self.session.mode != ViewMode::Visual || self.loaded.is_none() {
             return;
         }
-        let before = self.visual.source.clone();
-        let mut source = before.to_string();
-        let mut document = &self.visual.document;
-        let mut updated;
-        let mut original = None;
-        let mut caret = 0;
-        for (index, (edit, snapshot)) in event.edits().iter().enumerate() {
-            let after = snapshot.to_string();
-            let range = edit.start_byte..edit.old_end_byte;
-            let inserted = edit.start_byte..edit.new_end_byte;
-            let (range, inserted) = if range.end <= document.text.len()
-                && document.text.is_char_boundary(range.start)
-                && document.text.is_char_boundary(range.end)
-                && after.is_char_boundary(inserted.start)
-                && after.is_char_boundary(inserted.end)
-                && (range.start != 0 || range.end != document.text.len())
-            {
-                (range, inserted)
-            } else {
-                changed_range(&document.text, &after)
-            };
-            original.get_or_insert_with(|| document.source_range(range.clone()));
-            let (range, text, at) = document.splice(&source, range, &after[inserted]);
-            source.replace_range(range, &text);
-            caret = at;
-            if index + 1 < event.edits().len() {
-                updated = Document::parse(&source);
-                document = &updated;
+        match event {
+            BlockEditorEvent::Changed { .. } => {
+                let Some(baseline) = &self.visual.baseline else {
+                    return;
+                };
+                let snapshot = self.visual.input.read(cx).source_snapshot();
+                let source = baseline.restore(snapshot.text().clone());
+                if self.visual.mirrored.as_ref() != Some(&source) {
+                    self.visual.mirrored = Some(source.clone());
+                    self.text
+                        .update(cx, |state, cx| state.replace_all(source, window, cx));
+                }
+                cx.notify();
             }
-        }
-        if let Some(selection) = original {
-            self.apply_visual(before, selection, source, caret..caret, window, cx);
+            BlockEditorEvent::EditLinkRequested { url } => {
+                self.edit_visual_link(url.as_ref(), window, cx);
+            }
+            BlockEditorEvent::Focus | BlockEditorEvent::Blur => {
+                self.escaped = false;
+                cx.notify();
+            }
+            BlockEditorEvent::SelectionChanged => cx.notify(),
+            _ => {}
         }
     }
 
-    fn format_visual(&mut self, format: Format, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if self.loaded.is_none() {
-            return;
-        }
-        let selected = self.visual.input.read(cx).selected_range();
-        let before = self.visual.source.clone();
-        if let Some((range, replacement, selection)) =
-            self.visual
-                .document
-                .toggle(&before, selected.clone(), format)
+    fn edit_visual_link(
+        &self,
+        url: Option<&SharedString>,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        let editor = self.visual.input.read(cx);
+        if url.is_none()
+            && matches!(editor.selection(), BlockSelection::Text { anchor, head } if anchor == head)
         {
-            let mut source = before.to_string();
-            source.replace_range(range, &replacement);
-            let original = self.visual.document.source_range(selected);
-            self.apply_visual(before, original, source, selection, window, cx);
-        }
-        self.visual.input.focus_handle(cx).focus(window, cx);
-    }
-
-    fn apply_visual(
-        &mut self,
-        before: SharedString,
-        original: Range<usize>,
-        source: String,
-        selection: Range<usize>,
-        window: &mut Window,
-        cx: &mut Context<'_, Self>,
-    ) {
-        if before.as_str() == source {
-            self.visual.update(before, selection, window, cx);
+            announce("Select the text for the link first.", window, cx);
             return;
         }
-        remember(
-            &mut self.visual.history.undo,
-            Revision {
-                source: before,
-                selection: original,
-            },
-        );
-        self.visual.history.redo.clear();
-        self.write_visual(source.into(), selection, window, cx);
-    }
-
-    fn write_visual(
-        &mut self,
-        source: SharedString,
-        selection: Range<usize>,
-        window: &mut Window,
-        cx: &mut Context<'_, Self>,
-    ) {
-        let (range, inserted) = changed_range(&self.visual.source, &source);
-        self.text.update(cx, |state, cx| {
-            state.set_selected_range(range, cx);
-            state.replace(source[inserted].to_owned(), window, cx);
-            state.set_selected_range(selection.clone(), cx);
-        });
-        self.visual.update(source, selection, window, cx);
-    }
-
-    fn visual_history(&mut self, redo: bool, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if self.loaded.is_none() {
+        let Ok(selection) = editor.capture_selection() else {
             return;
-        }
-        let history = &mut self.visual.history;
-        let (from, to) = if redo {
-            (&mut history.redo, &mut history.undo)
-        } else {
-            (&mut history.undo, &mut history.redo)
         };
-        if let Some(revision) = from.pop_back() {
-            remember(
-                to,
-                Revision {
-                    source: self.visual.source.clone(),
-                    selection: self
-                        .visual
-                        .document
-                        .source_range(self.visual.input.read(cx).selected_range()),
+        ask_path(
+            &PathRequest {
+                title: if url.is_some() {
+                    "Edit link"
+                } else {
+                    "Insert link"
                 },
-            );
-            self.write_visual(revision.source, revision.selection, window, cx);
-        }
-        self.visual.input.focus_handle(cx).focus(window, cx);
+                label: "Link destination",
+                initial: url.map_or_else(String::new, ToString::to_string),
+                ok: "Apply",
+            },
+            window,
+            cx,
+            move |this, value, window, cx| {
+                this.visual.input.update(cx, |state, cx| {
+                    if state.is_capture_current(&selection) {
+                        state.set_link(Some(&value), cx);
+                    }
+                    state.focus(window, cx);
+                });
+            },
+            |_, _, _| {},
+        );
     }
 
     pub(super) fn render_visual(
@@ -325,6 +219,12 @@ impl EditorPage {
         window: &Window,
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
+        if self.loaded.is_none() {
+            return status_line("visual-loading", "Opening the chapter").into_any_element();
+        }
+        if let Some(error) = &self.visual.error {
+            return empty_state("This chapter needs Source", error.clone()).into_any_element();
+        }
         let appearance = Appearance::global(cx);
         let appearance = appearance.read(cx);
         let font = appearance.reading_font(cx);
@@ -334,37 +234,51 @@ impl EditorPage {
         let (paper, ink) = page_colors(appearance.page_tone(window));
         v_flex()
             .id("visual-editor")
-            .role(Role::Group)
-            .aria_label("Visual chapter editor")
-            .test_support()
+            .key_context(if self.escaped {
+                super::keys::VISUAL_ESCAPED_CONTEXT
+            } else {
+                VISUAL_CONTEXT
+            })
+            .on_action(cx.listener(|this, _: &Undo, window, cx| {
+                this.run_visual_history(false, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &Redo, window, cx| {
+                this.run_visual_history(true, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SelectAll, _, cx| {
+                this.visual.input.update(cx, |state, cx| {
+                    let _ = state.run(EditorCommand::SelectAll, cx);
+                });
+            }))
+            .on_action(|_: &Copy, window, cx| {
+                visual_clipboard_action("block_editor::Copy", window, cx);
+            })
+            .on_action(|_: &Cut, window, cx| {
+                visual_clipboard_action("block_editor::Cut", window, cx);
+            })
             .size_full()
             .min_h_0()
-            .child(self.visual_toolbar(cx))
+            .child(self.visual_toolbar(path, cx))
             .child(
                 div()
-                    .id("visual-source")
-                    .key_context(if self.escaped {
-                        ESCAPED_CONTEXT
-                    } else {
-                        SOURCE_CONTEXT
-                    })
-                    .capture_action(cx.listener(|this, _: &Undo, window, cx| {
-                        cx.stop_propagation();
-                        this.visual_history(false, window, cx);
-                    }))
-                    .capture_action(cx.listener(|this, _: &Redo, window, cx| {
-                        cx.stop_propagation();
-                        this.visual_history(true, window, cx);
-                    }))
-                    .min_h_0()
+                    .id("visual-viewport")
+                    .role(Role::Group)
+                    .aria_label(format!("Visual editor of {path}"))
+                    .test_support()
+                    .w_full()
                     .flex_1()
+                    .min_h_0()
                     .bg(paper)
+                    .overflow_y_scroll()
+                    .track_scroll(&self.visual.scroll)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.visual.input.focus_handle(cx).focus(window, cx);
+                    }))
                     .child(
-                        Editor::new(&self.visual.input)
-                            .aria_label(format!("Visual editor of {path}"))
-                            .appearance(false)
-                            .bordered(false)
-                            .h(relative(1.0))
+                        BlockEditor::new(&self.visual.input)
+                            .min_h_full()
+                            .px_4()
+                            .py_3()
                             .font_family(font)
                             .text_size(text_size)
                             .line_height(line_height)
@@ -374,82 +288,187 @@ impl EditorPage {
             .into_any_element()
     }
 
-    fn visual_toolbar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let controls = [
-            (
-                "visual-paragraph",
-                IconName::Pilcrow,
-                "Paragraph",
-                Format::Paragraph,
-            ),
-            (
-                "visual-heading",
-                IconName::Heading1,
-                "Heading",
-                Format::Heading,
-            ),
-            (
-                "visual-subheading",
-                IconName::Heading2,
-                "Subheading",
-                Format::Subheading,
-            ),
-            ("visual-bold", IconName::Bold, "Bold", Format::Bold),
-            ("visual-italic", IconName::Italic, "Italic", Format::Italic),
-            (
-                "visual-strike",
-                IconName::Strikethrough,
-                "Strikethrough",
-                Format::Strike,
-            ),
-            ("visual-code", IconName::Code, "Inline code", Format::Code),
-            (
-                "visual-bullets",
-                IconName::List,
-                "Bulleted list",
-                Format::Bullet,
-            ),
-            (
-                "visual-numbered",
-                IconName::ListOrdered,
-                "Numbered list",
-                Format::Ordered,
-            ),
-            (
-                "visual-quote",
-                IconName::Quote,
-                "Block quote",
-                Format::Quote,
-            ),
-        ];
-        h_flex()
-            .flex_wrap()
-            .gap_1()
-            .px_3()
-            .py_1()
+    fn visual_toolbar(&self, chapter: &str, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let editor = self.visual.input.read(cx);
+        let enabled = !editor.is_readonly();
+        let (undo, redo) = (editor.model().can_undo(), editor.model().can_redo());
+        let has_link = editor.link_at_caret().is_some();
+        let code = editor.block_kind_at_caret() == Some(BlockKind::CodeBlock);
+        let pictures: Vec<_> = self
+            .session
+            .pictures()
+            .iter()
+            .map(|picture| {
+                let name = picture.path.clone();
+                let markdown = picture_markdown(chapter, &name);
+                (name, markdown)
+            })
+            .collect();
+        let input = self.visual.input.clone();
+        v_flex()
             .border_b_1()
-            .border_color(theme.border)
+            .border_color(cx.theme().border)
             .child(
-                icon_button("visual-undo", IconName::Undo2, "Undo")
-                    .disabled(self.loaded.is_none() || self.visual.history.undo.is_empty())
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.visual_history(false, window, cx);
-                    })),
+                div()
+                    .id("visual-formatting")
+                    .max_w_full()
+                    .overflow_x_scroll()
+                    .child(EditorToolbar::new(&self.visual.input)),
             )
             .child(
-                icon_button("visual-redo", IconName::Redo2, "Redo")
-                    .disabled(self.loaded.is_none() || self.visual.history.redo.is_empty())
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.visual_history(true, window, cx);
-                    })),
+                h_flex()
+                    .px_2()
+                    .gap_1()
+                    .flex_wrap()
+                    .child(
+                        icon_button("visual-undo", IconName::Undo2, "Undo")
+                            .disabled(!enabled || !undo)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.run_visual_history(false, window, cx);
+                            })),
+                    )
+                    .child(
+                        icon_button("visual-redo", IconName::Redo2, "Redo")
+                            .disabled(!enabled || !redo)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.run_visual_history(true, window, cx);
+                            })),
+                    )
+                    .child(
+                        icon_button("visual-link", IconName::Link, "Insert or edit link")
+                            .disabled(!enabled)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.visual
+                                    .input
+                                    .update(cx, BlockEditorState::request_link_edit);
+                            })),
+                    )
+                    .child(
+                        icon_button("visual-unlink", IconName::Link2Off, "Remove link")
+                            .disabled(!enabled || !has_link)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.visual.input.update(cx, |state, cx| {
+                                    state.set_link(None, cx);
+                                    state.focus(window, cx);
+                                });
+                            })),
+                    )
+                    .child(
+                        icon_button("visual-image", IconName::Image, "Insert a book picture")
+                            .disabled(!enabled || pictures.is_empty())
+                            .dropdown_menu(move |menu, _, _| {
+                                pictures.iter().fold(menu, |menu, (name, source)| {
+                                    let input = input.clone();
+                                    let source = source.clone();
+                                    menu.item(PopupMenuItem::new(name.clone()).on_click(
+                                        move |_, window, cx| {
+                                            input.update(cx, |state, cx| {
+                                                state.paste(
+                                                    ClipboardItem::new_string(source.clone()),
+                                                    false,
+                                                    cx,
+                                                );
+                                                state.focus(window, cx);
+                                            });
+                                        },
+                                    ))
+                                })
+                            }),
+                    )
+                    .children(code.then(|| self.code_language())),
             )
-            .children(controls.map(|(id, icon, label, format)| {
-                icon_button(id, icon, label)
-                    .disabled(self.loaded.is_none())
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.format_visual(format, window, cx);
+    }
+
+    fn run_visual_history(&self, redo: bool, window: &mut Window, cx: &mut Context<'_, Self>) {
+        self.visual.input.update(cx, |state, cx| {
+            if redo {
+                state.redo(cx);
+            } else {
+                state.undo(cx);
+            }
+            state.focus(window, cx);
+        });
+    }
+
+    fn code_language(&self) -> impl IntoElement {
+        let input = self.visual.input.clone();
+        icon_button("visual-code-language", IconName::FileCode, "Code language").dropdown_menu(
+            move |menu, _, _| {
+                [
+                    ("Plain text", None),
+                    ("Bash", Some("bash")),
+                    ("C", Some("c")),
+                    ("C++", Some("cpp")),
+                    ("Go", Some("go")),
+                    ("Java", Some("java")),
+                    ("JavaScript", Some("javascript")),
+                    ("JSON", Some("json")),
+                    ("Python", Some("python")),
+                    ("Rust", Some("rust")),
+                    ("SQL", Some("sql")),
+                    ("TypeScript", Some("typescript")),
+                ]
+                .into_iter()
+                .fold(menu, |menu, (label, lang)| {
+                    let input = input.clone();
+                    menu.item(PopupMenuItem::new(label).on_click(move |_, window, cx| {
+                        input.update(cx, |state, cx| {
+                            let _ = state.run(
+                                EditorCommand::SetCodeBlock {
+                                    lang: lang.map(str::to_owned),
+                                },
+                                cx,
+                            );
+                            state.focus(window, cx);
+                        });
                     }))
-            }))
+                })
+            },
+        )
+    }
+}
+
+// Native Edit menu actions use Kit's input types. The block editor's
+// clipboard actions are available through GPUI's action registry.
+fn visual_clipboard_action(name: &str, window: &mut Window, cx: &mut App) {
+    if let Ok(action) = cx.build_action(name, None) {
+        window.dispatch_action(action, cx);
+    }
+}
+
+fn picture_markdown(chapter: &str, picture: &str) -> String {
+    const ESCAPED: &AsciiSet = &NON_ALPHANUMERIC
+        .remove(b'/')
+        .remove(b'.')
+        .remove(b'-')
+        .remove(b'_');
+    let directory = "../".repeat(chapter.bytes().filter(|&byte| byte == b'/').count());
+    let encoded = utf8_percent_encode(picture, ESCAPED);
+    let name = picture.rsplit('/').next().unwrap_or(picture);
+    let alt: String = name
+        .strip_suffix(".avif")
+        .unwrap_or(name)
+        .chars()
+        .map(|ch| {
+            if ch.is_alphanumeric() || matches!(ch, ' ' | '-' | '.') {
+                ch
+            } else {
+                ' '
+            }
+        })
+        .collect();
+    format!("![{}]({directory}{encoded})", alt.trim())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::picture_markdown;
+
+    #[test]
+    fn a_book_picture_uses_an_encoded_path_relative_to_the_chapter() {
+        assert_eq!(
+            picture_markdown("part/intro/ch.md", "img/cover #1.avif"),
+            "![cover  1](../../img/cover%20%231.avif)"
+        );
     }
 }

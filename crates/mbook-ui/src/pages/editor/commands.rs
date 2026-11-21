@@ -8,7 +8,7 @@ use gpui_kit::component::input::InputEvent;
 use gpui_kit::{Context, Window};
 
 use super::session::{
-    Control, MetaField, Section, edit_error_words, line_and_column, meta_change,
+    Control, MetaField, Phase, Section, edit_error_words, line_and_column, meta_change,
     unsaved_announcement,
 };
 use super::{EditorEvent, EditorPage};
@@ -334,9 +334,7 @@ impl EditorPage {
         self.loaded = None;
         self.text
             .update(cx, |state, cx| state.set_disabled(true, cx));
-        self.visual
-            .input
-            .update(cx, |state, cx| state.set_disabled(true, cx));
+        self.visual_loading(cx);
         if let Some(draft) = self.session.draft(&path).map(str::to_owned) {
             self.set_editor_text(&draft, true, window, cx);
             self.loaded = Some(path);
@@ -485,7 +483,7 @@ impl EditorPage {
     /// Asks to save: the text is sent, the pictures that are still being
     /// encoded are waited for, and then the book is saved.
     pub(super) fn save(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if self.saving.active() {
+        if self.session.phase != Phase::Ready || self.saving.active() {
             return;
         }
         self.saving.requested = true;
@@ -502,6 +500,11 @@ impl EditorPage {
         }
         self.saving.requested = false;
         self.flush_text(window, cx);
+        for field in MetaField::ALL {
+            if self.meta_timers.contains_key(&field) {
+                self.commit_meta(field, window, cx);
+            }
+        }
         if let Some(path) = self.session.first_refused().map(str::to_owned) {
             let message = format!(
                 "The book was not saved: it refused the text of {path}. Correct it, then save."

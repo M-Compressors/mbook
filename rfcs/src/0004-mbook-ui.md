@@ -196,30 +196,37 @@ Pointer over the slider                  Controls hidden
 
 ```text
 Expanded
-+--------------+---------------------------+---------------------------+
-| <  Library   | ch07.md        Source | Split | Preview      [ Save ] |
-|              +---------------------------+---------------------------+
-| Details      | # Chapter 7               |  Chapter 7                |
-| Cover        |                           |                           |
-| Chapters     | It was then that the      |  It was then that the     |
-|   ch01.md    | **second** act began.     |  second act began.        |
-|   ch02.md    |                           |                           |
-| > ch07.md  * | ![The pond](img/p.avif)   |  [ picture ]              |
-|   [ + ]      |                           |                           |
-| Pictures     |                           |                           |
-| Problems  2  |                           |                           |
-+--------------+---------------------------+---------------------------+
++--------------+----------------------------------------------------------+
+| <  Library   | ch01.md    Visual | Source | Split | Preview    [ Save ] |
+|              +----------------------------------------------------------+
+| Details      | Heading 1    Bold  Italic  Quote              Insert     |
+| Cover        +----------------------------------------------------------+
+| Chapters     | Chapter 1                                                |
+| > ch01.md    |                                                          |
+|   ch02.md    | It was then that the second act began.                   |
+|   [ + ]      |                                                          |
+| Pictures     |                                                          |
+| Problems  2  |                                                          |
++--------------+----------------------------------------------------------+
 
-Compact: a stack. Sections, then a chapter with Visual | Source | Preview.
+Compact: a stack that opens in the chapter. Back reaches the chapters and sections.
 ```
 
 - The chapter toolbar offers Visual, Source, Split and Preview. Split is
   available in expanded windows. Each icon has a tooltip and an accessible
-  name. A newly created book opens in Visual.
-- **Visual** edits formatted chapter text with controls for paragraphs,
-  headings, emphasis, strikethrough, inline code, lists and quotes. Link
-  labels and picture alternatives are editable in place. Source provides
-  direct access to destinations, tables and reference definitions.
+  name. Editing opens the first chapter in Visual for both new and existing
+  books.
+- **Visual** edits Markdown as blocks. The toolbar changes heading levels
+  and inline formatting, indents nested lists, inserts tables, task lists,
+  rules and code blocks, and edits links. Book pictures are inserted with
+  chapter-relative paths. Code blocks offer a language picker.
+- Click or Tab into a table cell to edit it. Row and column grips open
+  controls for insertion, deletion and alignment. Tables and code blocks can
+  move between top-level blocks by dragging their handles. Task items can
+  be checked in the editor.
+- Visual represents picture atoms as placeholders. Source can edit their
+  alternative text and destinations, and can edit footnote and reference
+  definitions.
 - **Source** and the source side of **Split** highlight Markdown syntax.
 - **Details** is a form over the metadata of RFC 0001: title, authors,
   language, series, publisher, date, annotation.
@@ -229,8 +236,8 @@ Compact: a stack. Sections, then a chapter with Visual | Source | Preview.
   the picture as being encoded until it is ready.
 - **Problems** lists what `Book::check` reports, each with its chapter and
   place; choosing one opens that place. A book with problems is not saved.
-- **Save** replaces the book in the library. Until then the library and the
-  reader see the book as it was.
+- **Save** replaces the book in the library. Use Command+S on macOS or
+  Ctrl+S on other platforms. On macOS the File menu also offers Save.
 
 ### Settings
 
@@ -730,12 +737,16 @@ sequenceDiagram
   sends a new outline after each command that changes it.
 - The Markdown text of the chapter is in the source editor of GPUI Kit.
   Source and Split use its Tree-sitter Markdown grammar.
-- Visual displays a second GPUI Kit editor with a projection of Markdown.
-  The GFM syntax tree supplies the byte ranges for styling text and hiding
-  delimiters. A visual edit maps to a splice of the original Markdown.
-  Opening or closing Visual leaves unedited source bytes intact. The
-  visual history retains at most 40 revisions per stack and evicts old
-  revisions once their text exceeds 8 MiB. The newest revision is retained.
+- Visual uses `gpui-kit-markdown-editor` with the GPUI Fast engine. Enter
+  starts a paragraph, and the block editor owns selections, structured
+  edits, and undo and redo. Committed transactions update the chapter's
+  Markdown buffer. Opening or closing Visual leaves the source intact.
+- The application compares the editor's GFM blocks before and after edits
+  with `similar`. Unchanged blocks keep their original Markdown whenever
+  they can be put back without changing the block structure. If the
+  initial import changes the top-level block structure, the chapter is
+  available in Source. Picture placeholders keep Visual from resolving
+  image sources.
 - The source text is
   sent to the task as `Chapter::set_text` when typing pauses for 400 ms,
   when another chapter is opened, and before a check or a save.
@@ -747,6 +758,7 @@ sequenceDiagram
 - **Save** runs `Book::check`, then `Book::save` onto the file of the
   library, which writes a temporary file beside it and renames it into
   place. A book with problems is not written, and the problems are shown.
+  Save sends chapter text and pending Details edits before the save command.
   After a save the row of `books` and the thumbnail are made again.
 - Undo inside a chapter is the editor's own. Removing a chapter or a picture
   asks first and cannot be undone.
@@ -933,7 +945,7 @@ can break in its middle.
 | Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
 | Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. A block taller than the page can be clipped through a line. Pictures keep the decode width of their first draw. |
-| Editor | The Visual editor styles prose and supports common formatting commands. Images appear as alternative text. Tables and reference definitions can be edited as Markdown. Source and Split highlight Markdown syntax. Drag to reorder is unimplemented. |
+| Editor | Editing opens the first chapter in Visual. Visual supports tables, nested and task lists, quotes, links, code blocks, and picture insertion. Tables and code blocks support drag to reorder. Footnotes and reference definitions are preserved and edited in Source. Pictures appear as placeholders. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. No real release exists, so neither has met the network; the Windows part has never been compiled. |
 | Release workflow | Written; never run. A local `cargo bundle` on macOS produces the application with its icon. |
@@ -1005,7 +1017,7 @@ asks:
 | Stored place | Chapter path and byte offset | Resource number and offset | Numbers change when a book is written again. |
 | Creating a book | Create a titled book with one empty chapter and open it in the editor | Ask for chapter paths before opening the editor | A writer can start with the title and go straight to writing. The title and chapter paths remain editable. |
 | Editing | One background task owns the `Book`; commands in order | A `Book` behind a mutex, one task per change | Separate tasks may run out of order: a save could miss the edit before it. |
-| Visual chapter editing | Map edits to source bytes with the GFM syntax tree | Serialize the formatted document on save | A splice preserves untouched Markdown, including constructs with no formatting command. |
+| Visual chapter editing | Use the GPUI Kit block editor and restore intact source blocks with `similar` | Extend the inline Markdown projection | The block editor provides table and list structure, selection and undo. Restoring unchanged blocks protects source spelling and heading anchors. |
 | Where an edit is saved | Over the book in the library, by a rename | Always a new copy | Decided by the format author. The library is the working copy; the original file was never touched. |
 | Catalogue | `redb` | SQLite through `rusqlite` | Decided by the format author. Pure Rust: nothing to cross-compile for a phone. The price is no SQL; a library is filtered in memory. |
 | | | No catalogue; open every file at start | Reading places and settings need a store anyway, and a shelf of thousands should not wait for thousands of files. |

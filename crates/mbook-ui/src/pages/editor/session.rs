@@ -138,7 +138,6 @@ pub(super) enum MetaField {
 
 impl MetaField {
     /// Every field, in the order of the form.
-    #[cfg(test)]
     pub(super) const ALL: [Self; 7] = [
         Self::Title,
         Self::Authors,
@@ -229,9 +228,9 @@ impl Session {
             phase: Phase::Loading,
             outline: None,
             section: Section::Chapters,
-            level: Level::Sections,
+            level: Level::Chapter,
             open: None,
-            mode: ViewMode::Split,
+            mode: ViewMode::Visual,
             edited: BTreeSet::new(),
             pending: None,
             drafts: BTreeMap::new(),

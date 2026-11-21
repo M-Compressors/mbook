@@ -4,6 +4,10 @@
 
 ### Changed
 
+- Open the first chapter in Visual when editing a book, including in
+  compact windows.
+- Update the native file-picker dependency to `rfd` 0.18 and use
+  `similar` 3 for Markdown block comparisons.
 - The reader shows a page number for the whole book and marks estimates
   while chapters are still unmeasured. A position slider previews the
   destination and seeks on release. The slider appears when the pointer
@@ -29,6 +33,10 @@
 
 ### Fixed
 
+- Command+S is available through File > Save on macOS. Save includes
+  pending edits in the Details form.
+- Enter in Visual starts a new paragraph without showing Markdown's blank
+  separator line.
 - The native book, picture, and cover pickers filter to supported file
   extensions.
 
@@ -38,6 +46,9 @@
 
 ### Added
 
+- Visual uses `gpui-kit-markdown-editor` with editable GFM tables, nested
+  lists and task items, link editing, picture insertion, and fenced code
+  blocks with a language picker.
 - A Visual chapter editor with formatting controls and undo and redo.
   Source and Split modes highlight Markdown syntax.
 - **New book…** in the library creates a book and opens its empty first

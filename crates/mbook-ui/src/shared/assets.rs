@@ -27,14 +27,10 @@ icon_assets!(
         UnfoldVertical,
         SunMoon,
         Type,
-        Pilcrow,
-        Heading1,
-        Heading2,
-        Bold,
-        Italic,
-        Strikethrough,
-        ListOrdered,
-        Quote
+        Link,
+        Link2Off,
+        Image,
+        FileCode
     ]
 );
 
@@ -120,16 +116,10 @@ mod tests {
     fn the_visual_editing_icons_are_embedded() {
         for name in [
             "type",
-            "pilcrow",
-            "heading-1",
-            "heading-2",
-            "bold",
-            "italic",
-            "strikethrough",
-            "code",
-            "list",
-            "list-ordered",
-            "quote",
+            "link",
+            "link-2-off",
+            "image",
+            "file-code",
             "undo-2",
             "redo-2",
         ] {

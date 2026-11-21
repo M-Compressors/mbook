@@ -29,12 +29,12 @@ mod session;
 mod tests;
 mod view;
 mod visual;
-mod visual_document;
+mod visual_source;
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use gpui_kit::component::input::{EditorState, InputEditsEvent, InputEvent};
+use gpui_kit::component::input::{EditorState, InputEvent};
 use gpui_kit::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, RenderImage,
     Subscription, Task, Window,
@@ -49,7 +49,7 @@ use crate::widgets::chapter_view::ChapterView;
 
 use self::details::Fields;
 use self::encode::{Encoded, Job, Target};
-use self::session::{Level, MetaField, Session, ViewMode};
+use self::session::{MetaField, Session, ViewMode};
 use self::visual::VisualEditor;
 
 /// What the editor asks the root to do.
@@ -169,7 +169,6 @@ impl EditorPage {
     /// The book is opened on the background; until its outline arrives the
     /// page says that it is opening.
     pub(crate) fn new(key: BookKey, window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
-        keys::bind(cx);
         let path = Store::global(cx).roots.book(key);
         let (handle, serving) = actor::session(path);
         let actor = cx.background_spawn(serving);
@@ -183,6 +182,8 @@ impl EditorPage {
             state
         });
         let visual = VisualEditor::new(window, cx);
+        // Our Escape + Tab bindings take precedence over the block editor's Tab.
+        keys::bind(cx);
         let fields = Fields::new(window, cx);
         let mut subscriptions = vec![
             cx.subscribe_in(&text, window, |this, _, event: &InputEvent, window, cx| {
@@ -191,15 +192,8 @@ impl EditorPage {
             cx.subscribe_in(
                 &visual.input,
                 window,
-                |this, _, event: &InputEditsEvent, window, cx| this.visual_typed(event, window, cx),
-            ),
-            cx.subscribe_in(
-                &visual.input,
-                window,
-                |this, _, event: &InputEvent, window, cx| {
-                    if !matches!(event, InputEvent::Change) {
-                        this.on_text_event(event, window, cx);
-                    }
+                |this, _, event: &markdown_editor::BlockEditorEvent, window, cx| {
+                    this.on_visual_event(event, window, cx);
                 },
             ),
             cx.observe(&Appearance::global(cx), |_, _, cx| cx.notify()),
@@ -233,12 +227,6 @@ impl EditorPage {
         };
         page.send(Command::Load, commands::Origin::Load, window, cx);
         page
-    }
-
-    /// Starts a newly created book on the chapter screen at every window size.
-    pub(crate) fn open_first_chapter(&mut self) {
-        self.session.level = Level::Chapter;
-        self.session.mode = ViewMode::Visual;
     }
 
     /// The focus handle of the Markdown editor.

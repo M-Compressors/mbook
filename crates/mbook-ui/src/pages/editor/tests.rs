@@ -6,9 +6,12 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::component::WindowExt as _;
-use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
+use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{
-    AnyWindowHandle, AppContext as _, Entity, KeyBinding, Role, TestAppContext, Window,
+    AnyWindowHandle, AppContext as _, Entity, Focusable as _, Role, TestAppContext, Window,
+};
+use markdown_editor::{
+    BlockKind, BlockPosition, BlockSelection, ColumnAlign, EditorCommand, TableEdit,
 };
 use mbook::{Book, BookReader};
 
@@ -21,7 +24,6 @@ use crate::entities::catalogue::{Library, Store};
 use crate::features::appearance::Appearance;
 use crate::features::edit_book::command::{Command, MetaChange};
 use crate::features::edit_book::error::EditError;
-use crate::shared::actions::GoBack;
 use crate::shared::model::BookKey;
 use crate::shared::roots::Roots;
 use crate::testing::{self, Fixture};
@@ -73,7 +75,7 @@ fn open(cx: &mut TestAppContext, fixture: Fixture, key: BookKey, width: f32) -> 
         Library::install(library, cx);
         EditorPage::new(key, window, cx)
     });
-    cx.update(|cx| cx.bind_keys([KeyBinding::new("escape", GoBack, None)]));
+    cx.update(crate::app::bind_keys);
     let events = Rc::new(RefCell::new(Vec::new()));
     let seen = events.clone();
     cx.update(|cx| {
@@ -132,10 +134,54 @@ fn click(setup: &Setup, id: &str, cx: &mut TestAppContext) {
     cx.run_until_parked();
 }
 
+fn click_named(setup: &Setup, label: &str, cx: &mut TestAppContext) {
+    let label = label.to_owned();
+    frame(setup, cx, move |window, cx| {
+        let point = window.find_by_label(&label).bounds().center();
+        window.pointer_down(point, gpui_kit::MouseButton::Left, cx);
+        window.pointer_up(point, gpui_kit::MouseButton::Left, cx);
+    });
+    cx.run_until_parked();
+}
+
+fn select_visual(
+    setup: &Setup,
+    leaf_text: &str,
+    range: std::ops::Range<usize>,
+    cx: &mut TestAppContext,
+) {
+    let leaf_text = leaf_text.to_owned();
+    act(setup, cx, move |page, _, cx| {
+        page.visual.input.update(cx, |input, cx| {
+            let leaf = input
+                .model()
+                .document()
+                .leaves()
+                .find(|leaf| leaf.text() == Some(leaf_text.as_str()))
+                .unwrap()
+                .id();
+            input
+                .set_selection(
+                    BlockSelection::Text {
+                        anchor: BlockPosition::new(leaf, range.start),
+                        head: BlockPosition::new(leaf, range.end),
+                    },
+                    cx,
+                )
+                .unwrap();
+        });
+    });
+}
+
 fn press(setup: &Setup, key: &str, cx: &mut TestAppContext) {
     let key = key.to_owned();
     frame(setup, cx, move |window, cx| window.press(&key, cx));
     cx.run_until_parked();
+}
+
+fn press_save(setup: &Setup, cx: &mut TestAppContext) {
+    let mac = cx.update(|cx| cx.platform_info().os == gpui_kit::OperatingSystem::Mac);
+    press(setup, if mac { "cmd-s" } else { "ctrl-s" }, cx);
 }
 
 fn focus_editor(setup: &Setup, cx: &mut TestAppContext) {
@@ -222,6 +268,7 @@ fn a_file_that_is_not_a_book_shows_why(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn an_expanded_window_shows_the_sections_the_source_and_the_preview(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-split", cx);
     frame(&setup, cx, |window, _| {
         assert_eq!(window.find("editor-page").role(), Some(Role::Main));
         assert_eq!(window.find("page-heading").label(), Some("Dune"));
@@ -247,10 +294,10 @@ fn an_expanded_window_shows_the_sections_the_source_and_the_preview(cx: &mut Tes
 }
 
 #[gpui_kit::test]
-fn a_medium_window_shows_the_source_alone_and_slides_the_sections_over_it(cx: &mut TestAppContext) {
+fn a_medium_window_shows_visual_and_slides_the_sections_over_it(cx: &mut TestAppContext) {
     let setup = started(cx, 800.0);
     frame(&setup, cx, |window, _| {
-        assert!(window.try_find("chapter-source").is_some());
+        assert!(window.try_find("visual-viewport").is_some());
         assert!(
             window.try_find("chapter-text").is_none(),
             "split is for expanded windows"
@@ -305,37 +352,277 @@ fn visual_text_edits_save_as_markdown_without_rewriting_the_surroundings(cx: &mu
     cx.run_until_parked();
     click(&setup, "mode-visual", cx);
     focus_editor(&setup, cx);
-    act(&setup, cx, |page, _, cx| {
-        page.visual.input.update(cx, |input, cx| {
-            assert_eq!(input.value(), "One\n\nA word and a link.\n");
-            input.set_selected_range(7..11, cx);
-        });
-    });
-    frame(&setup, cx, |window, cx| window.input("слово", cx));
+    select_visual(&setup, "A word and a link.", 3..5, cx);
+    frame(&setup, cx, |window, cx| window.input("ор", cx));
     click(&setup, "save", cx);
     assert_eq!(
         saved_titles_and_texts(&setup).1,
-        ["# One\n\nA **слово** and [a link](https://example.com).\n"]
+        ["# One\n\nA **wорd** and [a link](https://example.com).\n"]
     );
+}
+
+#[gpui_kit::test]
+fn enter_in_visual_prose_moves_the_caret_down_one_line_and_saves_a_paragraph(
+    cx: &mut TestAppContext,
+) {
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "First")]);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    press(&setup, "end", cx);
+    press(&setup, "enter", cx);
+    frame(&setup, cx, |window, cx| window.input("Second", cx));
+
+    setup.page.read_with(cx, |page, cx| {
+        let paragraphs: Vec<_> = page
+            .visual
+            .input
+            .read(cx)
+            .model()
+            .document()
+            .leaves()
+            .filter_map(|leaf| leaf.text())
+            .collect();
+        assert_eq!(paragraphs, ["First", "Second"]);
+    });
+    click(&setup, "save", cx);
+    assert_eq!(saved_titles_and_texts(&setup).1, ["First\n\nSecond"]);
 }
 
 #[gpui_kit::test]
 fn visual_formatting_can_be_undone_and_redone_before_switching_to_source(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
     click(&setup, "mode-visual", cx);
-    act(&setup, cx, |page, _, cx| {
-        page.visual.input.update(cx, |input, cx| {
-            input.set_selected_range(5..10, cx);
-        });
-    });
-    click(&setup, "visual-bold", cx);
-    assert_eq!(editor_text(&setup, cx), "# One\n\n**First** text.\n");
+    focus_editor(&setup, cx);
+    select_visual(&setup, "First text.", 0..5, cx);
     let mac = cx.update(|cx| cx.platform_info().os == gpui_kit::OperatingSystem::Mac);
+    press(&setup, if mac { "cmd-b" } else { "ctrl-b" }, cx);
+    assert_eq!(editor_text(&setup, cx), "# One\n\n**First** text.\n");
     press(&setup, if mac { "cmd-z" } else { "ctrl-z" }, cx);
     assert_eq!(editor_text(&setup, cx), CHAPTERS[0].1);
     click(&setup, "visual-redo", cx);
     click(&setup, "mode-source", cx);
     assert_eq!(editor_text(&setup, cx), "# One\n\n**First** text.\n");
+}
+
+#[gpui_kit::test]
+fn visual_table_edits_keep_other_blocks_and_save_the_table(cx: &mut TestAppContext) {
+    let original = "Heading  with  spaces\n=====================\n\nSee [spot] and [^note].\n\n| Label | Value |\n| :--- | ---: |\n| One | 7 |\n\n[spot]: #spot\n\n[^note]: A *footnote*.\n";
+    let setup = start_with(cx, 1280.0, &[("ch01.md", original)]);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    select_visual(&setup, "7", 0..1, cx);
+    frame(&setup, cx, |window, cx| window.input("9", cx));
+    act(&setup, cx, |page, _, cx| {
+        page.visual.input.update(cx, |input, cx| {
+            assert!(
+                input
+                    .run(EditorCommand::EditTable(TableEdit::AddRowBelow), cx)
+                    .unwrap()
+            );
+            assert!(
+                input
+                    .run(EditorCommand::EditTable(TableEdit::AddColumnRight), cx)
+                    .unwrap()
+            );
+            assert!(
+                input
+                    .run(
+                        EditorCommand::EditTable(TableEdit::SetColumnAlign(ColumnAlign::Center)),
+                        cx
+                    )
+                    .unwrap()
+            );
+        });
+    });
+    click(&setup, "save", cx);
+    let source = &saved_titles_and_texts(&setup).1[0];
+    assert!(
+        source.starts_with(
+            "Heading  with  spaces\n=====================\n\nSee [spot] and [^note].\n\n"
+        ),
+        "{source}"
+    );
+    assert!(
+        source.ends_with("[spot]: #spot\n\n[^note]: A *footnote*.\n"),
+        "{source}"
+    );
+    let markdown::mdast::Node::Root(root) =
+        markdown::to_mdast(source, &markdown::ParseOptions::gfm()).unwrap()
+    else {
+        panic!("chapter root");
+    };
+    let table = root
+        .children
+        .iter()
+        .find_map(|block| match block {
+            markdown::mdast::Node::Table(table) => Some(table),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(table.children.len(), 3);
+    assert_eq!(table.align.len(), 3);
+    assert!(table.align.contains(&markdown::mdast::AlignKind::Center));
+    assert!(table.children[1].to_string().contains('9'));
+}
+
+#[gpui_kit::test]
+fn the_visual_insert_menu_creates_a_table(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "")]);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    click_named(&setup, "Insert", cx);
+    click_named(&setup, "Table", cx);
+    setup.page.read_with(cx, |page, cx| {
+        assert_eq!(
+            page.visual
+                .input
+                .read(cx)
+                .model()
+                .document()
+                .root()
+                .children()
+                .next()
+                .unwrap()
+                .kind(),
+            BlockKind::Table
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn the_visual_link_dialog_wraps_selected_text(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "See the book.")]);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    select_visual(&setup, "See the book.", 4..12, cx);
+    click(&setup, "visual-link", cx);
+    frame(&setup, cx, |window, cx| {
+        window.input("https://example.com", cx);
+    });
+    click_named(&setup, "Apply", cx);
+    assert_eq!(
+        editor_text(&setup, cx),
+        "See [the book](https://example.com)."
+    );
+}
+
+#[gpui_kit::test]
+fn removing_a_visual_link_keeps_its_text(cx: &mut TestAppContext) {
+    let setup = start_with(
+        cx,
+        1280.0,
+        &[("ch01.md", "See [the book](https://example.com).")],
+    );
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    select_visual(&setup, "See the book.", 6..6, cx);
+    click(&setup, "visual-unlink", cx);
+    assert_eq!(editor_text(&setup, cx), "See the book.");
+}
+
+#[gpui_kit::test]
+fn cancelling_the_visual_link_dialog_keeps_the_chapter(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "See the book.")]);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    select_visual(&setup, "See the book.", 4..12, cx);
+    click(&setup, "visual-link", cx);
+    click_named(&setup, "Cancel", cx);
+    assert_eq!(editor_text(&setup, cx), "See the book.");
+}
+
+#[gpui_kit::test]
+fn visual_inserts_an_existing_picture_relative_to_the_chapter(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let key = BookKey::generate();
+    let mut book = Book::new("Dune", "en").unwrap();
+    book.add_chapter("part/ch01.md", "").unwrap();
+    book.add_picture("img/sand.avif", avif_of(8, 6)).unwrap();
+    book.save(fixture.roots.book(key)).unwrap();
+    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    let setup = open(cx, fixture, key, 1280.0);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    click(&setup, "visual-image", cx);
+    click_named(&setup, "img/sand.avif", cx);
+    click(&setup, "save", cx);
+    assert_eq!(
+        saved_titles_and_texts(&setup).1,
+        ["![sand](../img/sand.avif)"]
+    );
+}
+
+#[gpui_kit::test]
+fn the_native_clipboard_actions_use_the_visual_selection(cx: &mut TestAppContext) {
+    use gpui_kit::Action as _;
+    use gpui_kit::component::input::{Copy, Cut, Undo};
+
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "A **word**.")]);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    select_visual(&setup, "A word.", 2..6, cx);
+    frame(&setup, cx, |window, cx| {
+        window.dispatch_action(Copy.boxed_clone(), cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|cx| cx.read_from_clipboard().unwrap().text().unwrap()),
+        "**word**"
+    );
+    frame(&setup, cx, |window, cx| {
+        window.dispatch_action(Cut.boxed_clone(), cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(editor_text(&setup, cx), "A .");
+    frame(&setup, cx, |window, cx| {
+        window.dispatch_action(Undo.boxed_clone(), cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(editor_text(&setup, cx), "A **word**.");
+}
+
+#[gpui_kit::test]
+fn the_native_edit_actions_select_all_and_redo_in_visual(cx: &mut TestAppContext) {
+    use gpui_kit::Action as _;
+    use gpui_kit::component::input::{Redo, SelectAll, Undo};
+
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "First line.\n\nSecond line.")]);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    frame(&setup, cx, |window, cx| {
+        window.dispatch_action(SelectAll.boxed_clone(), cx);
+    });
+    cx.run_until_parked();
+    frame(&setup, cx, |window, cx| window.input("Replaced", cx));
+    assert_eq!(editor_text(&setup, cx), "Replaced");
+    frame(&setup, cx, |window, cx| {
+        window.dispatch_action(Undo.boxed_clone(), cx);
+    });
+    cx.run_until_parked();
+    frame(&setup, cx, |window, cx| {
+        window.dispatch_action(Redo.boxed_clone(), cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(editor_text(&setup, cx), "Replaced");
+}
+
+#[gpui_kit::test]
+fn a_visual_code_block_uses_the_selected_language(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "```\nlet answer = 42;\n```")]);
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    select_visual(&setup, "let answer = 42;", 0..0, cx);
+    click(&setup, "visual-code-language", cx);
+    click_named(&setup, "Rust", cx);
+    assert_eq!(editor_text(&setup, cx), "```rust\nlet answer = 42;\n```");
 }
 
 #[gpui_kit::test]
@@ -368,8 +655,13 @@ fn a_medium_window_offers_the_source_or_the_preview(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn a_compact_window_is_a_stack_that_starts_with_the_sections(cx: &mut TestAppContext) {
+fn a_compact_window_is_a_stack_that_starts_in_visual(cx: &mut TestAppContext) {
     let setup = started(cx, 390.0);
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("visual-viewport").is_some());
+    });
+    click(&setup, "back", cx);
+    click(&setup, "back", cx);
     frame(&setup, cx, |window, _| {
         assert!(window.try_find("sections").is_some());
         assert!(window.try_find("chapter-source").is_none());
@@ -393,7 +685,7 @@ fn a_compact_window_is_a_stack_that_starts_with_the_sections(cx: &mut TestAppCon
 #[gpui_kit::test]
 fn a_compact_window_goes_from_the_chapters_to_a_chapter_and_back(cx: &mut TestAppContext) {
     let setup = started(cx, 390.0);
-    click(&setup, "section-chapters", cx);
+    click(&setup, "back", cx);
     frame(&setup, cx, |window, _| {
         assert!(window.try_find("chapter-ch02.md").is_some());
         assert!(window.try_find("add-chapter").is_some());
@@ -401,7 +693,7 @@ fn a_compact_window_goes_from_the_chapters_to_a_chapter_and_back(cx: &mut TestAp
     click(&setup, "chapter-ch02.md", cx);
     assert_eq!(state(&setup, cx, |page| page.session.level), Level::Chapter);
     frame(&setup, cx, |window, _| {
-        assert!(window.try_find("chapter-source").is_some());
+        assert!(window.try_find("visual-viewport").is_some());
         assert!(window.try_find("chapter-text").is_none());
     });
     assert_eq!(editor_text(&setup, cx), CHAPTERS[1].1);
@@ -546,6 +838,7 @@ fn opening_another_chapter_sends_the_text_first(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn tab_indents_and_escape_then_tab_leaves_the_editor(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-source", cx);
     focus_editor(&setup, cx);
     press(&setup, "tab", cx);
     assert!(editor_text(&setup, cx).starts_with(' '), "Tab indents");
@@ -570,8 +863,30 @@ fn tab_indents_and_escape_then_tab_leaves_the_editor(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn escape_then_tab_leaves_the_visual_table(cx: &mut TestAppContext) {
+    let setup = start_with(
+        cx,
+        1280.0,
+        &[("ch01.md", "| First | Second |\n| --- | --- |")],
+    );
+    cx.run_until_parked();
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    select_visual(&setup, "First", 0..0, cx);
+    press(&setup, "escape", cx);
+    assert!(state(&setup, &*cx, |page| page.escaped));
+    press(&setup, "tab", cx);
+    let focused = act(&setup, cx, |page, window, cx| {
+        page.text_focus(cx).contains_focused(window, cx)
+    });
+    assert!(!focused);
+    assert!(setup.events.borrow().is_empty());
+}
+
+#[gpui_kit::test]
 fn the_editor_says_in_text_how_to_leave_it(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-source", cx);
     frame(&setup, cx, |window, _| {
         assert_eq!(
             window.find("editor-hint").label(),
@@ -642,7 +957,7 @@ fn the_save_key_saves_what_was_typed_without_waiting_for_the_pause(cx: &mut Test
     let setup = started(cx, 1280.0);
     focus_editor(&setup, cx);
     frame(&setup, cx, |window, cx| window.input("Typed. ", cx));
-    press(&setup, "secondary-s", cx);
+    press_save(&setup, cx);
     cx.run_until_parked();
     let (_, texts) = saved_titles_and_texts(&setup);
     assert!(texts[0].starts_with("Typed. "), "{:?}", texts[0]);
@@ -651,6 +966,34 @@ fn the_save_key_saves_what_was_typed_without_waiting_for_the_pause(cx: &mut Test
         [EditorEvent::Saved(setup.key)]
     );
     assert!(!state(&setup, cx, |page| page.session.has_unsaved()));
+}
+
+#[gpui_kit::test]
+fn the_save_key_saves_while_the_visual_editor_has_focus(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "mode-visual", cx);
+    focus_editor(&setup, cx);
+    frame(&setup, cx, |window, cx| window.input("Chapter ", cx));
+    press_save(&setup, cx);
+    assert_eq!(
+        saved_titles_and_texts(&setup).1[0],
+        "# Chapter One\n\nFirst text.\n"
+    );
+}
+
+#[gpui_kit::test]
+fn saving_with_the_title_field_focused_commits_its_pending_text(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-details", cx);
+    act(&setup, cx, |page, window, cx| {
+        page.fields.title.focus_handle(cx).focus(window, cx);
+        page.fields.title.update(cx, |input, cx| {
+            input.select_all(window, cx);
+        });
+    });
+    frame(&setup, cx, |window, cx| window.input("A new title", cx));
+    press_save(&setup, cx);
+    assert_eq!(saved_titles_and_texts(&setup).0, "A new title");
 }
 
 #[gpui_kit::test]
@@ -689,6 +1032,7 @@ fn a_book_with_problems_is_not_written_and_the_problems_are_shown(cx: &mut TestA
         ],
     );
     cx.run_until_parked();
+    click(&setup, "mode-source", cx);
     let before = std::fs::read(setup.fixture.roots.book(setup.key)).unwrap();
     focus_editor(&setup, cx);
     frame(&setup, cx, |window, cx| {
