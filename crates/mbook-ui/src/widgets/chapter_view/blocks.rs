@@ -81,6 +81,60 @@ pub(super) fn offset_of_item(blocks: &[u32], len: usize, items: usize, item: usi
     to_offset(len / items * item + len % items * item / items)
 }
 
+/// Where the byte `offset` is in the list: its item, and how far into the
+/// item it is, from 0 to 1. A paragraph that takes several pages is told
+/// apart by the second.
+pub(super) fn place_of_offset(
+    blocks: &[u32],
+    len: usize,
+    items: usize,
+    offset: u32,
+) -> (usize, f32) {
+    let item = item_of_offset(blocks, len, items, offset);
+    if blocks.len() != items {
+        return (item, 0.0);
+    }
+    let start = blocks.get(item).copied().unwrap_or(0);
+    let end = blocks.get(item + 1).copied().unwrap_or(to_offset(len));
+    if end <= start {
+        return (item, 0.0);
+    }
+    // Offsets inside one block of a chapter, far below 2^53.
+    let part = f64::from(offset.clamp(start, end) - start) / f64::from(end - start);
+    #[expect(clippy::cast_possible_truncation, reason = "a fraction from 0 to 1")]
+    let part = part as f32;
+    (item, part)
+}
+
+/// The byte offset of the place `part` (from 0 to 1) into the list item
+/// `item`, the inverse of [`place_of_offset`]. It is rounded up, so that the
+/// place found again is not before the one that was kept.
+pub(super) fn offset_of_place(
+    blocks: &[u32],
+    len: usize,
+    items: usize,
+    item: usize,
+    part: f32,
+) -> u32 {
+    let start = offset_of_item(blocks, len, items, item);
+    if blocks.len() != items || part.is_nan() || part <= 0.0 {
+        return start;
+    }
+    let end = blocks.get(item + 1).copied().unwrap_or(to_offset(len));
+    if end <= start {
+        return start;
+    }
+    let inside = (f64::from(end - start) * f64::from(part.min(1.0))).ceil();
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "at most the length of a block, which is a u32"
+    )]
+    let inside = inside as u32;
+    // The last byte of a block is still that block.
+    start + inside.min(end - start - 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +194,43 @@ mod tests {
         assert_eq!(offset_of_item(&[0], 100, 4, 2), 50);
         assert_eq!(offset_of_item(&[0], 100, 4, 99), 75);
         assert_eq!(offset_of_item(&[0], 100, 0, 1), 0);
+    }
+
+    #[test]
+    fn a_place_is_an_item_and_how_far_into_it() {
+        let blocks = [0, 10, 30];
+        assert_eq!(place_of_offset(&blocks, 50, 3, 10), (1, 0.0));
+        assert_eq!(place_of_offset(&blocks, 50, 3, 20), (1, 0.5));
+        assert_eq!(place_of_offset(&blocks, 50, 3, 40), (2, 0.5));
+        assert_eq!(place_of_offset(&blocks, 50, 3, 900), (2, 1.0));
+    }
+
+    #[test]
+    fn a_place_whose_blocks_are_not_known_is_the_start_of_its_item() {
+        assert_eq!(place_of_offset(&[0, 10], 100, 4, 60), (2, 0.0));
+        assert_eq!(place_of_offset(&[0], 10, 0, 5), (0, 0.0));
+        assert_eq!(place_of_offset(&[0, 0], 0, 2, 0), (1, 0.0));
+    }
+
+    #[test]
+    fn the_offset_of_a_place_leads_back_to_the_place() {
+        let blocks = [0, 10, 30];
+        for (item, part) in [(0, 0.0), (1, 0.5), (1, 0.34), (2, 0.9), (2, 1.0)] {
+            let offset = offset_of_place(&blocks, 50, 3, item, part);
+            let (found, back) = place_of_offset(&blocks, 50, 3, offset);
+            assert_eq!(found, item, "{item} {part}");
+            assert!(back + 0.06 >= part, "{part} came back as {back}");
+        }
+    }
+
+    #[test]
+    fn the_offset_of_a_place_stays_inside_its_block() {
+        let blocks = [0, 10, 30];
+        assert_eq!(offset_of_place(&blocks, 50, 3, 1, 1.0), 29);
+        assert_eq!(offset_of_place(&blocks, 50, 3, 1, 7.0), 29);
+        assert_eq!(offset_of_place(&blocks, 50, 3, 1, 0.0), 10);
+        assert_eq!(offset_of_place(&blocks, 50, 3, 1, f32::NAN), 10);
+        assert_eq!(offset_of_place(&[0], 100, 4, 2, 0.5), 50);
+        assert_eq!(offset_of_place(&[0, 0], 0, 2, 1, 0.5), 0);
     }
 }

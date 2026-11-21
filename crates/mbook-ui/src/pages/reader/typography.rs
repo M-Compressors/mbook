@@ -1,4 +1,4 @@
-//! The "Aa" panel: page tone, size and line height of the text, typeface.
+//! The appearance panel: page tone, size and line height of the text, typeface.
 //!
 //! Every change goes through [`Appearance::update`], so the open chapter is
 //! drawn again at once and the choice is stored.
@@ -16,7 +16,7 @@ use crate::entities::catalogue::Settings;
 use crate::features::appearance::Appearance;
 use crate::shared::actions::OpenSettings;
 use crate::shared::theme::PageTone;
-use crate::shared::ui::target_size;
+use crate::shared::ui::{icon_button, page_colors, target_size};
 
 /// The smallest and the largest text, in pixels.
 const TEXT_SIZE: (f32, f32) = (12.0, 32.0);
@@ -127,6 +127,7 @@ fn change(cx: &mut gpui_kit::App, change: impl FnOnce(&mut Settings)) {
 struct Step {
     id: &'static str,
     label: &'static str,
+    icon: IconName,
     disabled: bool,
     action: fn(&mut gpui_kit::App),
 }
@@ -135,12 +136,14 @@ impl Step {
     fn new(
         id: &'static str,
         label: &'static str,
+        icon: IconName,
         disabled: bool,
         action: fn(&mut gpui_kit::App),
     ) -> Self {
         Self {
             id,
             label,
+            icon,
             disabled,
             action,
         }
@@ -148,12 +151,9 @@ impl Step {
 }
 
 fn step_button(step: Step) -> Button {
-    Button::new(step.id)
+    icon_button(step.id, step.icon, step.label)
         .outline()
-        .label(step.label)
-        .min_h(px(target_size()))
         .disabled(step.disabled)
-        .cursor_pointer()
         .on_click(move |_, _, cx| (step.action)(cx))
 }
 
@@ -219,6 +219,42 @@ fn choice(
     }
 }
 
+/// A sample of the paper and ink, or a system appearance icon.
+fn tone_swatch(tone: Option<PageTone>, selected: bool, cx: &gpui_kit::App) -> Button {
+    let name = tone_name(tone);
+    let label = if selected {
+        format!("{name}, selected")
+    } else {
+        name.to_owned()
+    };
+    let id = format!("tone-{}", tone.map_or("system", PageTone::name));
+    let theme = cx.theme();
+    let (paper, ink) = tone.map_or((theme.background, theme.foreground), page_colors);
+    let button = if tone.is_some() {
+        Button::new(id)
+            .ghost()
+            .accessibility_label(label.clone())
+            .tooltip(label)
+            .child(div().text_color(ink).child("A"))
+            .cursor_pointer()
+    } else {
+        icon_button(id, IconName::SunMoon, label)
+    };
+    button
+        .selected(selected)
+        .toggled(selected)
+        .size(px(target_size()))
+        .rounded_full()
+        .border_1()
+        .border_color(if selected {
+            theme.primary
+        } else {
+            theme.border
+        })
+        .bg(paper)
+        .on_click(move |_, _, cx| change(cx, |settings| settings.page_tone = tone))
+}
+
 /// A named group of choices.
 fn group(id: &'static str, label: &'static str, choices: Vec<Button>) -> impl IntoElement {
     v_flex()
@@ -230,38 +266,44 @@ fn group(id: &'static str, label: &'static str, choices: Vec<Button>) -> impl In
         .children(choices)
 }
 
+/// The current and recently used typefaces, in the order they are offered.
+fn face_choices(current: &str, before: Option<&str>) -> impl IntoElement {
+    let faces = typefaces(current, before)
+        .into_iter()
+        .map(|face| {
+            let selected = face == current;
+            choice(
+                format!("typeface-{face}"),
+                &face.clone(),
+                selected,
+                move |cx| {
+                    let face = face.clone();
+                    change(cx, |s| s.typeface = face);
+                },
+            )
+        })
+        .collect();
+    group("typefaces", "Typeface", faces)
+}
+
 impl Render for TypographyPanel {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let settings = Appearance::global(cx).read(cx).settings().clone();
         let muted = cx.theme().muted_foreground;
         let size = settings.text_size;
         let height = settings.line_height;
-        let tones = TONES
-            .into_iter()
-            .map(|tone| {
-                choice(
-                    format!("tone-{}", tone.map_or("system", PageTone::name)),
-                    tone_name(tone),
-                    settings.page_tone == tone,
-                    move |cx| change(cx, |s| s.page_tone = tone),
-                )
-            })
-            .collect();
-        let faces = typefaces(&settings.typeface, self.before.as_deref())
-            .into_iter()
-            .map(|face| {
-                let selected = face == settings.typeface;
-                choice(
-                    format!("typeface-{face}"),
-                    &face.clone(),
-                    selected,
-                    move |cx| {
-                        let face = face.clone();
-                        change(cx, |s| s.typeface = face);
-                    },
-                )
-            })
-            .collect();
+        let tones = h_flex()
+            .id("tones")
+            .role(Role::Group)
+            .aria_label("Page colour")
+            .test_support()
+            .flex_wrap()
+            .gap_2()
+            .children(
+                TONES
+                    .into_iter()
+                    .map(|tone| tone_swatch(tone, settings.page_tone == tone, cx)),
+            );
         v_flex()
             .id("appearance-panel")
             .role(Role::Group)
@@ -270,35 +312,59 @@ impl Render for TypographyPanel {
             .w_full()
             .gap_3()
             .child(section("tone-heading", "Page colour", muted))
-            .child(group("tones", "Page colour", tones))
+            .child(tones)
             .child(section("size-heading", "Text size", muted))
             .child(stepper(
                 "text-size",
-                Step::new("text-smaller", "Smaller", size <= TEXT_SIZE.0, |cx| {
-                    change(cx, |s| s.text_size = step_size(s.text_size, false));
-                }),
-                Step::new("text-larger", "Larger", size >= TEXT_SIZE.1, |cx| {
-                    change(cx, |s| s.text_size = step_size(s.text_size, true));
-                }),
+                Step::new(
+                    "text-smaller",
+                    "Smaller",
+                    IconName::AArrowDown,
+                    size <= TEXT_SIZE.0,
+                    |cx| {
+                        change(cx, |s| s.text_size = step_size(s.text_size, false));
+                    },
+                ),
+                Step::new(
+                    "text-larger",
+                    "Larger",
+                    IconName::AArrowUp,
+                    size >= TEXT_SIZE.1,
+                    |cx| {
+                        change(cx, |s| s.text_size = step_size(s.text_size, true));
+                    },
+                ),
                 size_text(size),
             ))
             .child(section("line-heading", "Line height", muted))
             .child(stepper(
                 "line-height",
-                Step::new("line-tighter", "Tighter", height <= LINE_HEIGHT.0, |cx| {
-                    change(cx, |s| {
-                        s.line_height = step_line_height(s.line_height, false);
-                    });
-                }),
-                Step::new("line-looser", "Looser", height >= LINE_HEIGHT.1, |cx| {
-                    change(cx, |s| {
-                        s.line_height = step_line_height(s.line_height, true);
-                    });
-                }),
+                Step::new(
+                    "line-tighter",
+                    "Tighter",
+                    IconName::FoldVertical,
+                    height <= LINE_HEIGHT.0,
+                    |cx| {
+                        change(cx, |s| {
+                            s.line_height = step_line_height(s.line_height, false);
+                        });
+                    },
+                ),
+                Step::new(
+                    "line-looser",
+                    "Looser",
+                    IconName::UnfoldVertical,
+                    height >= LINE_HEIGHT.1,
+                    |cx| {
+                        change(cx, |s| {
+                            s.line_height = step_line_height(s.line_height, true);
+                        });
+                    },
+                ),
                 line_height_text(height),
             ))
             .child(section("typeface-heading", "Typeface", muted))
-            .child(group("typefaces", "Typeface", faces))
+            .child(face_choices(&settings.typeface, self.before.as_deref()))
             .child(
                 Button::new("more-typefaces")
                     .ghost()

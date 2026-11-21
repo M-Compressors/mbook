@@ -134,6 +134,8 @@ struct Handles {
     contents: FocusHandle,
     appearance: FocusHandle,
     edit: FocusHandle,
+    previous: FocusHandle,
+    next: FocusHandle,
 }
 
 impl Handles {
@@ -143,14 +145,23 @@ impl Handles {
             contents: cx.focus_handle(),
             appearance: cx.focus_handle(),
             edit: cx.focus_handle(),
+            previous: cx.focus_handle(),
+            next: cx.focus_handle(),
         }
     }
 
     /// Whether the focus is on one of the controls.
     fn focused(&self, window: &Window) -> bool {
-        [&self.back, &self.contents, &self.appearance, &self.edit]
-            .into_iter()
-            .any(|handle| handle.is_focused(window))
+        [
+            &self.back,
+            &self.contents,
+            &self.appearance,
+            &self.edit,
+            &self.previous,
+            &self.next,
+        ]
+        .into_iter()
+        .any(|handle| handle.is_focused(window))
     }
 }
 
@@ -206,7 +217,7 @@ impl ReaderPage {
         let class = appearance.read(cx).size_class(window);
         let page = cx.entity().downgrade();
 
-        let view = cx.new(|cx| ChapterView::new(window, cx));
+        let view = cx.new(|cx| ChapterView::paged(window, cx));
         let (wake, mut wakes) = unbounded::<()>();
         let pictures = Arc::new(Pictures::new(pictures::budget(class), wake));
         let table = Arc::clone(&pictures);
@@ -228,7 +239,8 @@ impl ReaderPage {
         let subscriptions = vec![
             cx.observe(&appearance, |_, _, cx| cx.notify()),
             cx.subscribe(&view, |this, _, event, cx| match event {
-                ChapterViewEvent::Scrolled => this.sample(cx),
+                ChapterViewEvent::Moved => this.sample(cx),
+                ChapterViewEvent::Turn(direction) => this.screen(*direction, cx),
             }),
         ];
         let wake_task = cx.spawn(async move |this, cx| {
@@ -644,7 +656,7 @@ impl ReaderPage {
         }
         if !at_edge {
             self.view
-                .update(cx, |view, cx| view.scroll_by_screen(direction, cx));
+                .update(cx, |view, cx| view.turn_page(direction, cx));
             return;
         }
         let Phase::Ready(reading) = &self.phase else {

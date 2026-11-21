@@ -14,6 +14,12 @@ pub(crate) enum PictureError {
     /// not a picture at all.
     #[error("the bytes are not a picture that can be decoded")]
     Undecodable(#[source] Box<dyn Error + Send + Sync>),
+    /// The dedicated decoder thread could not be started.
+    #[error("the picture decoder thread could not be started")]
+    DecoderThread(#[source] std::io::Error),
+    /// The decoder thread stopped before returning a picture.
+    #[error("the picture decoder stopped unexpectedly")]
+    DecoderStopped,
     /// The picture has more pixels than the limit allows.
     #[error("the picture has {pixels} pixels, more than the {limit} allowed")]
     TooManyPixels {

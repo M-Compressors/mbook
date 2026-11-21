@@ -236,7 +236,7 @@ fn an_expanded_window_shows_the_sections_the_source_and_the_preview(cx: &mut Tes
         }
         assert!(window.try_find("chapter-source").is_some());
         assert!(window.try_find("chapter-text").is_some());
-        assert_eq!(window.find_by_label("Split").role(), Some(Role::Tab));
+        assert_eq!(window.find_by_label("Split").role(), Some(Role::Button));
         assert!(window.try_find("open-sections").is_none());
     });
     assert_eq!(
@@ -274,6 +274,20 @@ fn a_medium_window_shows_the_source_alone_and_slides_the_sections_over_it(cx: &m
         Some("ch02.md")
     );
     assert_eq!(editor_text(&setup, cx), CHAPTERS[1].1);
+}
+
+#[gpui_kit::test]
+fn selecting_the_active_preview_mode_keeps_it_selected(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    act(&setup, cx, |page, window, cx| {
+        page.choose_section(Section::Chapters, window, cx);
+    });
+    click(&setup, "mode-preview", cx);
+    click(&setup, "mode-preview", cx);
+    assert_eq!(
+        state(&setup, cx, |page| page.session.mode),
+        ViewMode::Preview
+    );
 }
 
 #[gpui_kit::test]
@@ -337,6 +351,27 @@ fn a_compact_window_goes_from_the_chapters_to_a_chapter_and_back(cx: &mut TestAp
 }
 
 #[gpui_kit::test]
+fn the_path_button_opens_the_rename_dialog(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "chapter-path", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("New path of the chapter")
+                .is_some()
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn the_remove_button_asks_before_removing_the_chapter(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "chapter-remove", cx);
+    assert!(dialog_is_open(&setup, cx));
+    assert_eq!(state(&setup, cx, |page| page.session.chapters().len()), 3);
+}
+
+#[gpui_kit::test]
 fn every_control_of_every_section_has_a_role_and_a_name(cx: &mut TestAppContext) {
     const CONTROLS: [Role; 7] = [
         Role::Button,
@@ -361,10 +396,9 @@ fn every_control_of_every_section_has_a_role_and_a_name(cx: &mut TestAppContext)
                 );
                 for element in elements {
                     let role = element.role();
-                    // The frame of a Kit input is reported beside its editor.
-                    let kit_input = format!("{element:?}").contains("gpui_component::input");
+                    let decoration = testing::is_kit_decoration(&format!("{:?}", element.path()));
                     assert!(
-                        role.is_some() || kit_input,
+                        role.is_some() || decoration,
                         "{width} {section:?}: no role: {element:?}"
                     );
                     if role.is_some_and(|role| CONTROLS.contains(&role)) {

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
 use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::{h_flex, v_flex};
@@ -16,7 +16,7 @@ use gpui_kit::{
     Anchor, AnyElement, App, Context, FocusHandle, FontWeight, InteractiveElement as _,
     IntoElement, KeyDownEvent, Keystroke, ListAlignment, ListState, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
-    list, px, relative,
+    list, px,
 };
 
 use super::LibraryPage;
@@ -44,10 +44,10 @@ pub(super) fn side(cover: f32) -> f32 {
 const ROW_GAP: f32 = 24.0;
 /// How many rows the page keys move by.
 const PAGE_ROWS: usize = 3;
-/// How tall the line of progress is, in pixels.
-const LINE_HEIGHT: f32 = 4.0;
 /// The space between the parts of a book, in pixels.
 const PART_GAP: f32 = 4.0;
+/// The most space around the cover and caption inside the hover surface.
+const MAX_TILE_INSET: f32 = 8.0;
 
 /// The focus handles of one book's controls.
 struct Handles {
@@ -279,67 +279,38 @@ impl LibraryPage {
         }
     }
 
-    /// The part of a tile that opens the book: the cover, the line of
-    /// progress, the state, the title and the authors.
+    /// The part of a tile that opens the book: the cover and its reading status.
     fn tile_content(&self, book: &ShelfBook, area: f32, cx: &App) -> impl IntoElement + use<> {
         let progress = Progress::of(book);
         let cover = self.cover_of(book, self.cover_width, cx);
         let theme = cx.theme();
-        let (muted, accent, track, radius) = (
-            theme.muted_foreground,
-            theme.primary,
-            theme.input,
-            theme.radius,
-        );
         let target = px(target_size());
-        let line = div()
-            .w_full()
-            .h(px(LINE_HEIGHT))
-            .rounded(radius)
-            .bg(track)
-            .child(
-                div()
-                    .h_full()
-                    .w(relative(progress.fraction()))
-                    .rounded(radius)
-                    .bg(accent),
-            );
-        // The caption stops short of the `…` control that stands at its end.
-        let caption = h_flex()
-            .w_full()
-            .h(target)
-            .items_center()
-            .pr(target)
-            .text_xs()
-            .text_color(muted)
-            .child(progress.caption());
-        // The width is the cover's, not "full": inside the button, "full"
-        // follows the longest line of a title, which then runs out of the tile.
+        let caption = match progress {
+            Progress::New => div()
+                .rounded_full()
+                .bg(theme.primary)
+                .text_color(theme.primary_foreground)
+                .px_2()
+                .py_0p5()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child("NEW"),
+            Progress::Reading(_) | Progress::Finished => div()
+                .text_color(theme.muted_foreground)
+                .child(progress.caption()),
+        };
         v_flex()
             .w(px(self.cover_width))
             .items_start()
             .gap(px(PART_GAP))
-            .whitespace_normal()
-            .text_left()
             .child(div().w_full().h(px(area)).flex().items_end().child(cover))
-            .child(line)
-            .child(caption)
             .child(
-                div()
+                h_flex()
                     .w_full()
-                    .text_sm()
-                    .font_weight(FontWeight::MEDIUM)
-                    .line_clamp(2)
-                    .text_ellipsis()
-                    .child(book.row.title.clone()),
-            )
-            .child(
-                div()
-                    .w_full()
+                    .h(target)
+                    .items_center()
+                    .pr(target)
                     .text_xs()
-                    .text_color(muted)
-                    .truncate()
-                    .child(book.row.authors.join(", ")),
+                    .child(caption),
             )
     }
 
@@ -355,18 +326,28 @@ impl LibraryPage {
     ) -> AnyElement {
         let key = book.row.key;
         let width = self.cover_width;
+        // Leave room between hover surfaces even in the compact grid.
+        let inset = MAX_TILE_INSET.min((gap(width) - 2.0) / 2.0);
         let (open_focus, more_focus) = self.shelf.handles_for(key, window, cx);
         let title = book.row.title.clone();
         let page = cx.weak_entity();
+        let ink = cx.theme().foreground;
         let open = Button::new(format!("open-{key}"))
-            .ghost()
+            .custom(
+                ButtonCustomVariant::new(cx)
+                    .hover(ink.opacity(0.14))
+                    .active(ink.opacity(0.20)),
+            )
             .accessibility_id(key.to_string())
             .accessibility_label(shelf_label(book))
             .track_focus(&open_focus)
             .tab_stop(tab_stop)
-            .w(px(width))
+            // Keep the covers at the grid positions while the hover surface
+            // extends slightly into the space between them.
+            .w(px(width + 2.0 * inset))
             .h_auto()
-            .p_0()
+            .ml(px(-inset))
+            .p(px(inset))
             .items_start()
             .cursor_pointer()
             .focus_visible(focus_ring(cx))
@@ -397,7 +378,7 @@ impl LibraryPage {
                 div()
                     .absolute()
                     .right_0()
-                    .top(px(area + 2.0 * PART_GAP + LINE_HEIGHT))
+                    .top(px(inset + area + PART_GAP))
                     .child(more),
             )
             .context_menu(move |menu, _, _| book_menu(menu, key, &title, &page))

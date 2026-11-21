@@ -63,7 +63,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             typeface: "Literata".to_owned(),
-            text_size: 18.0,
+            text_size: 20.0,
             line_height: 1.6,
             page_tone: None,
             interface_scale: 1.0,
@@ -151,7 +151,7 @@ mod tests {
     fn the_defaults_are_those_of_the_rfc() {
         let settings = Settings::default();
         assert_eq!(settings.typeface, "Literata");
-        assert!((settings.text_size - 18.0).abs() < f32::EPSILON);
+        assert!((settings.text_size - 20.0).abs() < f32::EPSILON);
         assert!((settings.line_height - 1.6).abs() < f32::EPSILON);
         assert_eq!(settings.page_tone, None);
         assert!((settings.interface_scale - 1.0).abs() < f32::EPSILON);
@@ -224,10 +224,16 @@ mod tests {
     }
 
     #[test]
+    fn a_stored_text_size_keeps_the_previous_default() {
+        let settings = Settings::decode(&stored(&[(name::TEXT_SIZE, "18")]));
+        assert!((settings.text_size - 18.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
     fn a_number_that_is_not_finite_gives_the_default() {
         for text in ["NaN", "inf", "-inf", "large", ""] {
             let settings = Settings::decode(&stored(&[(name::TEXT_SIZE, text)]));
-            assert!((settings.text_size - 18.0).abs() < f32::EPSILON, "{text}");
+            assert!((settings.text_size - 20.0).abs() < f32::EPSILON, "{text}");
         }
     }
 

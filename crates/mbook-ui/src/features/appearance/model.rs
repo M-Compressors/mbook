@@ -20,6 +20,15 @@ use crate::shared::theme::{Chrome, PageTone};
 /// when nothing says otherwise.
 const BASE_REM: f32 = 16.0;
 
+/// Installed serif families, in the order used when the requested font is missing.
+const READING_FONTS: [&str; 5] = [
+    "Literata",
+    "Charter",
+    "Iowan Old Style",
+    "Georgia",
+    "Times New Roman",
+];
+
 /// The sizes of the text of a book, in pixels. The same bounds as the
 /// catalogue applies when it reads a setting.
 const TEXT_SIZE: RangeInclusive<f32> = 12.0..=32.0;
@@ -241,18 +250,19 @@ impl Appearance {
     }
 
     /// The typeface for the text of books: the stored one when the device has
-    /// it, and otherwise the font of the interface. The stored name is kept,
-    /// so the typeface applies again when the font returns.
+    /// it, then the first available serif fallback, then the interface font.
+    /// The stored name is kept so the typeface applies again when it returns.
     ///
     /// Until the device's families are read, the font of the interface.
     pub(crate) fn reading_font(&self, cx: &App) -> SharedString {
-        let wanted = &self.settings.typeface;
-        match &self.families {
-            Some(families) if families.iter().any(|family| family == wanted) => {
-                wanted.clone().into()
-            }
-            _ => cx.theme().font_family.clone(),
-        }
+        let installed = self.families();
+        std::iter::once(self.settings.typeface.as_str())
+            .chain(READING_FONTS)
+            .find(|wanted| installed.iter().any(|family| family == wanted))
+            .map_or_else(
+                || cx.theme().font_family.clone(),
+                |font| font.to_owned().into(),
+            )
     }
 
     /// The families of fonts the device has, sorted; empty until they are

@@ -202,15 +202,6 @@ impl Progress {
             Self::Finished => "Finished".to_owned(),
         }
     }
-
-    /// The share read as a fraction from 0 to 1, for the line of progress.
-    pub(crate) fn fraction(self) -> f32 {
-        match self {
-            Self::New => 0.0,
-            Self::Reading(permille) => f32::from(permille.min(1000)) / 1000.0,
-            Self::Finished => 1.0,
-        }
-    }
 }
 
 /// The accessible name of a book on the shelf: its title, its authors and its

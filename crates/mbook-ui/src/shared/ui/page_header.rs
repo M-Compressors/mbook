@@ -1,26 +1,36 @@
 //! The bar at the top of a page.
 
-use gpui_kit::component::{ActiveTheme as _, h_flex};
+use gpui_kit::component::{ActiveTheme as _, TitleBar, h_flex};
+
+use super::target_size;
 use gpui_kit::{
-    AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
+    AnyElement, App, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
     RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
     TestSupportExt as _, Window, div, px,
 };
 
-/// The least height of the bar, in pixels, below the safe area.
-const MIN_HEIGHT: f32 = 48.0;
+/// The height of the bar, in pixels, below the safe area.
+pub(crate) const BAR_HEIGHT: f32 = 48.0;
 
 /// The bar at the top of a page: a control on the left, usually the back
 /// control, the title as the heading of the page, and actions on the right.
 ///
-/// The bar keeps clear of the safe area the window reports at the top (a
-/// notch, a status bar). The title is the heading of the page for assistive
-/// technology.
+/// It is the title bar of the Kit, so it stands in the row of the buttons of
+/// the window, leaves them their room on every platform, and moves the window
+/// when it is dragged. It keeps clear of the safe area the window reports at
+/// the top (a notch, a status bar). The title is the heading of the page for
+/// assistive technology.
 #[derive(IntoElement)]
 pub(crate) struct PageHeader {
     title: SharedString,
     leading: Option<AnyElement>,
     trailing: Vec<AnyElement>,
+    centred: bool,
+    /// The colours of a bar that stands on a page of a book: its paper and
+    /// its ink.
+    paper: Option<(Hsla, Hsla)>,
+    bare: bool,
+    opacity: f32,
 }
 
 /// A bar for a page called `title`.
@@ -29,6 +39,10 @@ pub(crate) fn page_header(title: impl Into<SharedString>) -> PageHeader {
         title: title.into(),
         leading: None,
         trailing: Vec::new(),
+        centred: false,
+        paper: None,
+        bare: false,
+        opacity: 1.0,
     }
 }
 
@@ -47,40 +61,98 @@ impl PageHeader {
         self.trailing.push(action.into_any_element());
         self
     }
+
+    /// Sets the title small and in the middle, between the controls, as a
+    /// reader has it.
+    #[must_use]
+    pub(crate) fn centred(mut self) -> Self {
+        self.centred = true;
+        self
+    }
+
+    /// Draws the bar on the page of a book, without a line under it: `page`
+    /// is the colour of the page and `ink` the colour of its text.
+    #[must_use]
+    pub(crate) fn on_paper(mut self, page: Hsla, ink: Hsla) -> Self {
+        self.paper = Some((page, ink));
+        self
+    }
+
+    /// Leaves the bar empty: no title to see and no controls, only the room
+    /// of the bar, which still moves the window. The title stays the heading
+    /// of the page.
+    #[must_use]
+    pub(crate) fn bare(mut self) -> Self {
+        self.bare = true;
+        self
+    }
+
+    /// Sets the opacity of the heading and actions, leaving the window controls visible.
+    #[must_use]
+    pub(crate) fn content_opacity(mut self, opacity: f32) -> Self {
+        self.opacity = opacity;
+        self
+    }
 }
 
 impl RenderOnce for PageHeader {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let top = window.insets().effective().top;
         let theme = cx.theme();
-        h_flex()
+        let (background, ink, line) = match self.paper {
+            Some((page, ink)) => (page, ink, page),
+            None => (theme.background, theme.foreground, theme.border),
+        };
+        let heading = div()
+            .id("page-heading")
+            .role(Role::Heading)
+            .aria_level(1)
+            .aria_label(self.title.clone())
+            .test_support()
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .font_weight(FontWeight::SEMIBOLD);
+        let heading = if self.bare {
+            heading
+        } else if self.centred {
+            heading.text_center().text_sm().child(self.title)
+        } else {
+            heading.text_lg().child(self.title)
+        };
+        let (leading, trailing) = if self.bare {
+            (None, Vec::new())
+        } else {
+            (self.leading, self.trailing)
+        };
+        let row = h_flex()
             .w_full()
-            .flex_none()
+            .h_full()
             .items_center()
             .gap_2()
             .px_3()
+            .opacity(self.opacity);
+        let content = if self.centred && !self.bare {
+            let rail = px(2.0 * target_size() + 10.0);
+            row.child(h_flex().w(rail).flex_none().children(leading))
+                .child(heading)
+                .child(
+                    h_flex()
+                        .w(rail)
+                        .flex_none()
+                        .justify_end()
+                        .children(trailing),
+                )
+        } else {
+            row.children(leading).child(heading).children(trailing)
+        };
+        TitleBar::new()
+            .h(px(BAR_HEIGHT) + top)
             .pt(top)
-            .min_h(px(MIN_HEIGHT) + top)
-            .border_b_1()
-            .border_color(theme.border)
-            .bg(theme.background)
-            .text_color(theme.foreground)
-            .children(self.leading)
-            .child(
-                div()
-                    .id("page-heading")
-                    .role(Role::Heading)
-                    .aria_level(1)
-                    .aria_label(self.title.clone())
-                    .test_support()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_lg()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(self.title),
-            )
-            .children(self.trailing)
+            .bg(background)
+            .border_color(line)
+            .text_color(ink)
+            .child(content)
     }
 }
 

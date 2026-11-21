@@ -194,14 +194,7 @@ fn assert_controls_are_named(harness: &Harness, cx: &mut TestAppContext, screen:
         let elements = window.elements();
         assert!(!elements.is_empty(), "{screen}: nothing is reported");
         for element in elements {
-            // The frame of a text field and the stack of notifications are
-            // the Kit's: the field is reported by its editor, which has a
-            // role and a name.
-            let path = format!("{:?}", element.path());
-            if path.contains("ToastStack")
-                || path.ends_with("(\"input\", 4294967302)]")
-                || path.contains("NamedInteger(\"input\"")
-            {
+            if testing::is_kit_decoration(&format!("{:?}", element.path())) {
                 continue;
             }
             let role = element.role();
@@ -315,6 +308,26 @@ fn the_shelf_has_as_many_columns_as_the_width_allows(cx: &mut TestAppContext) {
         crate::shared::layout::shelf_columns(390.0 - 32.0, 104.0, 12.0)
     );
     assert_eq!(columns, 3);
+}
+
+#[gpui_kit::test]
+fn the_hover_surface_extends_beyond_both_sides_of_the_cover(cx: &mut TestAppContext) {
+    for (viewport, inset) in [(390.0, 5.0), (1280.0, 8.0)] {
+        let harness = start(cx, viewport, &["Dune", "Emma"]);
+        let [first, second] = harness.keys[..] else {
+            panic!("the fixture has two books");
+        };
+        let cover_width = harness.page.read_with(cx, |page, _| page.cover_width);
+        harness.frame(cx, |window, _| {
+            let first = window.find(format!("open-{first}")).bounds();
+            let second = window.find(format!("open-{second}")).bounds();
+            assert_eq!(first.size.width, gpui_kit::px(cover_width + 2.0 * inset));
+            assert!(
+                first.right() < second.left() || second.right() < first.left(),
+                "{first:?} and {second:?}"
+            );
+        });
+    }
 }
 
 #[gpui_kit::test]

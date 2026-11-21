@@ -61,7 +61,12 @@ impl EditorPage {
     }
 
     /// What the section in front shows.
-    fn render_section(&mut self, class: SizeClass, cx: &mut Context<'_, Self>) -> AnyElement {
+    fn render_section(
+        &mut self,
+        class: SizeClass,
+        window: &Window,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
         let section = self.session.section;
         let compact = class == SizeClass::Compact;
         let scrolled = |content: AnyElement| {
@@ -87,7 +92,9 @@ impl EditorPage {
             Section::Chapters if compact && self.session.level != Level::Chapter => {
                 scrolled(self.render_chapter_screen(cx).into_any_element())
             }
-            Section::Chapters => self.render_chapter_area(class, cx).into_any_element(),
+            Section::Chapters => self
+                .render_chapter_area(class, window, cx)
+                .into_any_element(),
             Section::Details => scrolled(
                 v_flex()
                     .child(heading)
@@ -116,11 +123,16 @@ impl EditorPage {
     }
 
     /// The layout of a book that is open.
-    fn render_ready(&mut self, class: SizeClass, cx: &mut Context<'_, Self>) -> AnyElement {
+    fn render_ready(
+        &mut self,
+        class: SizeClass,
+        window: &Window,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
         match class {
             SizeClass::Expanded => {
                 let sidebar = self.render_sections(true, cx);
-                let content = self.render_section(class, cx);
+                let content = self.render_section(class, window, cx);
                 h_flex()
                     .size_full()
                     .min_h_0()
@@ -140,7 +152,7 @@ impl EditorPage {
                     .into_any_element()
             }
             SizeClass::Medium => {
-                let content = self.render_section(class, cx);
+                let content = self.render_section(class, window, cx);
                 v_flex()
                     .size_full()
                     .min_h_0()
@@ -166,7 +178,7 @@ impl EditorPage {
                         .child(self.render_sections(false, cx))
                         .into_any_element()
                 } else {
-                    let content = self.render_section(class, cx);
+                    let content = self.render_section(class, window, cx);
                     div().size_full().child(content).into_any_element()
                 }
             }
@@ -205,7 +217,7 @@ impl Render for EditorPage {
             Phase::Failed(reason) => {
                 empty_state("This book could not be opened", reason).into_any_element()
             }
-            Phase::Ready => self.render_ready(class, cx),
+            Phase::Ready => self.render_ready(class, window, cx),
         };
         let save_error = self.session.error_text(&super::session::Control::Save);
         v_flex()

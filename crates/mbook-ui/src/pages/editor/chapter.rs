@@ -1,9 +1,9 @@
 //! The chapter area: the Markdown editor, the preview, and what changes the
 //! chapter being edited.
 
-use gpui_kit::component::button::ButtonVariants as _;
+use gpui_kit::assets::IconName;
+use gpui_kit::component::button::{ButtonVariants as _, Toggle, ToggleGroup};
 use gpui_kit::component::input::Editor;
-use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
 use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -15,8 +15,9 @@ use super::keys::{ESCAPED_CONTEXT, SOURCE_CONTEXT};
 use super::prompts::confirm_remove;
 use super::sections::control;
 use super::session::{Control, ViewMode};
+use crate::features::appearance::Appearance;
 use crate::shared::layout::SizeClass;
-use crate::shared::ui::{empty_state, status_line};
+use crate::shared::ui::{empty_state, icon_button, page_colors, status_line, target_size};
 
 /// What the Markdown editor says about leaving it, as its description and as
 /// the hint under it.
@@ -28,6 +29,7 @@ impl EditorPage {
     pub(super) fn render_chapter_area(
         &mut self,
         class: SizeClass,
+        window: &gpui_kit::Window,
         cx: &mut Context<'_, Self>,
     ) -> impl IntoElement {
         let Some(path) = self.session.open.clone() else {
@@ -44,6 +46,7 @@ impl EditorPage {
         };
         let mode = self.session.mode.effective(class);
         let theme = cx.theme().clone();
+        let (paper, ink) = page_colors(Appearance::global(cx).read(cx).page_tone(window));
         let source = self.render_source(&path, cx);
         let label = format!("Preview of {path}");
         self.preview
@@ -55,6 +58,8 @@ impl EditorPage {
                 .size_full()
                 .px_4()
                 .py_2()
+                .bg(paper)
+                .text_color(ink)
                 .child(shown)
                 .into_any_element(),
             ViewMode::Split => h_flex()
@@ -69,6 +74,8 @@ impl EditorPage {
                         .border_color(theme.border)
                         .px_4()
                         .py_2()
+                        .bg(paper)
+                        .text_color(ink)
                         .child(shown),
                 )
                 .into_any_element(),
@@ -110,10 +117,6 @@ impl EditorPage {
     ) -> AnyElement {
         let modes = ViewMode::available(class);
         let mode = self.session.mode.effective(class);
-        let selected = modes
-            .iter()
-            .position(|candidate| *candidate == mode)
-            .unwrap_or(0);
         let index = self.session.chapter_index(path).unwrap_or(0);
         let last = self.session.chapters().len().saturating_sub(1);
         let edited = self.session.is_edited(path);
@@ -152,49 +155,63 @@ impl EditorPage {
                     .child(title),
             )
             .child(
-                TabBar::new("view-mode")
+                ToggleGroup::new("view-mode")
                     .segmented()
-                    .selected_index(selected)
-                    .on_click(cx.listener(move |this, ix: &usize, _, cx| {
-                        if let Some(mode) = modes_for_click.get(*ix) {
-                            this.session.mode = *mode;
+                    .single()
+                    .on_click(cx.listener(move |this, checked: &Vec<bool>, _, cx| {
+                        if let Some(next) = checked
+                            .iter()
+                            .position(|selected| *selected)
+                            .and_then(|index| modes_for_click.get(index))
+                        {
+                            this.session.mode = *next;
                             cx.notify();
                         }
                     }))
-                    .children(modes.iter().map(|mode| Tab::new().label(mode.label()))),
+                    .children(modes.iter().map(|candidate| {
+                        let (id, icon) = match candidate {
+                            ViewMode::Source => ("mode-source", IconName::Code),
+                            ViewMode::Split => ("mode-split", IconName::Columns2),
+                            ViewMode::Preview => ("mode-preview", IconName::Eye),
+                        };
+                        Toggle::new(id)
+                            .icon(icon)
+                            .tooltip(candidate.label())
+                            .checked(*candidate == mode)
+                            .min_w(px(target_size()))
+                            .min_h(px(target_size()))
+                    })),
             )
             .child(
-                control("chapter-up", "Move up")
-                    .ghost()
+                icon_button("chapter-up", IconName::ArrowUp, "Move up")
                     .disabled(index == 0)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.move_chapter(&up_path, -1, window, cx);
                     })),
             )
             .child(
-                control("chapter-down", "Move down")
-                    .ghost()
+                icon_button("chapter-down", IconName::ArrowDown, "Move down")
                     .disabled(index >= last)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.move_chapter(&down_path, 1, window, cx);
                     })),
             )
             .child(
-                control("chapter-path", "Change the path…")
-                    .ghost()
-                    .on_click(cx.listener(move |_, _, window, cx| {
+                icon_button("chapter-path", IconName::FilePenLine, "Change the path…").on_click(
+                    cx.listener(move |_, _, window, cx| {
                         Self::change_path(rename_path.clone(), window, cx);
-                    })),
+                    }),
+                ),
             )
             .child(
-                control("chapter-remove", "Remove")
-                    .ghost()
-                    .on_click(cx.listener(move |_, _, window, cx| {
+                icon_button("chapter-remove", IconName::Trash, "Remove").on_click(cx.listener(
+                    move |_, _, window, cx| {
                         let path = remove_path.clone();
                         confirm_remove(&path.clone(), window, cx, move |this, window, cx| {
                             this.remove_chapter(path.clone(), window, cx);
                         });
-                    })),
+                    },
+                )),
             )
             .into_any_element()
     }

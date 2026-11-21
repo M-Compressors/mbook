@@ -49,9 +49,9 @@ pub(super) fn chapter_title(snapshot: &BookSnapshot, chapter: usize, offset: u32
         )
 }
 
-/// How much of the progress line is filled, from 0 to 1.
-pub(super) fn fill(permille: u16) -> f32 {
-    f32::from(permille.min(1000)) / 1000.0
+/// How much of the progress line is filled, in percent.
+pub(super) fn progress_percent(permille: u16) -> f32 {
+    f32::from(permille.min(1000)) / 10.0
 }
 
 #[cfg(test)]
@@ -133,8 +133,8 @@ mod tests {
 
     #[test]
     fn the_progress_line_is_filled_in_proportion() {
-        assert!((fill(500) - 0.5).abs() < f32::EPSILON);
-        assert!((fill(4000) - 1.0).abs() < f32::EPSILON);
-        assert!(fill(0).abs() < f32::EPSILON);
+        assert!((progress_percent(500) - 50.0).abs() < f32::EPSILON);
+        assert!((progress_percent(4000) - 100.0).abs() < f32::EPSILON);
+        assert!(progress_percent(0).abs() < f32::EPSILON);
     }
 }

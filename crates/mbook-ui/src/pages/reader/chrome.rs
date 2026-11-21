@@ -1,18 +1,23 @@
 //! What the reader draws: the controls, the text, the panels.
 
+use std::time::Duration;
+
 use gpui_kit::assets::IconName;
+use gpui_kit::base::motion::{Presence, PresenceSample, Transition};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::popover::Popover;
+use gpui_kit::component::progress::Progress;
 use gpui_kit::component::{
-    ActiveTheme as _, Icon, Placement, Sizable as _, WindowExt as _, v_flex,
+    ActiveTheme as _, Icon, Placement, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
 use gpui_kit::{
-    Anchor, AnyElement, ClickEvent, Context, InteractiveElement as _, IntoElement, KeyContext,
-    MouseButton, ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _,
-    Styled as _, TestSupportExt as _, Window, div, px, relative,
+    Anchor, AnyElement, ClickEvent, Context, DispatchPhase, Div, Hsla, InteractiveElement as _,
+    IntoElement, KeyContext, MouseButton, MouseMoveEvent, ParentElement as _, Render, Role,
+    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
+    canvas, div, px, relative,
 };
 
-use super::controls::{chapter_title, fill, status_text};
+use super::controls::{chapter_title, progress_percent, status_text};
 use super::keys::{
     CONTEXT, ChapterEnd, ChapterStart, HIDDEN, NextChapter, PreviousChapter, ScreenBack,
     ScreenForward, ShowControls, Zone, zone,
@@ -21,15 +26,13 @@ use super::{Panel, Phase, ReaderEvent, ReaderPage};
 use crate::features::appearance::Appearance;
 use crate::shared::actions::GoBack;
 use crate::shared::layout::SizeClass;
-use crate::shared::ui::{
-    back_button, empty_state, icon_button, page_colors, page_header, status_line,
-};
+use crate::shared::ui::{empty_state, icon_button, page_colors, page_header, status_line};
 use crate::widgets::chapter_view::{ChapterView, Direction};
 
 /// The height the line under the text takes, in pixels.
-const FOOTER: f32 = 48.0;
-/// The height the bar over the text takes below the inset, in pixels.
-const HEADER: f32 = 48.0;
+const FOOTER: f32 = 64.0;
+/// How long the reading controls take to fade.
+const FADE: Duration = Duration::from_millis(160);
 /// The width of the popover of a panel, in pixels.
 const POPOVER_WIDTH: f32 = 340.0;
 
@@ -42,7 +45,10 @@ impl Render for ReaderPage {
         let (page, ink) = page_colors(tone);
         let ready = matches!(&self.phase, Phase::Ready(reading) if reading.error.is_none());
         let show = self.controls.shown || keep || !ready;
-        let top = window.insets().effective().top;
+        let presence = Presence::new("reader-controls", show)
+            .transition(Transition::new(FADE))
+            .sample(window, cx);
+        let bottom = window.insets().effective().bottom;
         self.controls.holds.focused = self.handles.focused(window);
         if class != self.class {
             // A window of another class keeps another number of pictures.
@@ -58,6 +64,7 @@ impl Render for ReaderPage {
             .key_context(reader_context(show))
             .track_focus(&self.focus_handle)
             .size_full()
+            .relative()
             .bg(page)
             .text_color(ink)
             .on_action(cx.listener(|this, _: &ScreenForward, _, cx| {
@@ -80,24 +87,25 @@ impl Render for ReaderPage {
                 this.touch(cx);
                 this.handles.back.focus(window, cx);
             }))
-            .on_action(cx.listener(|this, _: &GoBack, _, cx| {
-                if !this.back(cx) {
+            .on_action(cx.listener(|this, _: &GoBack, window, cx| {
+                if let Some(panel) = this.panel {
+                    this.close_panel(window, cx);
+                    match panel {
+                        Panel::Contents => &this.handles.contents,
+                        Panel::Appearance => &this.handles.appearance,
+                    }
+                    .focus(window, cx);
+                } else if !this.back(cx) {
                     cx.propagate();
                 }
             }))
             .capture_key_down(cx.listener(|this, _, _, cx| this.touch(cx)))
-            .on_mouse_move(cx.listener(|this, _, _, cx| this.touch(cx)))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| this.sample(cx)),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .w_full()
-                    .min_h(px(HEADER) + top)
-                    .when_show(show, |slot| slot.child(self.header(class, cx))),
-            )
+            .child(Self::pointer_activity(cx))
+            .child(self.header(class, (page, ink), presence, cx))
             .child(
                 div()
                     .id("reader-body")
@@ -111,8 +119,9 @@ impl Render for ReaderPage {
                 div()
                     .flex_none()
                     .w_full()
-                    .h(px(FOOTER))
-                    .when_show(show && ready, |slot| slot.child(self.footer(cx))),
+                    .h(px(FOOTER) + bottom)
+                    .pb(bottom)
+                    .children(ready.then(|| self.footer(class, ink, presence, cx))),
             )
     }
 }
@@ -129,46 +138,89 @@ fn reader_context(show: bool) -> KeyContext {
     KeyContext::parse(&names).unwrap_or_default()
 }
 
-/// `when` for a flag, spelled for what it means here.
-trait WhenShow: Sized {
-    fn when_show(self, show: bool, build: impl FnOnce(Self) -> Self) -> Self {
-        if show { build(self) } else { self }
-    }
+/// The outlined group of icon controls in the title bar.
+fn capsule(border: Hsla) -> Div {
+    h_flex()
+        .rounded_full()
+        .border_1()
+        .border_color(border)
+        .px_1()
 }
 
-impl WhenShow for gpui_kit::Div {}
-
 impl ReaderPage {
-    /// The bar over the text.
-    fn header(&mut self, class: SizeClass, cx: &mut Context<'_, Self>) -> AnyElement {
-        let ready = matches!(&self.phase, Phase::Ready(_) | Phase::Empty);
-        let reading = matches!(&self.phase, Phase::Ready(reading) if reading.error.is_none());
-        let key = self.key;
-        let mut header = page_header(self.title.clone()).leading(
-            back_button("back")
-                .track_focus(&self.handles.back)
-                .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
-        );
-        if reading {
-            header = header
-                .trailing(self.contents_control(class, cx))
-                .trailing(self.appearance_control(class, cx));
-        }
-        if ready {
-            header = header.trailing(
-                icon_button("edit", IconName::Pencil, "Edit this book")
-                    .track_focus(&self.handles.edit)
-                    .on_click(cx.listener(move |_, _, _, cx| cx.emit(ReaderEvent::Edit(key)))),
-            );
-        }
+    /// Detects movement before the chapter's text and its clipping mask handle it.
+    fn pointer_activity(cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let reader = cx.entity().downgrade();
+        canvas(
+            |bounds, _, _| bounds,
+            move |_, bounds, window, _| {
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+                    if phase == DispatchPhase::Capture && bounds.contains(&event.position) {
+                        reader.update(cx, Self::touch).ok();
+                    }
+                });
+            },
+        )
+        .absolute()
+        .inset_0()
+    }
+
+    /// Tracks whether the pointer is on either part of the reading controls.
+    fn control_hover(id: &'static str, cx: &Context<'_, Self>) -> gpui_kit::Stateful<Div> {
         div()
-            .id("reader-header")
+            .id(id)
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                 this.controls.holds.hovered = *hovered;
                 if *hovered {
                     this.touch(cx);
                 }
             }))
+    }
+
+    /// The bar over the text.
+    fn header(
+        &mut self,
+        class: SizeClass,
+        (paper, ink): (Hsla, Hsla),
+        presence: PresenceSample,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
+        let header = page_header(self.title.clone())
+            .centred()
+            .on_paper(paper, ink);
+        if !presence.should_render() {
+            return div().flex_none().child(header.bare()).into_any_element();
+        }
+
+        let ready = matches!(&self.phase, Phase::Ready(_) | Phase::Empty);
+        let reading = matches!(&self.phase, Phase::Ready(reading) if reading.error.is_none());
+        let border = cx.theme().border;
+        let key = self.key;
+        let mut leading = capsule(border).child(
+            icon_button("back", IconName::ChevronLeft, "Back")
+                .rounded_full()
+                .track_focus(&self.handles.back)
+                .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
+        );
+        let mut trailing = capsule(border);
+        if reading {
+            leading = leading.child(self.contents_control(class, cx));
+            trailing = trailing.child(self.appearance_control(class, cx));
+        }
+        if ready {
+            trailing = trailing.child(
+                icon_button("edit", IconName::Pencil, "Edit this book")
+                    .rounded_full()
+                    .track_focus(&self.handles.edit)
+                    .on_click(cx.listener(move |_, _, _, cx| cx.emit(ReaderEvent::Edit(key)))),
+            );
+        }
+        let mut header = header.leading(leading).content_opacity(presence.progress);
+        if ready {
+            header = header.trailing(trailing);
+        }
+        Self::control_hover("reader-header", cx)
+            .flex_none()
             .child(header)
             .into_any_element()
     }
@@ -176,8 +228,9 @@ impl ReaderPage {
     /// The control of the contents: a popover on an expanded window, a sheet
     /// otherwise.
     fn contents_control(&mut self, class: SizeClass, cx: &mut Context<'_, Self>) -> AnyElement {
-        let trigger =
-            icon_button("contents", IconName::List, "Contents").track_focus(&self.handles.contents);
+        let trigger = icon_button("contents", IconName::List, "Contents")
+            .rounded_full()
+            .track_focus(&self.handles.contents);
         let panel = self.contents.clone();
         self.panel_control(
             Panel::Contents,
@@ -192,14 +245,13 @@ impl ReaderPage {
 
     /// The control of the appearance.
     fn appearance_control(&mut self, class: SizeClass, cx: &mut Context<'_, Self>) -> AnyElement {
-        let trigger = Button::new("appearance")
-            .ghost()
-            .label("Aa")
-            .accessibility_label("Aa, text and page appearance")
-            .tooltip("Text and page appearance")
-            .min_h(px(crate::shared::ui::target_size()))
-            .cursor_pointer()
-            .track_focus(&self.handles.appearance);
+        let trigger = icon_button(
+            "appearance",
+            IconName::ALargeSmall,
+            "Text and page appearance",
+        )
+        .rounded_full()
+        .track_focus(&self.handles.appearance);
         let panel = self.typography.clone();
         self.panel_control(
             Panel::Appearance,
@@ -229,7 +281,10 @@ impl ReaderPage {
         let page = cx.entity().downgrade();
         if class == SizeClass::Expanded {
             return Popover::new(id)
-                .anchor(Anchor::TopRight)
+                .anchor(match which {
+                    Panel::Contents => Anchor::TopLeft,
+                    Panel::Appearance => Anchor::TopRight,
+                })
                 .open(self.panel == Some(which))
                 .on_open_change(move |open, _, cx| {
                     page.update(cx, |page, cx| {
@@ -263,45 +318,77 @@ impl ReaderPage {
             .into_any_element()
     }
 
-    /// The progress line and what it says.
-    fn footer(&self, cx: &mut Context<'_, Self>) -> AnyElement {
+    /// The current page number and the controls around it.
+    fn footer(
+        &self,
+        class: SizeClass,
+        ink: Hsla,
+        presence: PresenceSample,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
         let Phase::Ready(reading) = &self.phase else {
             return div().into_any_element();
         };
+        let shown = presence.should_render();
+        let muted = ink.opacity(0.72);
         let title = chapter_title(&reading.snapshot, self.spot.chapter, self.spot.offset);
         let text = status_text(&title, self.progress);
-        let theme = cx.theme();
-        v_flex()
-            .id("reader-footer")
-            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                this.controls.holds.hovered = *hovered;
-                if *hovered {
-                    this.touch(cx);
-                }
-            }))
+        let number = self.view.read(cx).page_number().map(|(page, total)| {
+            status_line("reader-page-number", format!("{page} of {total}"))
+                .min_w(px(72.0))
+                .text_center()
+                .text_sm()
+                .text_color(muted)
+        });
+        let previous = icon_button("previous-page", IconName::ChevronLeft, "Previous page")
+            .rounded_full()
+            .track_focus(&self.handles.previous)
+            .on_click(cx.listener(|this, _, _, cx| this.screen(Direction::Back, cx)));
+        let next = icon_button("next-page", IconName::ChevronRight, "Next page")
+            .rounded_full()
+            .track_focus(&self.handles.next)
+            .on_click(cx.listener(|this, _, _, cx| this.screen(Direction::Forward, cx)));
+        let compact = class == SizeClass::Compact;
+        let status = || {
+            status_line("reader-status", text.clone())
+                .min_w_0()
+                .truncate()
+                .text_xs()
+                .text_color(muted)
+        };
+        let row = h_flex()
+            .w_full()
+            .min_h(px(crate::shared::ui::target_size()))
+            .items_center()
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .opacity(presence.progress)
+                    .children((shown && !compact).then(status)),
+            )
+            .children(shown.then(|| previous.opacity(presence.progress)))
+            .children(number)
+            .children(shown.then(|| next.opacity(presence.progress)))
+            .child(div().flex_1().min_w_0());
+        Self::control_hover("reader-footer", cx)
             .w_full()
             .px_5()
-            .gap_1()
-            .child(
-                // The track and the fill say nothing the text does not.
+            .child(row)
+            .children((shown && compact).then(|| {
                 div()
-                    .h(px(2.0))
-                    .w_full()
-                    .rounded_full()
-                    .bg(theme.input)
-                    .child(
-                        div()
-                            .h_full()
-                            .w(relative(fill(self.progress)))
-                            .rounded_full()
-                            .bg(theme.progress_bar),
-                    ),
-            )
-            .child(
-                status_line("reader-status", text)
-                    .text_sm()
-                    .text_color(theme.muted_foreground),
-            )
+                    .text_center()
+                    .opacity(presence.progress)
+                    .child(status())
+            }))
+            .children(shown.then(|| {
+                Progress::new("reader-progress")
+                    .accessibility_label("Book progress")
+                    .value(progress_percent(self.progress))
+                    .with_size(px(2.0))
+                    .mt_1()
+                    .opacity(presence.progress)
+            }))
             .into_any_element()
     }
 

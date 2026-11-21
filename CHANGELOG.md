@@ -4,6 +4,15 @@
 
 ### Changed
 
+- The default reading text size is 20 px. Saved text sizes still apply.
+- The mbook reader lays out chapters as individual pages, with an animated
+  turn, a persistent page number, and progress that fades with the controls.
+  The appearance panel uses page-tone swatches and icon steppers, and books
+  fall back to installed serif fonts.
+- The library gives cover art and reading status more space. The editor uses
+  a segmented icon picker for its chapter views and draws its preview in the
+  selected page tone.
+
 - A dependency that only one crate uses is declared in that crate's own
   manifest; the manifest of the workspace keeps what several crates share.
 - Continuous integration installs the libraries GPUI links on Linux, and
@@ -13,6 +22,12 @@
   folder `crates/mbook/`, the import path `mbook::` and RFC 0002
   (`0002-mbook-api.md`). `mbook-converter` re-exports it as
   `mbook_converter::mbook`.
+
+### Fixed
+
+- The shelf hover highlight has padding around the cover and reading status.
+- AVIF pictures decode on a dedicated stack, so opening an illustrated
+  chapter works on macOS background queues.
 
 ### Added
 

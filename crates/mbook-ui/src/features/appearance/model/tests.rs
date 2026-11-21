@@ -109,7 +109,7 @@ fn a_value_that_is_no_number_keeps_what_it_was(cx: &mut TestAppContext) {
         settings.line_height = f32::INFINITY;
     });
     let now = settings(&appearance, cx);
-    assert!((now.text_size - 18.0).abs() < f32::EPSILON);
+    assert!((now.text_size - 20.0).abs() < f32::EPSILON);
     assert!((now.line_height - 1.6).abs() < f32::EPSILON);
 }
 
@@ -133,9 +133,9 @@ fn a_change_that_changes_nothing_tells_nobody(cx: &mut TestAppContext) {
     let counter = told.clone();
     let _subscription =
         cx.update(|cx| cx.observe(&appearance, move |_, _| counter.set(counter.get() + 1)));
-    change(&appearance, cx, |settings| settings.text_size = 18.0);
-    assert_eq!(told.get(), 0);
     change(&appearance, cx, |settings| settings.text_size = 20.0);
+    assert_eq!(told.get(), 0);
+    change(&appearance, cx, |settings| settings.text_size = 22.0);
     assert_eq!(told.get(), 1);
 }
 
@@ -343,25 +343,33 @@ fn the_stored_typeface_is_used_when_the_device_has_it(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn a_typeface_the_device_lacks_falls_back_to_the_font_of_the_interface(cx: &mut TestAppContext) {
+fn a_missing_typeface_falls_back_to_the_first_installed_reading_serif(cx: &mut TestAppContext) {
     let fixture = Fixture::new();
     let appearance = appearance(cx, &fixture);
     cx.run_until_parked();
     appearance.update(cx, |appearance, _| {
-        appearance.families = Some(vec!["Georgia".to_owned()]);
+        appearance.families = Some(vec!["Georgia".to_owned(), "Times New Roman".to_owned()]);
     });
-    let (font, interface) = cx.update(|cx| {
-        (
-            appearance.read(cx).reading_font(cx),
-            cx.theme().font_family.clone(),
-        )
-    });
-    assert_eq!(font, interface);
+    assert_eq!(
+        cx.update(|cx| appearance.read(cx).reading_font(cx)),
+        "Georgia"
+    );
     assert_eq!(
         settings(&appearance, cx).typeface,
         "Literata",
         "the setting is kept"
     );
+}
+
+#[gpui_kit::test]
+fn the_interface_font_is_used_when_no_reading_serif_is_installed(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let appearance = appearance(cx, &fixture);
+    cx.run_until_parked();
+    appearance.update(cx, |appearance, _| {
+        appearance.families = Some(vec!["A Sans Font".to_owned()]);
+    });
+    cx.update(|cx| assert_eq!(appearance.read(cx).reading_font(cx), cx.theme().font_family));
 }
 
 #[gpui_kit::test]
@@ -458,7 +466,7 @@ fn a_failure_of_the_catalogue_is_kept_until_a_write_succeeds(cx: &mut TestAppCon
         assert!(appearance.error().is_some());
         assert!(appearance.error().unwrap().source().is_some());
     });
-    change(&appearance, cx, |settings| settings.text_size = 20.0);
+    change(&appearance, cx, |settings| settings.text_size = 22.0);
     cx.run_until_parked();
     assert!(
         appearance.read_with(cx, |appearance, _| appearance.error().is_none()),

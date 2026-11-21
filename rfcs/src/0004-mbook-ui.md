@@ -15,7 +15,7 @@ It has three screens:
 | Screen | What it does | Built on |
 | --- | --- | --- |
 | **Library** | Shows the books the application keeps, as covers | The catalogue; `BookReader::open` and `read_cover` |
-| **Reader** | Shows one book, a chapter at a time | `BookReader`, read lazily |
+| **Reader** | Shows one page of a chapter at a time | `BookReader`, read lazily |
 | **Editor** | Changes the metadata, chapters and pictures of a book | `Book`, in memory |
 
 Opening a file that is not yet in the library adds it: an mbook file is
@@ -62,8 +62,7 @@ that depends on them.
 
 - **A store, an account or synchronisation.** The library is a folder on one
   device.
-- **Pages and two-page spreads.** The first version scrolls a chapter; see
-  [Future possibilities](#future-possibilities).
+- **Two-page spreads.** See [Future possibilities](#future-possibilities).
 - **Annotations**: highlights, notes and bookmarks.
 - **A visual (WYSIWYG) editor.** A chapter is edited as Markdown next to its
   preview.
@@ -110,17 +109,16 @@ Expanded
 | [ Search     ] |  Continue reading                                        |
 |                |  +------+  The Master and Margarita                      |
 | Library        |  |cover |  Mikhail Bulgakov                              |
-|  All books     |  |      |  Chapter 7, 38%                     [ Read ]   |
-|  Reading       |  +------+                                                |
-|  Finished      | -------------------------------------------------------- |
-|                |  All books                        Sort: Recent v   [+]   |
+|  [L] All books |  |      |  Chapter 7, 38%                     [ Read ]   |
+|  [B] Reading   |  +------+                                                |
+|  [✓] Finished  | -------------------------------------------------------- |
+|                |  All books                           [Sort]       [+]   |
 |                |  +-----+  +-----+  +-----+  +-----+  +-----+  +-----+    |
 |                |  |     |  |     |  |     |  |     |  |     |  |     |    |
 |                |  |     |  |     |  |     |  |     |  | ... |  |     |    |
 |                |  +-----+  +-----+  +-----+  +-----+  +-----+  +-----+    |
-|                |  ===--     NEW      =====-            Converting         |
-|                |  Title    Title    Title    Title    Title    Title      |
-| [ Import  ^2 ] |  Author   Author   Author   Author   Author   Author     |
+|                |  38%  …   NEW  …   72%  …            Converting         |
+| [ Import  ^2 ] |                                                           |
 +----------------+----------------------------------------------------------+
 
 Compact
@@ -130,8 +128,7 @@ Compact
 | +-----+ +-----+ +-----+   |
 | |     | |     | |     |   |
 | +-----+ +-----+ +-----+   |
-| ===--    NEW     ====-    |
-| Title   Title   Title     |
+| 38% …   NEW …    72% …   |
 | +-----+ +-----+ +-----+   |
 | |     | |     | |     |   |
 +---------------------------+
@@ -139,9 +136,14 @@ Compact
 +---------------------------+
 ```
 
+- The sidebar uses icons for All books, Reading and Finished. The sort
+  icon opens a menu with the current order marked.
 - A cover keeps its own proportions; covers are aligned at the bottom of a
   row, as on a shelf. A book without a cover gets one drawn from its title.
-- Under a cover: a line of progress, or `NEW` for a book never opened.
+- Under a cover: the percentage read, `Finished`, or a `NEW` badge.
+  A neutral hover highlight leaves a small inset around the cover and
+  reading status.
+  The ellipsis opens the book menu.
 - A book that is still being converted is already on the shelf, with its
   file name and the state of the import.
 - The menu of a book (right click, the `…` button, or a long press): Open,
@@ -152,34 +154,36 @@ Compact
 ### Reader
 
 ```text
-Expanded, controls shown                      Compact
-+----------------------------------------+    +-------------------------+
-| <  Library    Contents   Aa    Edit    |    | <      Contents   Aa    |
-|                                        |    |                         |
-|         Chapter 7                      |    |  Chapter 7              |
-|                                        |    |                         |
-|         It was then that the           |    |  It was then that the   |
-|         second act began. The          |    |  second act began. The  |
-|         text column is at most         |    |  column fills the       |
-|         38 em wide and stays in        |    |  width, with a margin   |
-|         the middle of the window.      |    |  of 20 px.              |
-|                                        |    |                         |
-|         ---------o--------------       |    |  ------o--------------  |
-|         Chapter 7, 38%                 |    |  Chapter 7, 38%         |
-+----------------------------------------+    +-------------------------+
+Controls shown                           Controls hidden
++-------------------------------------+  +-------------------------------------+
+| [ Back  Contents ]  Title  [ A Edit ]|  |                                     |
+|                                     |  |                                     |
+|         Chapter 7                   |  |         Chapter 7                   |
+|                                     |  |                                     |
+|         It was then that the        |  |         It was then that the        |
+|         second act began.           |  |         second act began.           |
+|                                     |  |                                     |
+| Chapter 7, 38%   < 4 of 12 >        |  |            4 of 12                  |
+| ----------------------------------- |  |                                     |
++-------------------------------------+  +-------------------------------------+
 ```
 
-- Controls are hidden while reading. Moving the pointer, or a tap in the
-  middle of the text, shows them; they hide again after a few seconds.
-- **Contents** lists the entries of the book, the current one marked. It is a
-  popover on an expanded window and a sheet from the bottom on a compact one.
-- **Aa** sets the page tone and the size of the text, and switches between
-  the typefaces used last. Every typeface is in the settings.
-- Space, Page Down and the arrow keys move by a screen; on touch, a tap on
-  the left or right edge does the same.
+- A page fills the text area. Its number stays visible below the text and is
+  counted within the current chapter. The progress bar measures the whole book.
+- Move the pointer, press a key or tap in the middle of the text to show the
+  controls. They fade away after a few seconds of inactivity.
+- **Contents** lists the entries of the book and marks the current one.
+  Contents and appearance open as popovers in an expanded window and as
+  bottom sheets in a medium or compact window.
+- **Text and page appearance** offers page-tone swatches, text size and
+  line-height controls, and the recently used typefaces. Settings lists
+  every available typeface.
+- Turn pages with Space, Page Up, Page Down, the arrows, the wheel, a
+  two-finger trackpad gesture, or a click or tap in the margins. The
+  bracket shortcuts still move by chapter.
 - A link to another place of the book jumps there, and Back returns. A link
-  to the web opens in the browser, only when it is followed.
-- The place in the book is kept: a book reopens where it was left.
+  to the web opens in the browser when it is followed.
+- The book reopens on the page containing its saved place.
 
 ### Editor
 
@@ -202,6 +206,9 @@ Expanded
 Compact: a stack. Sections, then a chapter with Source | Preview.
 ```
 
+- The chapter toolbar uses a segmented icon picker for Source, Split and
+  Preview. Compact and medium windows offer Source and Preview. Each icon
+  has a tooltip and an accessible name.
 - **Details** is a form over the metadata of RFC 0001: title, authors,
   language, series, publisher, date, annotation.
 - **Chapters** are a list in reading order: add, remove, move up and down.
@@ -221,7 +228,7 @@ screen on a compact one.
 | Setting | Choices | Default |
 | --- | --- | --- |
 | Typeface of books | Literata, or any font family installed on the device | Literata |
-| Size of the text | 12 to 32 px | 18 px; 17 px on a compact window |
+| Size of the text | 12 to 32 px | 20 px |
 | Line height of the text | 1.2 to 2.0 | 1.6 |
 | Page tone | Paper, Sepia, Dusk, Night, or the one that follows the system | Follows the system |
 | Size of the interface | 100% to 200% | 100% |
@@ -272,15 +279,16 @@ has been read.
 | Night | `#000000` | `#B8B8B8` |
 
 - **Type.** The interface uses the system font of the platform. The text of
-  a book is set in Literata unless the reader chooses another typeface: it
-  was drawn for reading on screens and has Latin, Cyrillic and Greek.
+  a book uses the chosen family when available and falls back through
+  installed serif families. The library section heading uses the reading
+  typeface as well.
 - **Measure.** A line of a book is at most 38 em, about 70 characters, at a
   line height of 1.6.
 - **Icon.** An open book on the navy of these design documents:
   `crates/mbook-ui/assets/icon.svg`, drawn once and rendered to the PNG the
   bundle and the Windows executable take.
 - **Motion** answers an action: a screen is pushed, a sheet rises, the
-  controls of the reader fade. Nothing moves by itself, and the system
+  controls of the reader fade and page turns slide and fade. The system
   setting that reduces motion turns the transitions off.
 
 ## Reference-level explanation
@@ -308,7 +316,7 @@ of this document is *proposed*, and listed under
 | An import leaves the original file where it is; the library gets a copy | Confirmed |
 | A book whose `id` is already in the library is not added again; the existing one is opened | Confirmed |
 | Pictures are decoded by `avif-decode`; the package requires Rust 1.100 | Confirmed |
-| Books are set in Literata, shipped with the application; the typeface is chosen in the settings | Confirmed |
+| Literata is the default reading choice and the typeface is configurable | Confirmed. Bundling Literata is pending. |
 | The modules follow Feature-Sliced Design | Confirmed |
 | A release is a tag on GitHub; its binaries are built by a workflow started by hand for that tag | Confirmed |
 | Releases are signed with keys generated for the project and kept as secrets of the repository | Confirmed |
@@ -498,18 +506,28 @@ An open book is an entity with two parts.
   byte offset of every top-level block, found with `markdown`, the parser
   `mbook` itself uses. The main thread receives the text, a map from
   destination to `Destination`, and the offsets.
-- The text is shown by the Markdown view of GPUI Kit in its scrolling form,
-  which lays out only the blocks near the window. The reader does not render
-  Markdown itself.
-- The block at the top of the window, through its offset, is the place that
-  is stored. It is written at most once a second, and when the book is
-  closed.
-- A contents entry, a link or a stored place is shown by revealing the block
-  at its offset. A destination that resolved to `Destination::ExtraAnchor`
-  is completed with `read_resolve` on the background when the link is
-  followed.
-- The reader shows one chapter. At its end it offers the next one, and the
-  keys that move by a screen continue into it.
+- The reader uses the scrolling Markdown view of GPUI Kit to measure the
+  top-level blocks of the chapter. It displays one measured page at a time
+  by moving the list to that page's start and masking the content below
+  its end. The editor preview uses the same view with scrolling.
+- Paragraphs split at rendered line boundaries, avoiding a single line at
+  either end of a break when there is room. A heading stays with the content
+  that follows when they fit together. Other blocks move intact to the next
+  page if they fit there. A block taller than a page splits on the body text
+  line grid because the Kit does not expose its own internal line boundaries.
+- The stored place remains the chapter path and a byte offset. For a page
+  that begins inside a block, the reader estimates the byte offset from
+  the vertical fraction of that block. It writes the position at most once
+  a second and when the book closes.
+- After a change to the window or typography, the reader recalculates the
+  pages and keeps the page containing the reading anchor. A contents
+  entry, link or saved place does the same with its destination offset.
+  A destination that resolved to `Destination::ExtraAnchor` is completed
+  with `read_resolve` on the background when the link is followed.
+- Turning past the last page opens the first page of the next chapter.
+  Turning back from the first page opens the last page of the previous
+  chapter. Page turns within a chapter slide and fade. With reduced motion,
+  they take effect immediately.
 - Editing a book closes its source first, so that the file can be replaced
   on every platform; the reader reopens the book afterwards.
 
@@ -525,9 +543,10 @@ GPUI decodes no AVIF, so the application does:
 3. The picture is scaled down to the width it is shown at, in device pixels.
 4. The result is given to GPUI as a rendered image.
 
-- A picture is requested when the view first draws it, and the three steps
-  run on the background. Until then the view reserves its place: the size is
-  in the tables of the book.
+- A picture is requested when the Markdown view lays it out. The three
+  steps run off the main thread. The AVIF decoder runs on a scoped thread
+  with its own stack because native executor threads can have small stacks.
+  The view reserves the picture's space from its size in the book tables.
 - Decoded pictures are kept in a cache bounded by their bytes, the least
   recently shown leaving first. The bound depends on the size class
   (*proposed*: 256 MiB expanded, 64 MiB compact).
@@ -592,7 +611,7 @@ element is reported when it has an identifier and a role.
 | --- | --- |
 | Tab, Shift+Tab | Next and previous control |
 | Arrows | Move inside a grid, a list or a menu |
-| Return, Space | Activate; in the reader, Space moves by a screen |
+| Return, Space | Activate; in the reader, Space turns a page |
 | Escape | Close a panel; leave the editor; go back |
 | The platform's Open, Save, Find, Settings | The same in the application |
 | Page Up, Page Down, Home, End | Move in a chapter |
@@ -628,7 +647,8 @@ element is reported when it has an identifier and a role.
 
 - The controls of the reader hide only while nothing inside them has the
   focus and the pointer is not over them, and never when the setting keeps
-  them shown. They return on any key.
+  them shown. They return on any key. The fade and the page turn animation
+  are skipped when reduced motion is active.
 - No message disappears by itself while it still asks for an action.
 - When the system, or the setting, asks for reduced motion, every
   transition is replaced by an immediate change. GPUI Kit reads the system
@@ -645,18 +665,16 @@ element is reported when it has an identifier and a role.
 - The typeface, the size and line height of the text and the page tone are
   rows of `settings`. A change is applied to every open reader and to the preview of
   the editor without reopening the book.
-- Literata is part of the application: its files are embedded and registered
-  with the text system at start. Its license, the SIL Open Font License 1.1,
-  is shipped with it.
-- The other choices are the font families the text system of GPUI reports
-  for the device. The list is read once, on the background.
-- A stored typeface that the device no longer has **MUST** fall back to
-  Literata; the setting is kept, so that it applies again when the font
-  returns.
+- The choices are the families the GPUI text system reports for the device.
+  The list is read once on the background.
+- A stored family that is unavailable **MUST** fall back to the first
+  installed family in this order: Literata, Charter, Iowan Old Style,
+  Georgia, Times New Roman. The interface font is used until enumeration
+  finishes or if none is available. The stored choice is kept.
 - A typeface without the letters of a book is not refused: the text system
   substitutes another font for them.
-- The setting changes the text of books only. The interface keeps the
-  system font, and code keeps a monospaced one.
+- The setting changes the text of books and the library section heading.
+  Other interface text uses the system font, and code remains monospaced.
 
 ### Editing
 
@@ -741,7 +759,7 @@ sequenceDiagram
 | Sections of the library | A bar at the bottom | A sidebar that slides over | A fixed sidebar |
 | Columns of the shelf | As many covers of 104 px as fit | Covers of 132 px | Covers of 132 px |
 | Contents of a book | A sheet | A sheet | A popover |
-| Text column of the reader | The width, less 20 px on each side | At most 38 em | At most 38 em |
+| Paged text column | Window width less 20 px on each side | At most 38 em with at least 32 px on each side | At most 38 em with at least 32 px on each side |
 | Editor | A stack; source or preview | Source or preview; sections slide over | Sections, source and preview side by side |
 | Menu of a book | A long press | A long press, or `…` | A right click, or `…` |
 
@@ -862,27 +880,25 @@ Ruled out:
 ### What is implemented
 
 The first version implements the sections above with the differences below.
-Its tests run in headless windows, and its screens were looked at as
-rendered pictures; a person has not yet used it with a pointer, a keyboard
-or a screen reader, and it has not been built or run on Windows or Linux.
+The headless tests cover layout and interaction. The redesigned screens were
+also exercised on macOS with an imported illustrated book. Screen-reader
+use and native builds on Windows and Linux still need verification.
 
 Seen in the pictures and left as it is: a notification stays over the right
-end of the header for a while; the scroll bar of the reader stands at the
-edge of the text column, over the text on a narrow window; a long word on a
-cover drawn from a title breaks in its middle; the message of a book that
-cannot be opened is the one of the library, not a sentence for a reader.
+end of the header for a while. A long word on a cover drawn from a title
+can break in its middle.
 
 | Part | State |
 | --- | --- |
-| Library | As designed. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
+| Library | Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | As designed. A file is added by the "Add a book…" control, the Open key, or a drop on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
-| Reader | One chapter at a time, as designed. A picture is requested at the width it was first drawn at and is not requested again when the window or the size of the text changes. Hiding the controls does not fade. |
-| Editor | As designed, with "Move up" and "Move down" and no drag. The preview shows the alternative text of a picture, not the picture. Syntax of Markdown is not highlighted in the source. |
+| Reader | Single-page reading, a persistent chapter page number, and an auto-hiding title bar and progress panel. A block taller than the page can be clipped through a line. Pictures keep the decode width of their first draw. |
+| Editor | A segmented icon picker controls the source and preview. The preview uses the page tone and shows picture alternatives. Markdown syntax highlighting and drag to reorder are unimplemented. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. No real release exists, so neither has met the network; the Windows part has never been compiled. |
 | Release workflow | Written; never run. A local `cargo bundle` on macOS produces the application with its icon. |
-| Typeface | **Literata is not shipped.** Its files are not in the repository, so "Literata" falls back to the font of the interface unless the device has it. Every installed family can be chosen. |
-| Transitions | None: a screen replaces another at once, which also meets reduced motion. |
+| Typeface | Literata is available when installed locally. The fallback chain supplies another installed serif family when possible. Bundled fonts are unimplemented. |
+| Transitions | Page turns within a chapter slide and fade, and the reading controls fade. Screen navigation and chapter changes are immediate. Reduced motion uses immediate transitions. |
 
 Where assistive technology gets less than [Accessibility](#accessibility)
 asks:
@@ -923,7 +939,8 @@ asks:
   hears is what GPUI and AccessKit pass on; a gap there is a gap here.
 - **A running conversion cannot be stopped**, only ignored. Neither can the
   encoding of a picture, which takes seconds for a large one.
-- **No pages.** A reader used to Apple Books gets a scrolling chapter.
+- **Large blocks.** A page boundary through an oversized code block, list or
+  table is limited by the geometry the Markdown view exposes.
 - **Two copies of a book** after import: the original and the one in the
   library.
 - **A stored place is approximate after an edit** of its chapter.
@@ -941,7 +958,7 @@ asks:
 | Reading | `BookReader`, lazily | `Book` for everything | A `Book` decodes every chapter and picture before the first line is shown. |
 | Access to the reader | A snapshot on the main thread; the source behind a mutex for background tasks | Table lookups on the main thread | A lookup would wait for a mutex that a read holds during I/O. |
 | Rendering Markdown | The Markdown view of GPUI Kit | A renderer of this crate | It virtualises, selects text, parses off the main thread, and is built on the same `markdown` crate as `mbook`. |
-| Splitting a chapter for display | Left to that view | One view per block | Footnotes and reference definitions connect blocks; a split would have to copy them. |
+| Paginating a chapter | Break the chapter using the measured GPUI Kit blocks | A custom Markdown renderer or a fixed `max_lines` value | Measurements include proportional wrapping, headings and images while chapter-wide references stay with the Kit. |
 | Stored place | Chapter path and byte offset | Resource number and offset | Numbers change when a book is written again. |
 | Editing | One background task owns the `Book`; commands in order | A `Book` behind a mutex, one task per change | Separate tasks may run out of order: a save could miss the edit before it. |
 | Where an edit is saved | Over the book in the library, by a rename | Always a new copy | Decided by the format author. The library is the working copy; the original file was never touched. |
@@ -953,7 +970,7 @@ asks:
 | Installing updates | `self_update`, blocking transport on the background | Its asynchronous transport | Decided by the format author to use the crate. The blocking transport needs no Tokio runtime beside GPUI. |
 | AVIF decoder | `avif-decode` on `rav1d` | dav1d in C | Decided by the format author. No C toolchain; the same reason as for the encoder in RFC 0003. |
 | Minimum Rust version | 1.100 for this package | The 1.89 of the workspace | Decided by the format author. `avif-decode` needs 1.98 and `redb` 1.90; an application is built by its maintainers, not by users of a library. |
-| Typeface of books | Literata by default; any installed family in the settings | A fixed list of shipped fonts | Decided by the format author. One shipped font gives the same page on every device; the rest costs no bytes. |
+| Typeface of books | Literata when installed, then local serif fallbacks; any installed family in settings | A fixed set of bundled fonts | The fallback chain keeps book typography available without font assets in the repository. |
 | Building a release | A workflow started by hand for a tag | Building on every tag | Decided by the format author. A tag also marks versions of the libraries, which have no binaries. |
 | Pictures added in the editor | Encoded here, with `image` | A public encoder in `mbook-converter` | Decided by the format author. RFC 0003 stays as it is; the price is that quality and speed are written in two crates. |
 | Size class under a scaled interface | Width divided by the scale | Width in pixels | At 200% a desktop window has room for the compact layout only; clipping or a horizontal scroll bar fails WCAG 1.4.10. |
@@ -964,7 +981,7 @@ asks:
 
 | Application | Taken from it | Left behind |
 | --- | --- | --- |
-| Apple Books for the Mac | The shelf of covers with progress; a reader without chrome; contents and appearance as two small panels; page tones | The store; pages and spreads; collections; annotations |
+| Apple Books for the Mac | Cover-first shelves, single-page reading with quiet controls, an always-visible page number, and page tones | Store, two-page spreads, collections, and annotations |
 | Calibre | A library that owns copies of the books; converting on import; an editor with source and preview | A database as the source of truth; a window per tool |
 | Zed | Entities as models; tasks owned by their entity; nothing blocking on the main thread | |
 
@@ -1002,8 +1019,7 @@ application.
 
 ## Future possibilities
 
-- **Pages and two-page spreads**, which need text broken into columns of a
-  fixed height.
+- **Two-page spreads**, which need two independently positioned columns.
 - **Scrolling from one chapter into the next.**
 - **Shells for iOS and Android.**
 - **Search inside a book**, chapter by chapter on the background.

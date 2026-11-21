@@ -1,8 +1,9 @@
 //! The window of the application.
 
+use gpui_kit::component::TitleBar;
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, Entity, Result, TitlebarOptions, WindowBounds,
-    WindowOptions, px, size,
+    WindowOptions, point, px, size,
 };
 
 use super::shell::Shell;
@@ -12,6 +13,9 @@ use crate::shared::roots::Roots;
 const TITLE: &str = "mbook";
 /// The size of a new window, in pixels.
 const DEFAULT_SIZE: (f32, f32) = (1180.0, 780.0);
+/// Where the buttons of the window stand on macOS, so that they are in the
+/// middle of the bar of a page (`shared::ui::BAR_HEIGHT`).
+const WINDOW_BUTTONS: (f32, f32) = (16.0, 17.0);
 /// The smallest size, in pixels. A window this narrow takes the compact layout,
 /// so that the layout of a phone can be reached on a desktop.
 const MIN_SIZE: (f32, f32) = (360.0, 480.0);
@@ -28,11 +32,14 @@ pub(super) fn open(roots: Roots, cx: &mut App) -> Result<(AnyWindowHandle, Entit
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         window_min_size: Some(size(px(MIN_SIZE.0), px(MIN_SIZE.1))),
+        // The bar of each page is the title bar of the Kit: the system draws
+        // none of its own, and the bar moves the window.
         titlebar: Some(TitlebarOptions {
             title: Some(TITLE.into()),
-            ..TitlebarOptions::default()
+            traffic_light_position: Some(point(px(WINDOW_BUTTONS.0), px(WINDOW_BUTTONS.1))),
+            ..TitleBar::title_bar_options()
         }),
-        ..WindowOptions::default()
+        ..TitleBar::window_options()
     };
     gpui_kit::open_window(options, cx, |window, cx| {
         cx.new(|cx| Shell::new(roots, window, cx))

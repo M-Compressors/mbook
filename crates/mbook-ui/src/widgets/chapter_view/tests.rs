@@ -1,9 +1,9 @@
 //! The view of a chapter, in headless windows.
 
 use std::fmt::Write as _;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use gpui_kit::test::TestWindowExt as _;
+use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
 use gpui_kit::{
     AnyWindowHandle, AppContext as _, ClickEvent, Context, Entity, IntoElement, Render, Role,
     TestAppContext, Window,
@@ -44,6 +44,20 @@ fn offset_of(text: &str, needle: &str) -> u32 {
 }
 
 fn start(cx: &mut TestAppContext, width: f32, height: f32) -> Started {
+    start_with(cx, width, height, ChapterView::new)
+}
+
+/// A window with a view that shows its text a page at a time.
+fn start_paged(cx: &mut TestAppContext, width: f32, height: f32) -> Started {
+    start_with(cx, width, height, ChapterView::paged)
+}
+
+fn start_with(
+    cx: &mut TestAppContext,
+    width: f32,
+    height: f32,
+    build: fn(&mut Window, &mut Context<'_, ChapterView>) -> ChapterView,
+) -> Started {
     let fixture = Fixture::new();
     cx.update(gpui_kit::init);
     fixture.install(cx);
@@ -53,7 +67,7 @@ fn start(cx: &mut TestAppContext, width: f32, height: f32) -> Started {
     });
     cx.run_until_parked();
     let (window, host) = testing::open(cx, width, height, |window, cx| Host {
-        view: cx.new(|cx| ChapterView::new(window, cx)),
+        view: cx.new(|cx| build(window, cx)),
     });
     let view = host.read_with(cx, |host, _| host.view.clone());
     Started {
@@ -111,7 +125,6 @@ fn the_text_does_not_take_more_than_the_column(cx: &mut TestAppContext) {
         .update(cx, |view, cx| view.set_text(&chapter(2), cx));
     settle(&started, cx);
     testing::frame(cx, started.window, |window, _| {
-        // 38 em of 18 pixels.
         let width = window.find("chapter-text").bounds().size.width;
         assert!(width >= gpui_kit::px(1200.0), "{width:?}");
     });
@@ -167,7 +180,7 @@ fn a_screen_forward_moves_the_text_and_a_screen_back_returns(cx: &mut TestAppCon
 
     started
         .view
-        .update(cx, |view, cx| view.scroll_by_screen(Direction::Forward, cx));
+        .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
     settle(&started, cx);
     let moved = top(&started, cx);
     assert!(moved > 0, "{moved}");
@@ -175,7 +188,7 @@ fn a_screen_forward_moves_the_text_and_a_screen_back_returns(cx: &mut TestAppCon
 
     started
         .view
-        .update(cx, |view, cx| view.scroll_by_screen(Direction::Back, cx));
+        .update(cx, |view, cx| view.turn_page(Direction::Back, cx));
     settle(&started, cx);
     assert_eq!(top(&started, cx), 0);
 }
@@ -191,7 +204,7 @@ fn a_screen_is_a_little_less_than_the_window(cx: &mut TestAppContext) {
     let before = top(&started, cx);
     started
         .view
-        .update(cx, |view, cx| view.scroll_by_screen(Direction::Forward, cx));
+        .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
     settle(&started, cx);
     // About 15 lines of a window of 400 pixels at 29 pixels a line: the top
     // block has moved, but not past the whole chapter.
@@ -288,8 +301,8 @@ fn a_picture_that_is_not_ready_holds_its_place_at_its_size(cx: &mut TestAppConte
     let sizes = started
         .view
         .read_with(cx, |view, _| view.placeholder_sizes());
-    // The column of 684 pixels, and the proportions of the picture.
-    assert_eq!(sizes, vec![(684, 342)]);
+    // The window width minus its two 32-pixel margins, with the picture at half that height.
+    assert_eq!(sizes, vec![(736, 368)]);
 }
 
 #[gpui_kit::test]
@@ -393,4 +406,379 @@ fn a_main_click_a_key_and_a_tap_follow_a_link_and_a_long_press_does_not() {
     };
     assert!(followed(&touch(false)));
     assert!(!followed(&touch(true)));
+}
+
+/// A chapter of a heading and `paragraphs` paragraphs of several lines each.
+fn long_chapter(paragraphs: usize) -> String {
+    let mut text = String::from("# Heading\n\n");
+    for n in 1..=paragraphs {
+        write!(text, "Paragraph {n} begins.").unwrap();
+        for _ in 0..12 {
+            text.push_str(" It goes on with words enough to fill a line of the column and more.");
+        }
+        text.push_str("\n\n");
+    }
+    text
+}
+
+fn page_number(started: &Started, cx: &mut TestAppContext) -> (usize, usize) {
+    started
+        .view
+        .read_with(cx, |view, _| view.page_number())
+        .unwrap()
+}
+
+/// Shows `text` a page at a time in a window of 800 by 400 pixels.
+fn paged_with(cx: &mut TestAppContext, text: &str) -> Started {
+    let started = start_paged(cx, 800.0, 400.0);
+    started.view.update(cx, |view, cx| {
+        view.set_chapter(text, blocks::block_offsets(text), cx);
+    });
+    settle(&started, cx);
+    started
+}
+
+#[gpui_kit::test]
+fn a_paragraph_is_as_high_as_its_lines_and_the_gap_of_the_kit(cx: &mut TestAppContext) {
+    // What the pages are divided by: a line of 20 pixels at 1.6 is 32 pixels
+    // high, and a paragraph that another follows has 0.75 rem under it.
+    let started = paged_with(cx, "One line.\n\nAnother.\n");
+    let heights = started
+        .view
+        .read_with(cx, |view, _| view.paging.as_ref().unwrap().heights.clone());
+    assert_eq!(heights, vec![32.0 + 16.0 * PARAGRAPH_GAP_REMS, 32.0]);
+}
+
+#[gpui_kit::test]
+fn a_long_chapter_is_divided_into_pages(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(12));
+    let (page, count) = page_number(&started, cx);
+    assert_eq!(page, 1);
+    assert!(count > 3, "{count}");
+    assert!(started.view.read_with(cx, ChapterView::at_start));
+    assert!(!started.view.read_with(cx, ChapterView::at_end));
+}
+
+#[gpui_kit::test]
+fn a_page_ends_between_two_lines_of_a_paragraph(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(12));
+    started.view.read_with(cx, |view, _| {
+        let paging = view.paging.as_ref().unwrap();
+        let divided: Vec<_> = paging
+            .pages
+            .iter()
+            .filter(|page| page.offset > 0.0)
+            .collect();
+        assert!(!divided.is_empty(), "no paragraph runs over a page");
+        for page in &paging.pages {
+            assert!(page.extent <= 400.0, "{page:?}");
+        }
+        for page in divided {
+            let lines = page.offset / 32.0;
+            assert!((lines - lines.round()).abs() < 0.01, "{page:?}");
+        }
+    });
+}
+
+#[gpui_kit::test]
+fn the_list_of_the_kit_starts_where_the_page_starts(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(12));
+    started
+        .view
+        .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
+    settle(&started, cx);
+    let (page, top) = started.view.read_with(cx, |view, cx| {
+        let paging = view.paging.as_ref().unwrap();
+        (
+            paging.pages[paging.page],
+            view.state.read(cx).list_state().logical_scroll_top(),
+        )
+    });
+    assert_eq!(top.item_ix, page.item);
+    assert!((top.offset_in_item.as_f32() - page.offset).abs() < 0.01);
+}
+
+#[gpui_kit::test]
+fn a_page_is_turned_forward_and_back(cx: &mut TestAppContext) {
+    let text = long_chapter(12);
+    let started = paged_with(cx, &text);
+    started
+        .view
+        .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
+    settle(&started, cx);
+    assert_eq!(page_number(&started, cx).0, 2);
+    let second = top(&started, cx);
+    assert!(second > 0);
+    assert!(!started.view.read_with(cx, ChapterView::at_start));
+
+    started
+        .view
+        .update(cx, |view, cx| view.turn_page(Direction::Back, cx));
+    settle(&started, cx);
+    assert_eq!(page_number(&started, cx).0, 1);
+    assert_eq!(top(&started, cx), 0);
+}
+
+#[gpui_kit::test]
+fn the_first_page_has_none_before_it_and_the_last_none_after_it(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(12));
+    started
+        .view
+        .update(cx, |view, cx| view.turn_page(Direction::Back, cx));
+    assert_eq!(page_number(&started, cx).0, 1);
+
+    started.view.update(cx, ChapterView::reveal_end);
+    settle(&started, cx);
+    let (page, count) = page_number(&started, cx);
+    assert_eq!(page, count);
+    assert!(started.view.read_with(cx, ChapterView::at_end));
+    started
+        .view
+        .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
+    assert_eq!(page_number(&started, cx).0, count);
+}
+
+#[gpui_kit::test]
+fn a_place_is_shown_on_its_page_and_kept_as_the_first_line_of_it(cx: &mut TestAppContext) {
+    let text = long_chapter(12);
+    let started = paged_with(cx, &text);
+    for page in 1..=page_number(&started, cx).1 {
+        assert_eq!(page_number(&started, cx).0, page);
+        // The place that is kept leads back to the page it was kept on.
+        let kept = top(&started, cx);
+        started.view.update(cx, |view, cx| view.reveal(kept, cx));
+        settle(&started, cx);
+        assert_eq!(page_number(&started, cx).0, page, "the place {kept}");
+        started
+            .view
+            .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
+        settle(&started, cx);
+    }
+}
+
+#[gpui_kit::test]
+fn a_block_is_shown_on_the_page_that_holds_it(cx: &mut TestAppContext) {
+    let text = long_chapter(12);
+    let started = paged_with(cx, &text);
+    let target = offset_of(&text, "Paragraph 9 begins");
+    started.view.update(cx, |view, cx| view.reveal(target, cx));
+    settle(&started, cx);
+    let (page, count) = page_number(&started, cx);
+    assert!(page > 1 && page <= count, "{page} of {count}");
+    let place = top(&started, cx);
+    assert!(place <= target, "{place} is after {target}");
+}
+
+#[gpui_kit::test]
+fn a_paged_text_is_not_shown_before_it_has_its_pages(cx: &mut TestAppContext) {
+    let started = start_paged(cx, 800.0, 400.0);
+    started
+        .view
+        .update(cx, |view, cx| view.set_text(&long_chapter(12), cx));
+    assert_eq!(
+        started.view.read_with(cx, |view, _| view.page_number()),
+        None
+    );
+    assert!(!started.view.read_with(cx, ChapterView::at_end));
+    settle(&started, cx);
+    assert_eq!(page_number(&started, cx).0, 1);
+}
+
+#[gpui_kit::test]
+fn a_short_paged_text_is_one_page(cx: &mut TestAppContext) {
+    let started = paged_with(cx, "Short.\n");
+    assert_eq!(page_number(&started, cx), (1, 1));
+    assert!(started.view.read_with(cx, ChapterView::at_start));
+    assert!(started.view.read_with(cx, ChapterView::at_end));
+}
+
+#[gpui_kit::test]
+fn an_empty_paged_text_is_one_page(cx: &mut TestAppContext) {
+    let started = paged_with(cx, "");
+    assert_eq!(page_number(&started, cx), (1, 1));
+}
+
+#[gpui_kit::test]
+fn a_scrolled_text_has_no_pages(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    started
+        .view
+        .update(cx, |view, cx| view.set_text(&chapter(60), cx));
+    settle(&started, cx);
+    assert_eq!(
+        started.view.read_with(cx, |view, _| view.page_number()),
+        None
+    );
+}
+
+#[gpui_kit::test]
+fn a_larger_text_makes_more_pages_and_keeps_the_place(cx: &mut TestAppContext) {
+    let text = long_chapter(12);
+    let started = paged_with(cx, &text);
+    let target = offset_of(&text, "Paragraph 7 begins");
+    started.view.update(cx, |view, cx| view.reveal(target, cx));
+    settle(&started, cx);
+    let (_, before) = page_number(&started, cx);
+    cx.update(|cx| {
+        Appearance::global(cx).update(cx, |appearance, cx| {
+            appearance.update(|settings| settings.text_size = 28.0, cx);
+        });
+    });
+    settle(&started, cx);
+    let (_, after) = page_number(&started, cx);
+    assert!(after > before, "{after} pages after {before}");
+    // The page still shows the paragraph it showed.
+    let place = top(&started, cx);
+    let next = offset_of(&text, "Paragraph 8 begins");
+    assert!(place <= target && target < next, "{place}");
+    assert!(place >= offset_of(&text, "Paragraph 6 begins"), "{place}");
+}
+
+#[gpui_kit::test]
+fn a_shorter_window_recalculates_pages_around_the_reading_place(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(40));
+    started
+        .view
+        .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
+    settle(&started, cx);
+    let before = top(&started, cx);
+    let (_, total) = page_number(&started, cx);
+    cx.simulate_window_resize(
+        started.window,
+        gpui_kit::size(gpui_kit::px(800.0), gpui_kit::px(300.0)),
+    );
+    settle(&started, cx);
+    assert!(page_number(&started, cx).1 > total);
+    assert!(top(&started, cx) <= before);
+    started
+        .view
+        .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
+    assert!(top(&started, cx) > before);
+}
+
+#[gpui_kit::test]
+fn a_new_paged_text_starts_at_its_first_page(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(12));
+    started.view.update(cx, ChapterView::reveal_end);
+    settle(&started, cx);
+    let other = long_chapter(8);
+    started.view.update(cx, |view, cx| {
+        view.set_chapter(&other, blocks::block_offsets(&other), cx);
+    });
+    settle(&started, cx);
+    assert_eq!(page_number(&started, cx).0, 1);
+    assert_eq!(top(&started, cx), 0);
+}
+
+/// What the view emitted, collected.
+fn events(started: &Started, cx: &mut TestAppContext) -> Arc<Mutex<Vec<ChapterViewEvent>>> {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&seen);
+    cx.update(|cx| {
+        cx.subscribe(&started.view, move |_, event, _| {
+            sink.lock().unwrap().push(*event);
+        })
+        .detach();
+    });
+    seen
+}
+
+fn turns(events: &Arc<Mutex<Vec<ChapterViewEvent>>>) -> Vec<Direction> {
+    events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match event {
+            ChapterViewEvent::Turn(direction) => Some(*direction),
+            ChapterViewEvent::Moved => None,
+        })
+        .collect()
+}
+
+#[gpui_kit::test]
+fn the_wheel_scrolls_the_preview_without_turning_a_page(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    started.view.update(cx, |view, cx| {
+        view.set_text(&long_chapter(12), cx);
+    });
+    settle(&started, cx);
+    let seen = events(&started, cx);
+    cx.update_window(started.window, |_, window, cx| {
+        window.scroll(
+            "chapter-text",
+            gpui_kit::ScrollDelta::Pixels(gpui_kit::point(gpui_kit::px(0.0), gpui_kit::px(-120.0))),
+            cx,
+        );
+    })
+    .unwrap();
+    settle(&started, cx);
+    assert!(top(&started, cx) > 0);
+    assert_eq!(turns(&seen), Vec::<Direction>::new());
+}
+
+#[gpui_kit::test]
+fn the_wheel_over_a_paged_text_asks_for_a_page_and_scrolls_nothing(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(12));
+    let seen = events(&started, cx);
+    cx.update_window(started.window, |_, window, cx| {
+        window.scroll(
+            "chapter-text",
+            gpui_kit::ScrollDelta::Pixels(gpui_kit::point(gpui_kit::px(0.0), gpui_kit::px(-120.0))),
+            cx,
+        );
+    })
+    .unwrap();
+    settle(&started, cx);
+    assert_eq!(turns(&seen), vec![Direction::Forward]);
+    // The owner turns the page; the list of the Kit has not moved.
+    assert_eq!(page_number(&started, cx).0, 1);
+    let at = started.view.read_with(cx, |view, cx| {
+        view.state.read(cx).list_state().logical_scroll_top()
+    });
+    assert_eq!(at.item_ix, 0);
+    assert!(at.offset_in_item.as_f32().abs() < 0.01);
+}
+
+#[gpui_kit::test]
+fn a_click_beside_a_paged_text_asks_for_a_page(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(12));
+    let seen = events(&started, cx);
+    cx.update_window(started.window, |_, window, cx| {
+        // The column has margins of 32 pixels.
+        for x in [780.0, 20.0] {
+            let at = gpui_kit::point(gpui_kit::px(x), gpui_kit::px(200.0));
+            window.pointer_down(at, gpui_kit::MouseButton::Left, cx);
+            window.pointer_up(at, gpui_kit::MouseButton::Left, cx);
+        }
+    })
+    .unwrap();
+    assert_eq!(turns(&seen), vec![Direction::Forward, Direction::Back]);
+}
+
+#[gpui_kit::test]
+fn a_turn_is_drawn_in_two_steps_when_motion_is_allowed(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(12));
+    cx.update(|cx| cx.set_reduce_motion(false));
+    started
+        .view
+        .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
+    // The page is turned at once; the one before it is drawn while it leaves.
+    assert_eq!(page_number(&started, cx).0, 2);
+    let leaving = |cx: &mut TestAppContext| {
+        testing::frame(cx, started.window, |_, _| ());
+        started.view.read_with(cx, |view, cx| {
+            let top = view.state.read(cx).list_state().logical_scroll_top();
+            (top.item_ix, top.offset_in_item.as_f32())
+        })
+    };
+    assert_eq!(leaving(cx), (0, 0.0));
+    cx.executor().advance_clock(LEAVE + ARRIVE + LEAVE);
+    let arrived = leaving(cx);
+    assert_ne!(arrived, (0, 0.0));
+    testing::frame(cx, started.window, |_, _| ());
+    assert!(
+        started
+            .view
+            .read_with(cx, |view, _| view.paging.as_ref().unwrap().turn.is_none())
+    );
 }

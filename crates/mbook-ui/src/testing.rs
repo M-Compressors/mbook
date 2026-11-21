@@ -130,13 +130,23 @@ impl Render for Blank {
 /// tells assistive technology only about elements with a role, so these
 /// reach nobody; the controls they belong to have their roles and names.
 pub(crate) fn is_kit_decoration(path: &str) -> bool {
-    const PARTS: [&str; 6] = [
+    const PARTS: [&str; 8] = [
         "gpui_component::input",
         "Name(\"input\")",
         "NamedInteger(\"input\"",
         "slider::SliderTrack",
+        "progress::ProgressTrack",
+        "progress::ProgressIndicator",
         "ToastStack",
         "Sheet",
     ];
     PARTS.iter().any(|part| path.contains(part))
+        || (path.contains("gpui_component::title_bar::TitleBar")
+            && [
+                "Name(\"title-bar\")]",
+                "Name(\"bar\")]",
+                "Name(\"window-controls\")]",
+            ]
+            .iter()
+            .any(|part| path.ends_with(part)))
 }

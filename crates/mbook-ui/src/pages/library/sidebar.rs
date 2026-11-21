@@ -86,9 +86,15 @@ impl Render for LibrarySidebar {
                 let active = section == current;
                 let count = counts.of(section);
                 let label = section.label();
+                let icon = match section {
+                    Section::All => IconName::Library,
+                    Section::Reading => IconName::BookOpen,
+                    Section::Finished => IconName::CircleCheck,
+                };
                 let page = self.page.clone();
                 Button::new(format!("section-{}", section_slug(section)))
                     .ghost()
+                    .icon(icon)
                     .w_full()
                     .h(px(target_size()))
                     .selected(active)
@@ -99,11 +105,16 @@ impl Render for LibrarySidebar {
                     ))
                     .cursor_pointer()
                     .child(
-                        h_flex().w_full().justify_between().child(label).child(
-                            div()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(count.to_string()),
-                        ),
+                        h_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .justify_between()
+                            .child(label)
+                            .child(
+                                div()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(count.to_string()),
+                            ),
                     )
                     .on_click(move |_, window, cx| {
                         page.update(cx, |page, cx| page.set_section(section, cx))

@@ -1,5 +1,7 @@
 //! Decoding AVIF files, and the thumbnail of a cover.
 
+use std::thread;
+
 use super::bitmap::Bitmap;
 use super::error::PictureError;
 use super::transform::transforms;
@@ -9,6 +11,10 @@ use mbook::Book;
 
 /// Quality of the JPEG of a thumbnail.
 const THUMBNAIL_QUALITY: u8 = 85;
+
+// rav1d uses large stack frames, particularly in debug builds. The GPUI
+// executor's native background queues can have a much smaller stack.
+const DECODE_STACK: usize = 8 * 1024 * 1024;
 
 /// The pixels an AVIF file declares, read from its container without decoding.
 ///
@@ -34,7 +40,8 @@ fn declared_pixels(avif: &[u8]) -> Result<u64, PictureError> {
 /// # Errors
 ///
 /// [`PictureError::TooManyPixels`] when the picture has more than `max_pixels`
-/// pixels, [`PictureError::Undecodable`] when it is not a valid AVIF file.
+/// pixels, [`PictureError::Undecodable`] for invalid AVIF data, or a decoder
+/// thread error if the decode cannot run to completion.
 pub(crate) fn decode_avif(avif: &[u8], max_pixels: u64) -> Result<Bitmap, PictureError> {
     let declared = declared_pixels(avif)?;
     if declared > max_pixels {
@@ -43,6 +50,19 @@ pub(crate) fn decode_avif(avif: &[u8], max_pixels: u64) -> Result<Bitmap, Pictur
             limit: max_pixels,
         });
     }
+    thread::scope(|scope| {
+        thread::Builder::new()
+            .name("mbook-avif".to_owned())
+            .stack_size(DECODE_STACK)
+            .spawn_scoped(scope, || decode_pixels(avif))
+            .map_err(PictureError::DecoderThread)?
+            .join()
+            .map_err(|_| PictureError::DecoderStopped)?
+    })
+}
+
+/// Decodes the bounded picture on a thread with room for the codec's stack.
+fn decode_pixels(avif: &[u8]) -> Result<Bitmap, PictureError> {
     let image = Decoder::from_avif(avif)
         .and_then(Decoder::to_image)
         .map_err(PictureError::undecodable)?;
@@ -195,6 +215,20 @@ mod tests {
             decoded_size("plain.avif"),
             stored_size(fixture("plain.avif"))
         );
+    }
+
+    #[test]
+    fn avif_decodes_when_the_callers_stack_is_small() {
+        let avif = fixture("plain.avif");
+        let expected = stored_size(avif.clone());
+        let bitmap = std::thread::Builder::new()
+            .stack_size(512 * 1024)
+            .spawn(move || decode_avif(&avif, LIMIT))
+            .unwrap()
+            .join()
+            .unwrap()
+            .unwrap();
+        assert_eq!((bitmap.width(), bitmap.height()), expected);
     }
 
     #[test]

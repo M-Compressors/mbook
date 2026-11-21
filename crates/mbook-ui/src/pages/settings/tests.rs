@@ -252,7 +252,9 @@ fn every_reported_element_has_a_role_and_every_control_a_name(cx: &mut TestAppCo
         let started = start(cx, width);
         testing::frame(cx, started.window, |window, _| {
             for element in window.elements() {
-                if is_inside_select(&element) {
+                if is_inside_select(&element)
+                    || testing::is_kit_decoration(&format!("{:?}", element.path()))
+                {
                     continue;
                 }
                 assert!(element.role().is_some(), "{width} px: no role: {element:?}");
@@ -360,17 +362,17 @@ fn motion_is_reduced_by_choice_and_follows_the_system_by_default(cx: &mut TestAp
 fn the_text_is_made_larger_and_smaller_by_buttons(cx: &mut TestAppContext) {
     let started = start(cx, 800.0);
     click_label(&started, "Larger text", cx);
+    assert!((settings(&started, cx).text_size - 21.0).abs() < 0.001);
+    assert_eq!(
+        label_of(&started, "text-size-value", cx).as_deref(),
+        Some("21 px")
+    );
+    click_label(&started, "Smaller text", cx);
+    click_label(&started, "Smaller text", cx);
     assert!((settings(&started, cx).text_size - 19.0).abs() < 0.001);
     assert_eq!(
         label_of(&started, "text-size-value", cx).as_deref(),
         Some("19 px")
-    );
-    click_label(&started, "Smaller text", cx);
-    click_label(&started, "Smaller text", cx);
-    assert!((settings(&started, cx).text_size - 17.0).abs() < 0.001);
-    assert_eq!(
-        label_of(&started, "text-size-value", cx).as_deref(),
-        Some("17 px")
     );
 }
 
@@ -390,13 +392,13 @@ fn the_slider_of_the_text_size_is_set_with_the_keys_alone(cx: &mut TestAppContex
     let started = start(cx, 800.0);
     tab_to(&started, "Size of the text", cx);
     press(&started, "right", cx);
+    assert!((settings(&started, cx).text_size - 21.0).abs() < 0.001);
+    press(&started, "left", cx);
+    press(&started, "left", cx);
     assert!((settings(&started, cx).text_size - 19.0).abs() < 0.001);
-    press(&started, "left", cx);
-    press(&started, "left", cx);
-    assert!((settings(&started, cx).text_size - 17.0).abs() < 0.001);
     assert_eq!(
         label_of(&started, "text-size-value", cx).as_deref(),
-        Some("17 px")
+        Some("19 px")
     );
 }
 

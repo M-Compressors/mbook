@@ -1,9 +1,20 @@
 //! The text of a chapter, as the reader and the preview of the editor show it.
 //!
-//! [`ChapterView`] is the Markdown view of GPUI Kit in its scrolling,
-//! virtualised form, set in the typeface, size, line height and page tone of
-//! the [`Appearance`]. It knows nothing of files: the owner hands it Markdown,
+//! [`ChapterView`] is the Markdown view of GPUI Kit in its virtualised form,
+//! set in the typeface, size, line height and page tone of the
+//! [`Appearance`]. It knows nothing of files: the owner hands it Markdown,
 //! and optionally a way to find the pictures of the text.
+//!
+//! The text is moved through in one of two ways:
+//!
+//! * **scrolled**, as the preview of the editor shows it ([`ChapterView::new`]);
+//! * **a page at a time**, as the reader shows it ([`ChapterView::paged`]).
+//!   The Kit lays the chapter out as one column and tells the height of every
+//!   block; [`pages`] divides that column into pages that end between two
+//!   lines. The view puts the start of a page at the top of the window and
+//!   covers what follows its end. A turn of the page is drawn with the motion
+//!   of the Kit: the page slides out towards where it came from and the next
+//!   one slides in.
 //!
 //! # What the Kit does and does not give
 //!
@@ -30,26 +41,51 @@
 mod alt;
 mod blocks;
 mod layout;
+mod pages;
 #[cfg(test)]
 mod tests;
+mod wheel;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::assets::IconName;
+use gpui_kit::base::animation::ease_in_cubic;
+use gpui_kit::base::motion::{MotionTransform, Sequence, Transition};
 use gpui_kit::component::text::{TextView, TextViewState};
+use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
-    App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, ImageCacheError, ImageSource,
-    InteractiveElement as _, IntoElement, ListOffset, MouseButton, ParentElement as _, Pixels,
-    Render, RenderImage, Role, SharedString, SharedUri, StatefulInteractiveElement as _,
-    Styled as _, Subscription, Task, TestSupportExt as _, WeakEntity, Window, div, px, relative,
+    AnyElement, App, AppContext as _, ClickEvent, Context, DispatchPhase, ElementId, Entity,
+    EventEmitter, HitboxBehavior, Hsla, ImageCacheError, ImageSource, InteractiveElement as _,
+    IntoElement, ListOffset, ListState, MouseButton, ParentElement as _, Pixels, Render,
+    RenderImage, Role, ScrollDelta, ScrollEvent, SharedString, SharedUri,
+    StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _,
+    TouchPhase, WeakEntity, Window, canvas, div, point, px, relative,
 };
 
+use self::pages::{Block, BlockKind, Measures, Page};
+use self::wheel::{Travel, Wheel};
 use crate::entities::picture::Bitmap;
 use crate::features::appearance::Appearance;
 use crate::shared::ui::page_colors;
 
 pub(crate) use layout::device_width;
+
+/// The gap the Kit leaves under a paragraph, in rems: the `paragraph_gap` of
+/// its text style, which the view does not change. A test measures it.
+const PARAGRAPH_GAP_REMS: f32 = 0.75;
+/// How far a page slides while it is turned, in pixels.
+const SLIDE: f32 = 28.0;
+/// How long a page takes to leave.
+const LEAVE: Duration = Duration::from_millis(90);
+/// How long a page takes to arrive.
+const ARRIVE: Duration = Duration::from_millis(220);
+/// The room beside the text the Kit draws its scroll bar in, which a paged
+/// text does not show: the bar is laid out there and cut off.
+const SCROLLBAR_ROOM: f32 = 24.0;
+/// The least width of a margin that shows where a click turns the page.
+const MARGIN_HINT: f32 = 56.0;
 
 /// How far a picture has come, as the owner of a text tells the view.
 #[derive(Clone)]
@@ -87,8 +123,42 @@ pub(crate) enum Direction {
 /// What the view tells the page around it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChapterViewEvent {
-    /// The user scrolled the text.
-    Scrolled,
+    /// The place in the text changed, or the number of its pages.
+    Moved,
+    /// The reader asked for the next or the previous page with the wheel or
+    /// with a click beside the text. The owner turns it, since past the last
+    /// page it is the owner who knows what follows.
+    Turn(Direction),
+}
+
+/// The turn of a page that is being drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Turn {
+    /// The page that leaves; `None` when a page only arrives.
+    from: Option<usize>,
+    direction: Direction,
+    /// Tells this turn from the one before it, for the motion of the Kit.
+    id: u64,
+}
+
+/// The pages of a text that is shown a page at a time.
+#[derive(Default)]
+struct Paging {
+    /// The heights of the list items the pages were made from.
+    heights: Vec<f32>,
+    /// What the pages were divided by; `None` until they are made.
+    measures: Option<Measures>,
+    pages: Vec<Page>,
+    /// The page that is shown.
+    page: usize,
+    /// Where the page is found again when the pages change: a list item and
+    /// how far into it, from 0 to 1.
+    anchor: (usize, f32),
+    /// Whether the text has been shown since it was set.
+    arrived: bool,
+    turn: Option<Turn>,
+    turns: u64,
+    wheel: Wheel,
 }
 
 /// Where the text is to be put once it is laid out.
@@ -130,25 +200,83 @@ pub(crate) struct ChapterView {
     laid_out: bool,
     /// Tells a result of the background from one for a text that is gone.
     generation: u64,
+    /// `Some` when the text is shown a page at a time.
+    paging: Option<Paging>,
     blocks_task: Option<Task<()>>,
     alt_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
+impl Paging {
+    /// The page that shows the anchor, in the pages as they are now.
+    fn page_of_anchor(&self, measures: Measures) -> usize {
+        let (item, part) = self.anchor;
+        let height = self.heights.get(item).copied().unwrap_or(0.0).max(0.0);
+        let top: f32 = self.heights.iter().take(item).map(|h| h.max(0.0)).sum();
+        // A little way into the line the anchor is on: a place that was kept
+        // as a byte offset comes back a fraction of a line early.
+        let into = (measures.line / 2.0)
+            .min(height * (1.0 - part) / 2.0)
+            .max(0.0);
+        pages::page_at(&self.pages, top + height * part + into)
+    }
+
+    /// Remembers where the page that is shown starts.
+    fn keep_anchor(&mut self) {
+        let Some(page) = self.pages.get(self.page) else {
+            self.anchor = (0, 0.0);
+            return;
+        };
+        let height = self.heights.get(page.item).copied().unwrap_or(0.0);
+        let part = if height > 0.0 {
+            (page.offset / height).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        self.anchor = (page.item, part);
+    }
+}
+
+/// The height of every item of `list`, or `None` while one of them has not
+/// been measured. The list answers for the items from its top on, so it is
+/// asked from the first item and put back where it was.
+fn measured_heights(list: &ListState) -> Option<Vec<f32>> {
+    let at = list.logical_scroll_top();
+    let start = ListOffset {
+        item_ix: 0,
+        offset_in_item: px(0.0),
+    };
+    let moved = at.item_ix != 0 || at.offset_in_item != px(0.0);
+    if moved {
+        list.scroll_to(start);
+    }
+    let heights = (0..list.item_count())
+        .map(|item| {
+            list.bounds_for_item(item)
+                .map(|bounds| bounds.size.height.as_f32())
+        })
+        .collect();
+    if moved {
+        list.scroll_to(at);
+    }
+    heights
+}
+
 impl EventEmitter<ChapterViewEvent> for ChapterView {}
 
 impl ChapterView {
-    /// An empty view.
+    /// An empty view whose text is scrolled.
     pub(crate) fn new(_window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
+        Self::build(None, cx)
+    }
+
+    /// An empty view whose text is shown a page at a time.
+    pub(crate) fn paged(_window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
+        Self::build(Some(Paging::default()), cx)
+    }
+
+    fn build(paging: Option<Paging>, cx: &mut Context<'_, Self>) -> Self {
         let state = cx.new(|cx| TextViewState::markdown("", cx));
-        let this = cx.entity().downgrade();
-        state
-            .read(cx)
-            .list_state()
-            .set_scroll_handler(move |_, _, cx| {
-                this.update(cx, |_, cx| cx.emit(ChapterViewEvent::Scrolled))
-                    .ok();
-            });
         let mut subscriptions = vec![cx.observe(&state, |_, _, cx| cx.notify())];
         if let Some(appearance) = Appearance::try_global(cx) {
             subscriptions.push(cx.observe(&appearance, |this, _, cx| this.restyled(cx)));
@@ -168,6 +296,7 @@ impl ChapterView {
             waited: 0,
             laid_out: false,
             generation: 0,
+            paging,
             blocks_task: None,
             alt_task: None,
             _subscriptions: subscriptions,
@@ -220,25 +349,28 @@ impl ChapterView {
         cx.notify();
     }
 
-    /// Scrolls so that the block that contains the byte `offset` of the
-    /// source is at the top. Done as soon as the text is laid out.
+    /// Shows the place of the byte `offset` of the source: scrolled, the
+    /// block that contains it is at the top; paged, the page that shows it is
+    /// the page. Done as soon as the text is laid out.
     pub(crate) fn reveal(&mut self, offset: u32, cx: &mut Context<'_, Self>) {
         self.land(Landing::Offset(offset), cx);
     }
 
-    /// Scrolls to the start of the text.
+    /// Goes to the start of the text.
     pub(crate) fn reveal_start(&mut self, cx: &mut Context<'_, Self>) {
         self.land(Landing::Start, cx);
     }
 
-    /// Scrolls to the end of the text.
+    /// Goes to the end of the text: scrolled, its last line is at the bottom;
+    /// paged, the last page is the page.
     pub(crate) fn reveal_end(&mut self, cx: &mut Context<'_, Self>) {
         self.land(Landing::End, cx);
     }
 
-    /// The byte offset of the block at the top of the window; the place that
-    /// is kept. While the text is not laid out yet, the place it is to be put
-    /// at.
+    /// The byte offset of the place that is kept: scrolled, the block at the
+    /// top of the window; paged, the first line of the page, as near as the
+    /// height of its block tells. While the text is not laid out yet, the
+    /// place it is to be put at.
     pub(crate) fn top_offset(&self, cx: &App) -> u32 {
         match self.landing {
             Some(Landing::Offset(offset)) => return offset,
@@ -247,6 +379,16 @@ impl ChapterView {
             None => {}
         }
         let list = self.state.read(cx).list_state();
+        if let Some(paging) = &self.paging {
+            let (item, part) = paging.anchor;
+            return blocks::offset_of_place(
+                &self.blocks,
+                self.text.len(),
+                list.item_count(),
+                item,
+                part,
+            );
+        }
         blocks::offset_of_item(
             &self.blocks,
             self.text.len(),
@@ -255,9 +397,14 @@ impl ChapterView {
         )
     }
 
-    /// Moves by a screen, less a line of the text so that the eye keeps its
-    /// place.
-    pub(crate) fn scroll_by_screen(&mut self, direction: Direction, cx: &mut Context<'_, Self>) {
+    /// Moves on: paged, to the next or the previous page, which does nothing
+    /// on the last or the first; scrolled, by a screen less a line of the
+    /// text, so that the eye keeps its place.
+    pub(crate) fn turn_page(&mut self, direction: Direction, cx: &mut Context<'_, Self>) {
+        if self.paging.is_some() {
+            self.turn_to_neighbour(direction, cx);
+            return;
+        }
         let list = self.state.read(cx).list_state().clone();
         let line = Appearance::try_global(cx).map_or(px(0.0), |appearance| {
             let settings = appearance.read(cx).settings();
@@ -269,15 +416,26 @@ impl ChapterView {
             Direction::Back => -screen,
         });
         self.landing = None;
-        cx.emit(ChapterViewEvent::Scrolled);
+        cx.emit(ChapterViewEvent::Moved);
         cx.notify();
     }
 
-    /// Whether the end of the text is in the window. A text that is not laid
-    /// out yet is not at its end.
+    /// The page that is shown, counted from one, and how many the text has.
+    /// `None` for a text that is scrolled, or not divided into pages yet.
+    pub(crate) fn page_number(&self) -> Option<(usize, usize)> {
+        let paging = self.paging.as_ref()?;
+        (paging.measures.is_some() && self.landing.is_none())
+            .then(|| (paging.page + 1, paging.pages.len().max(1)))
+    }
+
+    /// Whether the end of the text is in the window: paged, whether the last
+    /// page is the page. A text that is not laid out yet is not at its end.
     pub(crate) fn at_end(&self, cx: &App) -> bool {
         if self.landing.is_some() || !self.parsed(cx) {
             return false;
+        }
+        if let Some(paging) = &self.paging {
+            return paging.measures.is_some() && paging.page + 1 >= paging.pages.len();
         }
         let list = self.state.read(cx).list_state();
         if list.viewport_bounds().size.height <= px(0.0) {
@@ -299,6 +457,9 @@ impl ChapterView {
         }
         if self.landing.is_some() {
             return false;
+        }
+        if let Some(paging) = &self.paging {
+            return paging.page == 0;
         }
         let top = self.state.read(cx).list_state().logical_scroll_top();
         top.item_ix == 0 && top.offset_in_item <= px(0.5)
@@ -335,7 +496,16 @@ impl ChapterView {
         self.generation += 1;
         self.text = markdown.to_owned().into();
         self.shown = self.text.clone();
-        self.landing = None;
+        // A paged text is hidden until it is divided, so it always has a
+        // place to be put at.
+        self.landing = self.paging.is_some().then_some(Landing::Start);
+        if let Some(paging) = &mut self.paging {
+            let turns = paging.turns;
+            *paging = Paging {
+                turns,
+                ..Paging::default()
+            };
+        }
         self.laid_out = false;
         self.waited = 0;
         drop(self.alt_task.take());
@@ -383,6 +553,13 @@ impl ChapterView {
 
     /// The style changed: the heights of the blocks are not what they were.
     fn restyled(&mut self, cx: &mut Context<'_, Self>) {
+        if self.paging.is_some() {
+            // The pages are divided again from the new heights, and the page
+            // is found at the place it was.
+            self.state.read(cx).list_state().remeasure();
+            cx.notify();
+            return;
+        }
         let at = self.top_offset(cx);
         self.state.read(cx).list_state().remeasure();
         if self.landing.is_none() {
@@ -447,6 +624,16 @@ impl ChapterView {
             return;
         }
         let list = self.state.read(cx).list_state().clone();
+        if self.paging.is_some() {
+            if !self.land_on_page(landing, &list) {
+                window.request_animation_frame();
+                return;
+            }
+            self.landing = None;
+            cx.emit(ChapterViewEvent::Moved);
+            cx.notify();
+            return;
+        }
         match landing {
             Landing::Start => list.scroll_to(ListOffset {
                 item_ix: 0,
@@ -464,8 +651,198 @@ impl ChapterView {
             }),
         }
         self.landing = None;
-        cx.emit(ChapterViewEvent::Scrolled);
+        cx.emit(ChapterViewEvent::Moved);
         cx.notify();
+    }
+
+    /// Puts a paged text at `landing`. `false` while the text is not divided
+    /// into pages yet.
+    fn land_on_page(&mut self, landing: Landing, list: &ListState) -> bool {
+        let (len, items) = (self.text.len(), list.item_count());
+        let Some(paging) = &mut self.paging else {
+            return false;
+        };
+        let Some(measures) = paging.measures else {
+            return false;
+        };
+        if paging.heights.len() != items {
+            return false;
+        }
+        paging.page = match landing {
+            Landing::Start => 0,
+            Landing::End => paging.pages.len().saturating_sub(1),
+            Landing::Offset(offset) => {
+                paging.anchor = blocks::place_of_offset(&self.blocks, len, items, offset);
+                paging.page_of_anchor(measures)
+            }
+        };
+        paging.keep_anchor();
+        if !paging.arrived {
+            // The text is shown for the first time: it slides in from the
+            // side it was reached from.
+            paging.arrived = true;
+            paging.turns += 1;
+            paging.turn = Some(Turn {
+                from: None,
+                direction: match landing {
+                    Landing::End => Direction::Back,
+                    Landing::Start | Landing::Offset(_) => Direction::Forward,
+                },
+                id: paging.turns,
+            });
+        }
+        true
+    }
+
+    /// Turns to the page after or before the one that is shown.
+    fn turn_to_neighbour(&mut self, direction: Direction, cx: &mut Context<'_, Self>) {
+        if self.landing.is_some() {
+            return;
+        }
+        let Some(paging) = &mut self.paging else {
+            return;
+        };
+        let target = match direction {
+            Direction::Forward => paging.page + 1,
+            Direction::Back => match paging.page.checked_sub(1) {
+                Some(page) => page,
+                None => return,
+            },
+        };
+        if paging.measures.is_none() || target >= paging.pages.len() {
+            return;
+        }
+        paging.turns += 1;
+        paging.turn = Some(Turn {
+            // A turn that follows one still being drawn does not wait for a
+            // page to leave: a held key shows page after page.
+            from: paging.turn.is_none().then_some(paging.page),
+            direction,
+            id: paging.turns,
+        });
+        paging.page = target;
+        paging.keep_anchor();
+        cx.emit(ChapterViewEvent::Moved);
+        cx.notify();
+    }
+
+    /// Divides a paged text into pages again when the heights of its blocks,
+    /// the height of the window or the lines of the text are not what the
+    /// pages were made from. Runs before a frame is drawn, on what the frame
+    /// before laid out.
+    fn repaginate(&mut self, line: f32, gap: f32, cx: &mut Context<'_, Self>) {
+        let Some(paging) = &self.paging else {
+            return;
+        };
+        // The list still holds the text before this one until the Kit has
+        // laid the new one out.
+        let stale = paging.measures.is_none() && !self.laid_out;
+        if stale || !self.parsed(cx) {
+            return;
+        }
+        let list = self.state.read(cx).list_state().clone();
+        let page = list.viewport_bounds().size.height.as_f32();
+        let Some(heights) = measured_heights(&list) else {
+            return;
+        };
+        if page < 1.0 {
+            return;
+        }
+        let measures = Measures { page, line, gap };
+        let kinds = self.kinds(heights.len());
+        let Some(paging) = &mut self.paging else {
+            return;
+        };
+        if paging.measures == Some(measures) && paging.heights == heights {
+            return;
+        }
+        let blocks: Vec<Block> = heights
+            .iter()
+            .zip(kinds)
+            .map(|(&height, kind)| Block { height, kind })
+            .collect();
+        let before = (paging.page, paging.pages.len());
+        paging.pages = pages::paginate(&blocks, measures);
+        paging.heights = heights;
+        paging.measures = Some(measures);
+        paging.page = paging.page_of_anchor(measures);
+        if before != (paging.page, paging.pages.len()) {
+            cx.emit(ChapterViewEvent::Moved);
+        }
+    }
+
+    /// The kind of each of the `items` blocks of the list, by its first line.
+    /// When the Kit and the owner do not agree on the blocks, each counts as
+    /// a paragraph, and is divided only if its height is whole lines.
+    fn kinds(&self, items: usize) -> Vec<BlockKind> {
+        if self.blocks.len() != items {
+            return vec![BlockKind::Text; items];
+        }
+        self.blocks
+            .iter()
+            .map(|&start| {
+                self.shown
+                    .get(start as usize..)
+                    .map_or(BlockKind::Text, pages::kind_of)
+            })
+            .collect()
+    }
+
+    /// The page to draw in this frame and how it is moved: the page that is
+    /// shown, or the one that leaves while a turn has just begun.
+    fn sample_turn(&mut self, window: &mut Window, cx: &mut App) -> (usize, MotionTransform) {
+        let rest = MotionTransform::identity();
+        let Some(paging) = &mut self.paging else {
+            return (0, rest);
+        };
+        let Some(turn) = paging.turn else {
+            return (paging.page, rest);
+        };
+        let slide = match turn.direction {
+            Direction::Forward => SLIDE,
+            Direction::Back => -SLIDE,
+        };
+        let aside = |x: f32| MotionTransform {
+            translation: point(px(x), px(0.0)),
+            opacity: 0.0,
+            ..rest
+        };
+        let id = ElementId::NamedInteger("page-turn".into(), turn.id);
+        let arrive = Transition::new(ARRIVE);
+        let sequence = match turn.from {
+            Some(_) => Sequence::new(id, rest)
+                .with_step(aside(-slide), Transition::new(LEAVE).ease(ease_in_cubic))
+                .with_step(aside(slide), Transition::new(Duration::ZERO))
+                .with_step(rest, arrive),
+            None => Sequence::new(id, aside(slide)).with_step(rest, arrive),
+        };
+        let sample = sequence.sample(window, cx);
+        let leaving = turn
+            .from
+            .filter(|_| sample.step() == 0 && !sample.is_finished());
+        if sample.is_finished() {
+            paging.turn = None;
+        }
+        (leaving.unwrap_or(paging.page), *sample.value())
+    }
+
+    /// The wheel moved over a paged text: it does not scroll, it asks for a
+    /// page.
+    fn on_wheel(&mut self, event: &ScrollEvent, cx: &mut Context<'_, Self>) {
+        let Some(paging) = &mut self.paging else {
+            return;
+        };
+        let travel = match event.delta {
+            ScrollDelta::Lines(lines) => Travel::Lines(wheel::dominant(lines.x, lines.y)),
+            ScrollDelta::Pixels(pixels) => {
+                Travel::Pixels(wheel::dominant(pixels.x.as_f32(), pixels.y.as_f32()))
+            }
+        };
+        let begins = event.touch_phase == TouchPhase::Started;
+        let now = cx.background_executor().now();
+        if let Some(direction) = paging.wheel.feed(travel, begins, now) {
+            cx.emit(ChapterViewEvent::Turn(direction));
+        }
     }
 
     /// The source of one image of the text.
@@ -554,7 +931,6 @@ fn placeholder_image(size: (u32, u32)) -> Arc<RenderImage> {
 
 impl Render for ChapterView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        self.settle(window, cx);
         let (settings, tone, class, font) = match Appearance::try_global(cx) {
             Some(appearance) => {
                 let appearance = appearance.read(cx);
@@ -572,6 +948,11 @@ impl Render for ChapterView {
                 cx.theme().font_family.clone(),
             ),
         };
+        // What GPUI makes of a relative line height: whole pixels.
+        let line = (settings.text_size * settings.line_height).round();
+        let gap = window.rem_size().as_f32() * PARAGRAPH_GAP_REMS;
+        self.repaginate(line, gap, cx);
+        self.settle(window, cx);
         let (page, ink) = tone.map_or((cx.theme().background, cx.theme().foreground), page_colors);
         let viewport = window.viewport_size().width.as_f32();
         let column = layout::column_width(viewport, settings.text_size, class);
@@ -591,16 +972,161 @@ impl Render for ChapterView {
                 }
             });
         }
-        div()
+        let article = div()
             .id("chapter-text")
             .role(Role::Article)
             .aria_label(self.label.clone())
             .test_support()
             .size_full()
             .flex()
+            .bg(page);
+        if self.paging.is_none() {
+            return article
+                .justify_center()
+                .child(div().h_full().w(px(column)).child(view));
+        }
+        let hints = (viewport - column) / 2.0 >= MARGIN_HINT;
+        article
+            .relative()
+            .child(Self::wheel_catcher(cx))
+            .child(Self::margin(Direction::Back, hints, ink, cx))
+            .child(self.sheet(view, column, page, window, cx))
+            .child(Self::margin(Direction::Forward, hints, ink, cx))
+    }
+}
+
+impl ChapterView {
+    /// The page of a paged text: the column of the Kit with the start of the
+    /// page at its top, and what follows the end of the page covered.
+    fn sheet(
+        &mut self,
+        view: TextView,
+        column: f32,
+        paper: Hsla,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
+        let (shown, motion) = self.sample_turn(window, cx);
+        let list = self.state.read(cx).list_state().clone();
+        let ready = self.landing.is_none();
+        let page = self
+            .paging
+            .as_ref()
+            .filter(|paging| paging.measures.is_some())
+            .and_then(|paging| paging.pages.get(shown).copied());
+        if let Some(page) = page {
+            let top = ListOffset {
+                item_ix: page.item,
+                offset_in_item: px(page.offset),
+            };
+            let at = list.logical_scroll_top();
+            if at.item_ix != top.item_ix || at.offset_in_item != top.offset_in_item {
+                list.scroll_to(top);
+            }
+        }
+        // What the frame was drawn from. When the layout of the frame gives
+        // another height, the pages are divided again in the next.
+        let seen = (
+            list.viewport_bounds().size.height,
+            list.max_offset_for_scrollbar().y,
+        );
+        let watch = canvas(
+            move |_, window, _| {
+                let now = (
+                    list.viewport_bounds().size.height,
+                    list.max_offset_for_scrollbar().y,
+                );
+                if now != seen {
+                    window.request_animation_frame();
+                }
+            },
+            |_, (), _, _| {},
+        )
+        .absolute()
+        .size_0();
+        let visible = ready && page.is_some();
+        div()
+            .relative()
+            .flex_none()
+            .w(px(column))
+            .h_full()
+            .left(motion.translation.x)
+            .opacity(if visible { motion.opacity } else { 0.0 })
+            .child(
+                div()
+                    .size_full()
+                    .overflow_hidden()
+                    .child(view.w(px(column + SCROLLBAR_ROOM)).pr(px(SCROLLBAR_ROOM))),
+            )
+            .children(page.map(|page| {
+                // The lines after the end of the page, which belong to the
+                // next one.
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(page.extent))
+                    .bottom_0()
+                    .bg(paper)
+                    .block_mouse_except_scroll()
+            }))
+            .child(watch)
+            .into_any_element()
+    }
+
+    /// Takes the wheel before the text does. The Kit scrolls its list while
+    /// an event is on its way down, so the view claims the event earlier: a
+    /// listener of an element that is painted first is asked first.
+    fn wheel_catcher(cx: &mut Context<'_, Self>) -> AnyElement {
+        let view = cx.entity().downgrade();
+        canvas(
+            |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+            move |_, hitbox, window, _| {
+                window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Capture && hitbox.should_handle_scroll(window) {
+                        cx.stop_propagation();
+                        view.update(cx, |view, cx| view.on_wheel(event, cx)).ok();
+                    }
+                });
+            },
+        )
+        .absolute()
+        .inset_0()
+        .into_any_element()
+    }
+
+    /// The margin beside a paged text: a click on it turns the page, and
+    /// while the pointer is over it, it shows which way.
+    fn margin(
+        direction: Direction,
+        hints: bool,
+        ink: Hsla,
+        cx: &mut Context<'_, Self>,
+    ) -> AnyElement {
+        let (group, icon) = match direction {
+            Direction::Back => ("margin-back", IconName::ChevronLeft),
+            Direction::Forward => ("margin-forward", IconName::ChevronRight),
+        };
+        div()
+            .group(group)
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .flex()
+            .items_center()
             .justify_center()
-            .bg(page)
-            .child(div().h_full().w(px(column)).child(view))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |_, _, _, cx| cx.emit(ChapterViewEvent::Turn(direction))),
+            )
+            .children(hints.then(|| {
+                div()
+                    .text_color(ink)
+                    .opacity(0.0)
+                    .group_hover(group, |style| style.opacity(0.45))
+                    .child(Icon::new(icon).large())
+            }))
+            .into_any_element()
     }
 }
 

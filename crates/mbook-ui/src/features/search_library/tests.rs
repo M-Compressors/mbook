@@ -284,14 +284,6 @@ fn the_caption_under_a_cover_is_a_percentage_new_or_finished() {
 }
 
 #[test]
-fn the_line_of_progress_fills_by_the_share_read() {
-    assert!(Progress::New.fraction().abs() < f32::EPSILON);
-    assert!((Progress::Reading(500).fraction() - 0.5).abs() < f32::EPSILON);
-    assert!((Progress::Reading(5000).fraction() - 1.0).abs() < f32::EPSILON);
-    assert!((Progress::Finished.fraction() - 1.0).abs() < f32::EPSILON);
-}
-
-#[test]
 fn the_book_to_continue_is_the_last_opened_one_that_is_not_finished() {
     let books = vec![
         opened(book("Early", &[]), 10, 100),

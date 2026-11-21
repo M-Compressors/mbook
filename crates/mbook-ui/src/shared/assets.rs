@@ -10,7 +10,24 @@ use gpui_kit::{App, AssetSource, Result, SharedString};
 // `Settings`, `Search`, `BookOpen`, `CircleAlert`, `Loader`, `Ellipsis`,
 // `ChevronLeft`/`Right`, `Check` and `Info`. Name here an icon a page needs
 // that the bundle lacks; never copy an SVG into the repository.
-icon_assets!(AppIcons, [Library, Pencil, Trash, FilePlus, List]);
+icon_assets!(
+    AppIcons,
+    [
+        Library,
+        Pencil,
+        Trash,
+        FilePlus,
+        List,
+        AArrowDown,
+        AArrowUp,
+        Code,
+        Columns2,
+        FilePenLine,
+        FoldVertical,
+        UnfoldVertical,
+        SunMoon
+    ]
+);
 
 /// The asset source of the application: its own icons first, then the default
 /// bundle of GPUI Kit.
@@ -58,6 +75,31 @@ mod tests {
     #[test]
     fn an_icon_of_the_application_is_found() {
         assert!(Assets.load("icons/pencil.svg").unwrap().is_some());
+    }
+
+    #[test]
+    fn every_redesign_icon_is_embedded() {
+        for name in [
+            "a-arrow-down",
+            "a-arrow-up",
+            "code",
+            "columns-2",
+            "file-pen-line",
+            "fold-vertical",
+            "unfold-vertical",
+            "sun-moon",
+            "a-large-small",
+            "arrow-up",
+            "arrow-down",
+            "circle-check",
+            "eye",
+            "sort-ascending",
+        ] {
+            assert!(
+                Assets.load(&format!("icons/{name}.svg")).unwrap().is_some(),
+                "{name}"
+            );
+        }
     }
 
     #[test]

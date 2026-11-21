@@ -59,6 +59,7 @@ pub(super) fn all() -> Vec<Shot> {
     vec![
         shot("01-library-empty", Library::Empty, |_| Ok(())),
         shot("02-library-books", Library::Books, seed_imports),
+        shot("02b-library-book-hover", Library::Books, hover_book),
         shot("03a-library-search", Library::Books, |stage| {
             type_in_search(stage, "mo")
         }),
@@ -70,6 +71,13 @@ pub(super) fn all() -> Vec<Shot> {
         Shot {
             settings: keep_controls,
             ..shot("05-reader-chapter", Library::Books, open_reader)
+        },
+        Shot {
+            settings: keep_controls,
+            ..shot("05b-reader-next-page", Library::Books, |stage| {
+                open_reader(stage)?;
+                stage.click("next-page")
+            })
         },
         shot("06a-reader-hidden", Library::Books, reader_hidden),
         Shot {
@@ -188,6 +196,12 @@ fn type_in_search(stage: &mut Stage, words: &str) -> Result<()> {
     stage.with_window(|window, cx| window.dispatch_action(FindBooks.boxed_clone(), cx))?;
     stage.settle()?;
     stage.type_text(words)
+}
+
+/// Hovers the first book so the inset around its reading status is visible.
+fn hover_book(stage: &mut Stage) -> Result<()> {
+    let key = book(stage, 8)?;
+    stage.hover(&format!("open-{key}"))
 }
 
 /// Opens the menu of the book that stands first on the shelf.

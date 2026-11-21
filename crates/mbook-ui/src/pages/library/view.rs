@@ -88,18 +88,11 @@ impl LibraryPage {
     }
 
     fn render_header(&self, class: SizeClass, cx: &mut Context<'_, Self>) -> AnyElement {
-        let compact = class == SizeClass::Compact;
         let sort = self.sort;
         let page = cx.weak_entity();
         let sort_label = format!("Sort: {}", sort.label());
-        let sort_button = Button::new("sort")
-            .ghost()
-            .icon(IconName::SortAscending)
-            .accessibility_label(sort_label.clone())
-            .h(px(target_size()))
-            .cursor_pointer()
-            .when_label(!compact, sort_label.clone())
-            .dropdown_menu(move |menu, _, _| {
+        let sort_button = icon_button("sort", IconName::SortAscending, sort_label).dropdown_menu(
+            move |menu, _, _| {
                 Sort::ALL.into_iter().fold(menu, |menu, choice| {
                     let page = page.clone();
                     menu.item(
@@ -110,7 +103,8 @@ impl LibraryPage {
                             }),
                     )
                 })
-            });
+            },
+        );
         let mut header = page_header("Library");
         if class == SizeClass::Medium {
             header = header.leading(
@@ -212,6 +206,7 @@ impl LibraryPage {
 
     /// The row with the name of the section and how many books it shows.
     fn render_heading(&self, cx: &mut Context<'_, Self>) -> AnyElement {
+        let font = Appearance::global(cx).read(cx).reading_font(cx);
         let muted = cx.theme().muted_foreground;
         let words: SharedString = if self.shelf.is_ready() {
             count_label(self.shelf.visible().len()).into()
@@ -232,7 +227,8 @@ impl LibraryPage {
                     .aria_level(2)
                     .aria_label(self.section.label())
                     .test_support()
-                    .text_lg()
+                    .text_3xl()
+                    .font_family(font)
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(self.section.label()),
             )
@@ -352,17 +348,6 @@ impl LibraryPage {
     /// keys start from it when the user comes back.
     fn shelf_current(&mut self, key: crate::shared::model::BookKey) {
         self.shelf.set_current(key);
-    }
-}
-
-/// A button with a label, or without one.
-trait WhenLabel {
-    fn when_label(self, show: bool, label: String) -> Self;
-}
-
-impl WhenLabel for Button {
-    fn when_label(self, show: bool, label: String) -> Self {
-        if show { self.label(label) } else { self }
     }
 }
 

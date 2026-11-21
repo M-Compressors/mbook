@@ -237,11 +237,15 @@ impl Stage {
     }
 
     /// Puts the pointer over an element.
-    pub(super) fn hover(&mut self, id: &'static str) -> Result<()> {
-        if !self.has(id)? {
-            return Err(missing(id));
-        }
-        self.with_window(|window, cx| window.hover(id, cx))?;
+    pub(super) fn hover(&mut self, id: &str) -> Result<()> {
+        let id = id.to_owned();
+        self.with_window(|window, cx| {
+            if window.try_find(id.clone()).is_none() {
+                return Err(missing(&id));
+            }
+            window.hover(id, cx);
+            Ok(())
+        })??;
         self.settle()
     }
 

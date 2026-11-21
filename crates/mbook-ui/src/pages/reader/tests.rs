@@ -222,7 +222,7 @@ fn the_reader_works_at_each_width(cx: &mut TestAppContext) {
             for label in [
                 "Back",
                 "Contents",
-                "Aa, text and page appearance",
+                "Text and page appearance",
                 "Edit this book",
             ] {
                 assert!(
@@ -322,7 +322,16 @@ fn a_book_reopens_where_it_was_left(cx: &mut TestAppContext) {
     let started = start_with(cx, 800.0, &chapters, Some(state)).unwrap();
     settle(&started, cx);
     assert_eq!(chapter_of(&started, cx), 1);
-    assert_eq!(top(&started, cx), target, "snapped to the block");
+    let first = top(&started, cx);
+    assert!(
+        first <= target + 7,
+        "the page begins before the stored place"
+    );
+    press(&started, "pagedown", cx);
+    assert!(
+        top(&started, cx) > target + 7,
+        "the next page begins after it"
+    );
 }
 
 #[gpui_kit::test]
@@ -815,14 +824,29 @@ fn the_text_is_made_larger_and_smaller_within_its_bounds(cx: &mut TestAppContext
     let size = |cx: &mut TestAppContext| {
         cx.update(|cx| Appearance::global(cx).read(cx).settings().text_size)
     };
-    assert!((size(cx) - 18.0).abs() < f32::EPSILON);
-    click(&started, "text-larger", cx);
     assert!((size(cx) - 20.0).abs() < f32::EPSILON);
+    click(&started, "text-larger", cx);
+    assert!((size(cx) - 22.0).abs() < f32::EPSILON);
     click(&started, "text-smaller", cx);
     click(&started, "text-smaller", cx);
-    assert!((size(cx) - 16.0).abs() < f32::EPSILON);
+    assert!((size(cx) - 18.0).abs() < f32::EPSILON);
     testing::frame(cx, started.window, |window, _| {
-        assert_eq!(window.find("text-size").label(), Some("16 pixels"));
+        assert_eq!(window.find("text-size").label(), Some("18 pixels"));
+    });
+}
+
+#[gpui_kit::test]
+fn the_line_height_buttons_update_the_value(cx: &mut TestAppContext) {
+    let started = start(cx, 1280.0).unwrap();
+    settle(&started, cx);
+    click(&started, "appearance", cx);
+    click(&started, "line-looser", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert_eq!(window.find("line-height").label(), Some("1.7"));
+    });
+    click(&started, "line-tighter", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert_eq!(window.find("line-height").label(), Some("1.6"));
     });
 }
 
@@ -865,6 +889,36 @@ fn the_typeface_is_chosen_from_the_ones_on_offer(cx: &mut TestAppContext) {
     assert_eq!(face, "Literata");
 }
 
+#[gpui_kit::test]
+fn the_next_button_advances_the_page_number(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    started
+        .page
+        .update(cx, |page, cx| page.load_chapter(1, Arrival::Start, cx));
+    settle(&started, cx);
+    click(&started, "next-page", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(
+            window
+                .find("reader-page-number")
+                .label()
+                .unwrap()
+                .starts_with("2 of ")
+        );
+    });
+    click(&started, "previous-page", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(
+            window
+                .find("reader-page-number")
+                .label()
+                .unwrap()
+                .starts_with("1 of ")
+        );
+    });
+}
+
 // The controls
 
 #[gpui_kit::test]
@@ -878,6 +932,7 @@ fn the_controls_hide_while_reading_and_come_back_on_a_key(cx: &mut TestAppContex
     settle(&started, cx);
     assert!(!has(&started, "back", cx));
     assert!(!has(&started, "reader-status", cx));
+    assert!(has(&started, "reader-page-number", cx));
     press(&started, "home", cx);
     assert!(has(&started, "back", cx));
     assert!(has(&started, "reader-status", cx));
@@ -1159,8 +1214,7 @@ fn every_control_has_a_role_and_a_name(cx: &mut TestAppContext) {
                 let elements = window.elements();
                 assert!(!elements.is_empty());
                 for element in elements {
-                    // The layers of a sheet are the Kit's own.
-                    let kit = format!("{:?}", element.path()).contains("Sheet");
+                    let kit = testing::is_kit_decoration(&format!("{:?}", element.path()));
                     assert!(
                         kit || element.role().is_some(),
                         "{width}: no role: {element:?}"
@@ -1214,6 +1268,21 @@ fn escape_closes_the_popover_of_the_appearance(cx: &mut TestAppContext) {
     assert!(has(&started, "appearance-panel", cx));
     press(&started, "escape", cx);
     assert!(!has(&started, "appearance-panel", cx));
+}
+
+#[gpui_kit::test]
+fn going_back_with_a_popover_open_closes_it_first(cx: &mut TestAppContext) {
+    let started = start(cx, 1280.0).unwrap();
+    settle(&started, cx);
+    click(&started, "contents", cx);
+    assert!(has(&started, "contents-panel", cx));
+    cx.update_window(started.window, |_, window, cx| {
+        window.focus(&started.page.read(cx).focus_handle.clone(), cx);
+        window.dispatch_action(GoBack.boxed_clone(), cx);
+    })
+    .unwrap();
+    settle(&started, cx);
+    assert!(!has(&started, "contents-panel", cx));
 }
 
 #[gpui_kit::test]
