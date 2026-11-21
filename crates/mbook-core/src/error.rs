@@ -1,7 +1,6 @@
 //! Error types.
 
 use crate::types::Version;
-use std::fmt;
 
 /// The result type of this crate.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -159,6 +158,16 @@ pub enum ResolveError {
 pub struct Problems(Vec<Problem>);
 
 impl Problems {
+    /// `Ok` when a check found nothing.
+    #[cfg(feature = "write")]
+    pub(crate) fn none_or(problems: Vec<Problem>) -> Result<(), Self> {
+        if problems.is_empty() {
+            Ok(())
+        } else {
+            Err(Self(problems))
+        }
+    }
+
     /// The problems, in the order they were found.
     pub fn iter(&self) -> std::slice::Iter<'_, Problem> {
         self.0.iter()
@@ -187,7 +196,8 @@ impl<'a> IntoIterator for &'a Problems {
 }
 
 /// One problem found when checking a book.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{}{kind}", location(.path.as_deref(), *.offset))]
 pub struct Problem {
     /// The chapter the problem is in, when it is in one.
     pub path: Option<String>,
@@ -197,13 +207,12 @@ pub struct Problem {
     pub kind: ProblemKind,
 }
 
-impl fmt::Display for Problem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match (&self.path, self.offset) {
-            (Some(path), Some(offset)) => write!(f, "{path}, byte {offset}: {}", self.kind),
-            (Some(path), None) => write!(f, "{path}: {}", self.kind),
-            (None, _) => write!(f, "{}", self.kind),
-        }
+/// Where a problem is, as a prefix for its message.
+fn location(path: Option<&str>, offset: Option<u32>) -> String {
+    match (path, offset) {
+        (Some(path), Some(offset)) => format!("{path}, byte {offset}: "),
+        (Some(path), None) => format!("{path}: "),
+        (None, _) => String::new(),
     }
 }
 
@@ -226,10 +235,185 @@ pub enum ProblemKind {
     /// The `cover` key names no picture of the book.
     #[error("the cover is not a picture of the book")]
     MissingCover,
-    /// A contents item names a chapter or an anchor that does not exist.
-    #[error("a contents item leads nowhere")]
-    DanglingTocItem,
-    /// The levels of the contents items do not form a tree.
-    #[error("the levels of the contents do not form a tree")]
-    TocLevel,
+    /// A chapter holds a character the format does not allow: a byte order
+    /// mark at its start, or a control character other than line feed and
+    /// tab.
+    #[error("the character U+{:04X} is not allowed", u32::from(*.0))]
+    ForbiddenCharacter(char),
+    /// A contents item, named by its title, leads to a chapter or an anchor
+    /// that does not exist.
+    #[error("the contents item {0:?} leads nowhere")]
+    DanglingTocItem(String),
+    /// A contents item has an empty title.
+    #[error("a contents item has no title")]
+    EmptyTocTitle,
+    /// The level of a contents item, named by its title, is 0 or more than
+    /// one below the item before it.
+    #[error("the level of the contents item {0:?} does not continue the tree")]
+    TocLevel(String),
+    /// A contents item, named by its title, comes before an item that
+    /// precedes it in reading order.
+    #[error("the contents item {0:?} is out of reading order")]
+    TocOrder(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        Error, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError, TextError,
+    };
+    use crate::types::Version;
+    use std::error::Error as _;
+
+    fn problem(path: Option<&str>, offset: Option<u32>) -> Problem {
+        Problem {
+            path: path.map(str::to_owned),
+            offset,
+            kind: ProblemKind::RawHtml,
+        }
+    }
+
+    #[test]
+    fn io_error_keeps_its_source() {
+        let error = Error::from(std::io::Error::other("disk on fire"));
+        let source = error.source().map(ToString::to_string);
+        assert_eq!(source.as_deref(), Some("disk on fire"));
+    }
+
+    #[test]
+    fn unsupported_version_names_the_version() {
+        let error = Error::UnsupportedVersion(Version { major: 2, minor: 1 });
+        assert_eq!(
+            error.to_string(),
+            "format version 2.1 is newer than this library supports"
+        );
+    }
+
+    #[test]
+    fn container_error_keeps_its_source() {
+        let error = Error::Container("bad checksum".into());
+        let source = error.source().map(ToString::to_string);
+        assert_eq!(source.as_deref(), Some("bad checksum"));
+    }
+
+    #[test]
+    fn malformed_names_the_resource_and_the_rule() {
+        let error = Error::Malformed {
+            resource: 3,
+            reason: "levels skip",
+        };
+        assert_eq!(error.to_string(), "resource 3 is malformed: levels skip");
+    }
+
+    #[test]
+    fn invalid_path_quotes_the_path() {
+        let error = Error::InvalidPath {
+            path: "a//b".into(),
+            reason: PathError::EmptySegment,
+        };
+        assert_eq!(error.to_string(), r#"invalid path "a//b""#);
+    }
+
+    #[test]
+    fn invalid_path_keeps_the_reason_as_its_source() {
+        let error = Error::InvalidPath {
+            path: "a//b".into(),
+            reason: PathError::EmptySegment,
+        };
+        let source = error.source().map(ToString::to_string);
+        assert_eq!(source.as_deref(), Some("a segment is empty"));
+    }
+
+    #[test]
+    fn index_out_of_range_names_both_numbers() {
+        let error = Error::IndexOutOfRange { index: 4, len: 3 };
+        assert_eq!(error.to_string(), "index 4 is out of range for 3 chapters");
+    }
+
+    #[test]
+    fn text_error_converts_into_invalid_text() {
+        let text = TextError {
+            offset: 7,
+            character: '\u{1b}',
+        };
+        assert!(matches!(Error::from(text), Error::InvalidText(inner) if inner == text));
+    }
+
+    #[test]
+    fn text_error_names_the_character_and_the_offset() {
+        let text = TextError {
+            offset: 7,
+            character: '\u{1b}',
+        };
+        assert_eq!(text.to_string(), "control character U+001B at byte 7");
+    }
+
+    #[test]
+    fn meta_error_is_the_source_of_invalid_meta() {
+        let error = Error::from(MetaError::Required("id".into()));
+        let source = error.source().map(ToString::to_string);
+        assert_eq!(source.as_deref(), Some(r#"the key "id" is required"#));
+    }
+
+    #[test]
+    fn resolve_error_has_a_message() {
+        assert_eq!(
+            ResolveError::UnknownAnchor.to_string(),
+            "the chapter has no such anchor"
+        );
+    }
+
+    #[test]
+    fn problem_with_a_place_names_the_chapter_and_the_byte() {
+        let text = problem(Some("ch01.md"), Some(130)).to_string();
+        assert_eq!(text, "ch01.md, byte 130: raw HTML is not allowed");
+    }
+
+    #[test]
+    fn problem_in_a_chapter_names_the_chapter() {
+        let text = problem(Some("ch01.md"), None).to_string();
+        assert_eq!(text, "ch01.md: raw HTML is not allowed");
+    }
+
+    #[test]
+    fn problem_of_the_whole_book_has_no_prefix() {
+        let whole = Problem {
+            path: None,
+            offset: None,
+            kind: ProblemKind::MissingCover,
+        };
+        assert_eq!(whole.to_string(), "the cover is not a picture of the book");
+    }
+
+    #[test]
+    fn problem_kind_quotes_the_destination() {
+        let kind = ProblemKind::UnresolvedLink("ch09.md".into());
+        assert_eq!(kind.to_string(), r#"the link to "ch09.md" leads nowhere"#);
+    }
+
+    #[test]
+    fn problems_count_what_they_hold() {
+        let problems = Problems(vec![problem(None, None), problem(None, None)]);
+        assert_eq!((problems.len(), problems.is_empty()), (2, false));
+    }
+
+    #[test]
+    fn problems_iterate_in_order() {
+        let problems = Problems(vec![
+            problem(Some("a.md"), None),
+            problem(Some("b.md"), None),
+        ]);
+        let paths: Vec<_> = (&problems)
+            .into_iter()
+            .filter_map(|p| p.path.as_deref())
+            .collect();
+        assert_eq!(paths, ["a.md", "b.md"]);
+    }
+
+    #[test]
+    fn problems_become_an_invalid_book_error() {
+        let error = Error::from(Problems(vec![problem(None, None)]));
+        let source = error.source().map(ToString::to_string);
+        assert_eq!(source.as_deref(), Some("the book has 1 problem(s)"));
+    }
 }

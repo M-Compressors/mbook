@@ -515,7 +515,8 @@ Writers **SHOULD** emit one row for every heading of every chapter, with the
 name GitHub would generate for that heading: the heading's text in lower case,
 with punctuation removed, spaces replaced by `-`, and `-1`, `-2`, … appended to
 repeated names within a chapter. For example, `Chapter 3. The Seventh Proof`
-becomes `chapter-3-the-seventh-proof`.
+becomes `chapter-3-the-seventh-proof`. A heading whose name would be empty,
+such as one made of punctuation only, gets no row.
 
 ### Positions
 
@@ -655,6 +656,12 @@ A reader **MUST** reject a file when:
 A reader **MUST NOT** reject a file because of unknown `meta` keys, unknown
 `kind` values, extra table columns, or errors confined to one text or picture
 resource; it reports those where they are met.
+
+One rule of the tables cannot be checked from the tables: whether a position
+is preceded by a line feed needs the text of its chapter. A reader checks the
+rest of a [valid position](#positions) when it opens a file, and this part
+when it decodes the chapter; a failure there is an error confined to that
+chapter.
 
 A writer **MUST** produce files that satisfy every **MUST** in this document.
 

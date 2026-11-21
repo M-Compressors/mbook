@@ -5,10 +5,6 @@ use crate::error::PathError;
 /// Checks a path against the rules RFC 0001 sets for a text or picture
 /// resource: segments joined by `/`, none of them empty, `.` or `..`, and no
 /// backslash or control character anywhere.
-#[cfg_attr(
-    not(any(feature = "write", test)),
-    expect(dead_code, reason = "the reader calls it once it decodes tables")
-)]
 pub(crate) fn validate(path: &str) -> Result<(), PathError> {
     if path.is_empty() {
         return Err(PathError::Empty);

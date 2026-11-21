@@ -80,10 +80,6 @@ impl Meta {
     /// The metadata stored in a file, checked against the rules of the
     /// format.
     #[cfg(any(feature = "read", test))]
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the reader calls it once it decodes tables")
-    )]
     pub(crate) fn from_rows(rows: Vec<(String, String)>) -> Result<Self, MetaError> {
         let meta = Self { rows };
         for (key, _) in &meta.rows {

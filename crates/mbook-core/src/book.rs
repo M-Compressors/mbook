@@ -1,26 +1,17 @@
 //! A whole book in memory.
 
 #[cfg(feature = "write")]
-use crate::error::Error;
-#[cfg(feature = "write")]
-use crate::error::Problems;
-#[cfg(any(feature = "read", feature = "write"))]
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::meta::Meta;
-#[cfg(feature = "read")]
-use crate::options::ReadOptions;
-#[cfg(feature = "write")]
-use crate::options::WriteOptions;
 use crate::types::{Anchor, Size};
 #[cfg(feature = "write")]
 use crate::{analysis, avif, path, text};
 use std::collections::HashMap;
+
 #[cfg(feature = "read")]
-use std::io::Read;
+mod load;
 #[cfg(feature = "write")]
-use std::io::Write;
-#[cfg(any(feature = "read", feature = "write"))]
-use std::path::Path;
+mod write;
 
 /// A whole book in memory: metadata, chapters in reading order, pictures and
 /// the table of contents.
@@ -73,7 +64,7 @@ use std::path::Path;
 /// # #[cfg(not(all(feature = "read", feature = "write")))]
 /// # fn main() {}
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Book {
     meta: Meta,
     chapters: Vec<Chapter>,
@@ -85,13 +76,6 @@ pub struct Book {
 
 /// The place of a path in a `Book`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[cfg_attr(
-    not(feature = "write"),
-    expect(
-        dead_code,
-        reason = "`Book::read` fills the slots once it decodes containers"
-    )
-)]
 enum Slot {
     Chapter(usize),
     Picture(usize),
@@ -182,8 +166,7 @@ impl Chapter {
     /// Normalises the text and computes its anchors.
     #[cfg(feature = "write")]
     fn new(path: String, text: String) -> Result<Self> {
-        let text = text::normalize(text)?;
-        let anchors = analysis::anchors(&text);
+        let (text, anchors) = stored(text)?;
         Ok(Self {
             path,
             text,
@@ -222,11 +205,21 @@ impl Chapter {
     /// The text contains a control character other than line feed and tab.
     #[cfg(feature = "write")]
     pub fn set_text(&mut self, text: impl Into<String>) -> Result<()> {
-        let text = text::normalize(text.into())?;
-        self.anchors = analysis::anchors(&text);
-        self.text = text;
+        (self.text, self.anchors) = stored(text.into())?;
         Ok(())
     }
+}
+
+/// The stored form of chapter text and the anchors of its headings.
+#[cfg(feature = "write")]
+fn stored(text: String) -> Result<(String, Vec<Anchor>)> {
+    let text = text::normalize(text)?;
+    // Positions inside a chapter are 32-bit offsets.
+    if u32::try_from(text.len()).is_err() {
+        return Err(Error::Limit("a chapter must be smaller than 4 GiB"));
+    }
+    let anchors = analysis::anchors(&analysis::analyse(&text).headings);
+    Ok((text, anchors))
 }
 
 impl Picture {
@@ -301,40 +294,44 @@ impl Book {
     }
 }
 
-/// Loading a book.
-#[cfg(feature = "read")]
+/// Bookkeeping shared by loading and editing.
 impl Book {
-    /// Loads the book stored in a file.
-    ///
-    /// # Errors
-    ///
-    /// As [`Book::read`].
-    pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        Self::read(std::fs::File::open(path)?)
+    /// A book that holds only its metadata.
+    fn empty(meta: Meta) -> Self {
+        Self {
+            meta,
+            chapters: Vec::new(),
+            pictures: Vec::new(),
+            toc: Toc::default(),
+            slots: HashMap::new(),
+        }
     }
 
-    /// Loads a book from a reader, decoding everything in one pass. The
-    /// reader does not have to seek.
-    ///
-    /// Loading is lenient where the format tells readers to be: a chapter
-    /// with a broken link loads, and the problem is reported when the book is
-    /// written.
-    ///
-    /// # Errors
-    ///
-    /// The source fails, the data is not a valid mbook file, or a default
-    /// limit is exceeded.
-    pub fn read(reader: impl Read) -> Result<Self> {
-        Self::read_with(reader, &ReadOptions::default())
+    /// Puts a chapter with a free path at a valid position.
+    fn place_chapter(&mut self, index: usize, chapter: Chapter) -> &mut Chapter {
+        self.slots
+            .insert(chapter.path.clone(), Slot::Chapter(index));
+        self.chapters.insert(index, chapter);
+        self.renumber_chapters(index + 1);
+        &mut self.chapters[index]
     }
 
-    /// Loads a book from a reader with the given options.
-    ///
-    /// # Errors
-    ///
-    /// As [`Book::read`], with the limits of `options`.
-    pub fn read_with(_reader: impl Read, _options: &ReadOptions) -> Result<Self> {
-        todo!("decode a container sequentially and build the model")
+    /// Puts a picture with a free path after the others.
+    fn place_picture(&mut self, picture: Picture) -> &Picture {
+        let index = self.pictures.len();
+        self.slots
+            .insert(picture.path.clone(), Slot::Picture(index));
+        self.pictures.push(picture);
+        &self.pictures[index]
+    }
+
+    /// Updates the slots of the chapters from `from` on after a shift.
+    fn renumber_chapters(&mut self, from: usize) {
+        for (index, chapter) in self.chapters.iter().enumerate().skip(from) {
+            if let Some(slot) = self.slots.get_mut(chapter.path.as_str()) {
+                *slot = Slot::Chapter(index);
+            }
+        }
     }
 }
 
@@ -361,13 +358,7 @@ impl Book {
     /// ```
     pub fn new(title: impl Into<String>, language: impl Into<String>) -> Result<Self> {
         let id = format!("urn:uuid:{}", uuid::Uuid::now_v7());
-        Ok(Self {
-            meta: Meta::new(title.into(), language.into(), id)?,
-            chapters: Vec::new(),
-            pictures: Vec::new(),
-            toc: Toc::default(),
-            slots: HashMap::new(),
-        })
+        Ok(Self::empty(Meta::new(title.into(), language.into(), id)?))
     }
 
     /// The metadata, for changing it.
@@ -502,53 +493,6 @@ impl Book {
         self.toc = toc;
     }
 
-    /// Checks the rules that connect the parts of a book, without writing it.
-    ///
-    /// # Errors
-    ///
-    /// Every problem found, not only the first: links and pictures that lead
-    /// nowhere, raw HTML, a cover that is not in the book, contents items
-    /// that do not resolve.
-    pub fn check(&self) -> Result<(), Problems> {
-        todo!("parse every chapter and resolve its references")
-    }
-
-    /// Writes the book with the default options.
-    ///
-    /// # Errors
-    ///
-    /// As [`write_with`](Self::write_with).
-    pub fn write(&self, writer: impl Write) -> Result<()> {
-        self.write_with(writer, &WriteOptions::default())
-    }
-
-    /// Writes the book as one mbook file.
-    ///
-    /// The book is checked first, and nothing is written if the check fails.
-    /// Writing the same book twice with the same options gives the same
-    /// bytes.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::Invalid`] with every problem [`check`](Self::check) finds;
-    /// the sink fails; a limit of `options` is exceeded.
-    pub fn write_with(&self, _writer: impl Write, _options: &WriteOptions) -> Result<()> {
-        todo!("check the book, build the four tables and write the container")
-    }
-
-    /// Writes the book to a file.
-    ///
-    /// The book is written to a temporary file next to `path`, which is then
-    /// renamed into place, so an interrupted save leaves the previous file
-    /// intact. `path` may be the file the book was loaded from.
-    ///
-    /// # Errors
-    ///
-    /// As [`write`](Self::write).
-    pub fn save(&self, _path: impl AsRef<Path>) -> Result<()> {
-        todo!("write to a temporary file next to the target and rename it")
-    }
-
     /// An index into the reading order must not be greater than `max`.
     fn check_position(&self, index: usize, max: usize) -> Result<()> {
         if index > max {
@@ -571,33 +515,6 @@ impl Book {
         Ok(path)
     }
 
-    /// Puts a chapter with a free path at a valid position.
-    fn place_chapter(&mut self, index: usize, chapter: Chapter) -> &mut Chapter {
-        self.slots
-            .insert(chapter.path.clone(), Slot::Chapter(index));
-        self.chapters.insert(index, chapter);
-        self.renumber_chapters(index + 1);
-        &mut self.chapters[index]
-    }
-
-    /// Puts a picture with a free path after the others.
-    fn place_picture(&mut self, picture: Picture) -> &Picture {
-        let index = self.pictures.len();
-        self.slots
-            .insert(picture.path.clone(), Slot::Picture(index));
-        self.pictures.push(picture);
-        &self.pictures[index]
-    }
-
-    /// Updates the slots of the chapters from `from` on after a shift.
-    fn renumber_chapters(&mut self, from: usize) {
-        for (index, chapter) in self.chapters.iter().enumerate().skip(from) {
-            if let Some(slot) = self.slots.get_mut(chapter.path.as_str()) {
-                *slot = Slot::Chapter(index);
-            }
-        }
-    }
-
     /// Updates the slots of the pictures from `from` on after a shift.
     fn renumber_pictures(&mut self, from: usize) {
         for (index, picture) in self.pictures.iter().enumerate().skip(from) {
@@ -608,7 +525,8 @@ impl Book {
     }
 }
 
-#[cfg(all(test, feature = "write"))]
+#[cfg(test)]
+#[cfg(feature = "write")]
 mod tests {
     use super::{Book, Chapter, Picture, Toc, TocItem};
     use crate::error::{Error, PathError};
@@ -662,6 +580,67 @@ mod tests {
             .iter()
             .all(|p| book.picture(p.path()) == Some(p));
         chapters && pictures && book.slots.len() == book.chapters.len() + book.pictures.len()
+    }
+
+    #[test]
+    fn a_chapter_exposes_its_path_text_and_anchors() {
+        let chapter = chapter("ch01.md");
+        assert_eq!(
+            (chapter.path(), chapter.text(), chapter.anchors().len()),
+            ("ch01.md", "# ch01.md\n", 0)
+        );
+    }
+
+    #[test]
+    fn a_picture_exposes_its_path_size_and_data() {
+        let picture = picture("img/a.avif");
+        let size = Size {
+            width: 1,
+            height: 1,
+        };
+        assert_eq!(
+            (picture.path(), picture.size(), picture.data()),
+            ("img/a.avif", size, &[][..])
+        );
+    }
+
+    #[test]
+    fn pictures_are_found_by_path() {
+        let book = book();
+        assert_eq!(
+            book.picture("img/b.avif").map(Picture::path),
+            Some("img/b.avif")
+        );
+    }
+
+    #[test]
+    fn a_chapter_path_is_not_a_picture() {
+        assert!(book().picture("ch01.md").is_none());
+    }
+
+    #[test]
+    fn chapter_mut_finds_the_chapter_to_change() {
+        let mut book = book();
+        assert_eq!(
+            book.chapter_mut("ch03.md").map(|c| c.path().to_owned()),
+            Some("ch03.md".to_owned())
+        );
+    }
+
+    #[test]
+    fn chapter_mut_ignores_a_picture_path() {
+        assert!(book().chapter_mut("img/a.avif").is_none());
+    }
+
+    #[test]
+    fn remove_picture_returns_the_picture() {
+        let removed = book().remove_picture("img/a.avif");
+        assert_eq!(removed.as_ref().map(Picture::path), Some("img/a.avif"));
+    }
+
+    #[test]
+    fn remove_picture_ignores_a_chapter_path() {
+        assert!(book().remove_picture("ch01.md").is_none());
     }
 
     #[test]

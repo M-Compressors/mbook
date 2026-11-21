@@ -1,0 +1,39 @@
+name: Feature or format proposal
+description: Something mbook-core should do, or a change to the file format.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The format and the library API are specified by the
+        [design documents](https://m-compressors.github.io/mbook/). A proposal
+        that changes either ends as an update to an RFC, so it helps to say
+        which section it touches.
+  - type: dropdown
+    id: scope
+    attributes:
+      label: What it changes
+      options:
+        - The file format (RFC 0001)
+        - The library API (RFC 0002)
+        - Tooling, documentation or something else
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The proposal
+      description: What should change. For the format, include how an old reader meets a new file.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

@@ -23,9 +23,14 @@
 //! | `write` | yes | [`Book::new`] and everything that changes or saves a [`Book`] |
 //!
 //! At least one of them must be enabled.
-
-#![forbid(unsafe_code)]
-#![warn(missing_docs)]
+//!
+// Links to items of a disabled feature lead to the table above instead. The
+// empty doc line above is what lets the definitions start a new block.
+#![cfg_attr(
+    not(feature = "read"),
+    doc = "[`BookReader`]: #features\n[`BookReader::buffered`]: #features\n[`Book::read`]: #features\n[`Book::open`]: #features"
+)]
+#![cfg_attr(not(feature = "write"), doc = "[`Book::new`]: #features")]
 
 #[cfg(not(any(feature = "read", feature = "write")))]
 compile_error!("mbook-core needs at least one of the `read` and `write` features");
@@ -35,13 +40,19 @@ mod analysis;
 #[cfg(feature = "write")]
 mod avif;
 mod book;
+mod container;
 mod error;
+mod format;
 mod id;
+#[cfg(feature = "read")]
+mod index;
+mod link;
 mod meta;
 mod options;
 mod path;
 #[cfg(feature = "read")]
 mod reader;
+mod tables;
 #[cfg(feature = "write")]
 mod text;
 mod types;
@@ -60,12 +71,6 @@ pub use types::{
     TocEntry, Version,
 };
 
-/// The container signature at the start of every mbook file.
-const CONTAINER_MAGIC: &[u8] = b"MOZFRM";
-/// The format prefix inside resource 0, with its fixed file offset.
-const FORMAT_PREFIX: &[u8] = b"MBOOK\0";
-const FORMAT_PREFIX_OFFSET: usize = 47;
-
 /// Tells whether a file looks like an mbook file from its first bytes.
 ///
 /// This is the detection rule of RFC 0001. It needs the first 53 bytes of the
@@ -79,9 +84,9 @@ const FORMAT_PREFIX_OFFSET: usize = 47;
 /// ```
 #[must_use]
 pub fn is_mbook(prefix: &[u8]) -> bool {
-    let format_end = FORMAT_PREFIX_OFFSET + FORMAT_PREFIX.len();
-    prefix.starts_with(CONTAINER_MAGIC)
-        && prefix.get(FORMAT_PREFIX_OFFSET..format_end) == Some(FORMAT_PREFIX)
+    let format_end = format::PREFIX_OFFSET + format::PREFIX.len();
+    prefix.starts_with(format::CONTAINER_MAGIC)
+        && prefix.get(format::PREFIX_OFFSET..format_end) == Some(format::PREFIX.as_slice())
 }
 
 #[cfg(test)]

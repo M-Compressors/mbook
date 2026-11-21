@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/M-Compressors/mbook/security/advisories/new
+    about: Report vulnerabilities privately, not as public issues.
+  - name: Design documents
+    url: https://m-compressors.github.io/mbook/
+    about: The file format, the library API and the decisions behind them.

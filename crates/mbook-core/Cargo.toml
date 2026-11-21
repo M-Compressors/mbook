@@ -1,20 +1,46 @@
 [package]
 name = "mbook-core"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.89"
-description = "Read, edit and create mbook files"
+description = "Read, edit and create mbook files: Markdown chapters and AVIF pictures in one indexed container"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["ebook", "book", "markdown", "avif"]
+categories = ["parser-implementations", "encoding"]
 
 [features]
 default = ["read", "write"]
 # `BookReader`, `Book::read` and `Book::open`.
-# Will enable `mopenzl/decompression` once the reader decodes containers.
-read = []
+read = ["dep:mopenzl", "mopenzl/decompression"]
 # Everything that creates, changes or saves a `Book`.
-# Will enable `mopenzl/compression` and `markdown` 1.0.0 once books are
-# analysed and written.
-write = ["dep:uuid"]
+write = [
+    "dep:mopenzl",
+    "mopenzl/compression",
+    "dep:markdown",
+    "dep:uuid",
+    "dep:bytes",
+    "dep:tempfile",
+    "dep:github-slugger",
+]
 
 [dependencies]
-thiserror = "2"
-uuid = { version = "1", optional = true, features = ["v7"] }
+thiserror.workspace = true
+mopenzl = { workspace = true, optional = true }
+markdown = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+github-slugger = { workspace = true, optional = true }
+percent-encoding.workspace = true
+
+[dev-dependencies]
+# The tests build containers by hand, to give the reader files that the
+# writer of this crate never produces.
+mopenzl = { workspace = true, features = ["compression", "decompression"] }
+tempfile.workspace = true
+
+[lints]
+workspace = true

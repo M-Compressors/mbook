@@ -249,9 +249,8 @@ not only the first.
 
 ## Reference-level explanation
 
-Signatures below are the proposed public surface. They were type-checked
-together with the examples above against stub bodies; no behaviour is
-implemented yet.
+Signatures below are the public surface of the crate as implemented. The
+examples of the guide are compiled as its doc tests.
 
 ### Shared value types
 
@@ -392,8 +391,8 @@ impl<R: Read + Seek> BookReader<R> {
 | `open`, `new`, `buffered` | Footer, directory, resources 0 to 4 | The file must be rejected under [Conformance](0001-mbook-format.md#conformance), or a limit is exceeded. |
 | Table accessors | Nothing | Never; unknown ids give `None` or an empty slice. |
 | `resolve` | Nothing | The destination is unresolved under [Resolving destinations](0001-mbook-format.md#resolving-destinations). |
-| `read_chapter`, `read_picture` | One record | I/O, a damaged frame, the text is not UTF-8, the id came from another book. |
-| `load` | Every text and picture record | As above, for any resource. |
+| `read_chapter`, `read_picture` | One record | I/O; a damaged frame; the resource exceeds its limit; the text is not UTF-8, or a stored position in it is not at the start of a line; the id came from another book. |
+| `load` | Every text and picture record | As above, for any resource; or the decoded book exceeds the file limit. |
 
 - An error in one resource does not poison the reader; other resources can
   still be read.
@@ -401,7 +400,11 @@ impl<R: Read + Seek> BookReader<R> {
   escapes and entities, and applies the steps of RFC 0001. It is the only
   place a reading application needs for links and pictures.
 - A resource of an unknown `kind` is listed by `resources` only. It has no id
-  type, so it cannot be decoded.
+  type, so it cannot be decoded, and `load` and `Book::read` leave it behind:
+  a file of a later minor version loses such resources when it is edited.
+- The tables cannot show whether a stored position is at the start of a line;
+  that needs the text. `read_chapter` checks the positions of the chapter it
+  decodes, and fails for that chapter only.
 - The types rule out reading a picture as a chapter. They cannot rule out an
   id taken from another book: such an id gives `None` from the table
   accessors and `Error::NoSuchResource` from the `read_` calls.
@@ -493,9 +496,13 @@ impl TocItem {
 A `Book` never stores a byte offset that the caller has to keep correct:
 
 - **Anchors belong to their chapter.** `add_chapter` and `set_text` compute
-  them from the headings with the naming rule of RFC 0001. A chapter loaded
-  from a file keeps the anchors stored in that file until its text is
-  replaced, so links written against another writer's names keep working.
+  them from the headings with the naming rule of RFC 0001. The rule is
+  defined by GitHub's implementation, so the names come from a port of it,
+  the `github-slugger` crate. A heading whose name would be empty, such as
+  `# ***`, gets no anchor, because the format does not allow an empty name. A
+  chapter loaded from a file keeps the anchors stored in that file until its
+  text is replaced, so links written against another writer's names keep
+  working.
 - **Contents entries name their target** by chapter path and anchor, exactly
   as a link does. The offset is looked up when the book is written.
 - **Every stored contents row can be named this way**, because RFC 0001
@@ -512,6 +519,7 @@ A `Book` never stores a byte offset that the caller has to keep correct:
 | A position in the reading order exists | `insert_chapter`, `move_chapter` | `Error::IndexOutOfRange` |
 | The chapter to move exists | `move_chapter` | `Error::NoSuchPath` |
 | Text encoding: no control characters other than line feed and tab | `add_chapter`, `insert_chapter`, `set_text`, after normalising | `Error::InvalidText`, with the byte offset |
+| The same rule, for a chapter that was loaded and never replaced | `check`, `write` | `Problems` |
 | The picture is an AVIF file with a primary item | `add_picture` | `Error::InvalidPicture` |
 | `meta` key syntax and counts | `Meta` setters | `Error::InvalidMeta` |
 | No raw HTML, allowed URI schemes | `check`, `write` | `Problems` |
@@ -555,6 +563,14 @@ replace the mopenzl defaults, which are too small for picture-heavy books.
 | `max_resource_bytes` | 64 MiB | The default frame limit of mopenzl. |
 | `max_file_bytes` | 16 GiB | Room for a comic of several thousand large pages. |
 
+- A lazy reader decodes one resource at a time, so `max_resource_bytes` is
+  all that bounds its memory. A resource above the limit fails when it is
+  read, not when the file is opened.
+- A `Book` holds everything decoded. `max_file_bytes` therefore also bounds
+  the decoded size of a book that `Book::read` or `BookReader::load` builds.
+- `WriteOptions::level` outside the range of the compressor is brought into
+  that range.
+
 ### Errors
 
 One `Error` enum, non-exhaustive, with `Result<T> = Result<T, Error>`.
@@ -577,7 +593,9 @@ One `Error` enum, non-exhaustive, with `Result<T> = Result<T, Error>`.
 | Feature | Default | Enables | Brings in |
 | --- | --- | --- | --- |
 | `read` | yes | `BookReader`, `Book::read`, `Book::open` | mopenzl decoding |
-| `write` | yes | `Book::new` and every call that changes, checks or saves a `Book` | mopenzl encoding, `markdown` 1.0.0, `uuid` with its `v7` feature |
+| `write` | yes | `Book::new` and every call that changes, checks or saves a `Book` | mopenzl encoding, `markdown`, `github-slugger`, `uuid`, `bytes`, `tempfile` |
+
+`thiserror` and `percent-encoding` are used with either feature.
 
 - At least one of the two must be enabled. With `read` alone a `Book` is a
   fully loaded book that can be looked at but not changed.
@@ -586,20 +604,40 @@ One `Error` enum, non-exhaustive, with `Result<T> = Result<T, Error>`.
 - `markdown` 1.0.0 is the parser that
   [ADR-0006](adr/0006-markdown-dialect.md) found to cover the whole dialect
   and to report byte offsets.
-- The pixel size of a picture is read from the AVIF container boxes by a small
-  parser inside the crate. No image decoder is linked.
+- **A mechanism comes from an established crate; only the rules of the
+  format are written here.**
+
+  | Need | Crate |
+  | --- | --- |
+  | Heading and link analysis | `markdown` 1.0.0 |
+  | Anchor names by GitHub's rule | `github-slugger` |
+  | Percent-decoding of destinations | `percent-encoding` |
+  | Reading and writing integers in byte buffers | `bytes` |
+  | Saving through a temporary file | `tempfile` |
+  | Book identifiers | `uuid` |
+  | Error types | `thiserror` |
+
+- **The pixel size of a picture is the one thing read by code of this
+  crate**, about 150 lines over `bytes` that walk the AVIF boxes to the
+  properties of the primary item. The crates looked at, and what stands in
+  the way of each:
+
+  | Crate | Why it does not fit |
+  | --- | --- |
+  | `image` 0.25 | AVIF needs the C library libdav1d; the picture is decoded in full to learn its size; the size is that of the decoded frame, before crop and rotation. |
+  | `imagesize` 0.15 | Takes the largest `ispe` box of the file: ignores the crop and which item a property belongs to. |
+  | `avif-parse` 2 | Needs Rust 1.90, above the minimum of this crate, and is MPL-2.0. |
+  | `zenavif-parse` 0.6 | Gives the right size on the test files, but is MPL-2.0 and brings about 25 crates for three properties. The format author decided on 2026-11-21 to keep the code of this crate. |
+
+  No image decoder is linked.
 
 ### Required from mopenzl
 
-| Need | Why | Without it |
-| --- | --- | --- |
-| A seek reader that owns its decoder, or a public call that decodes one record given its directory entry | `FramedSeekReader<'a, R>` borrows `&'a mut FramedDecompressor`, so one struct cannot hold both. | `BookReader` would re-read and re-validate the directory for every resource: 24 bytes per entry, 2.4 MB at 100,000 resources. |
-
-This is the only blocker. It should be settled in mopenzl before `BookReader`
-is implemented.
-
-The chosen shape is two calls on the decoder and an index that owns its data.
-It adds to the public API of mopenzl and changes nothing that exists:
+`BookReader` needs mopenzl 0.2.6 or later. Earlier versions offered random
+access only through `FramedSeekReader<'a, R>`, which borrows its decoder, so
+one struct could not hold the decoder, the source and the directory.
+Version 0.2.6 adds a directory that owns its data and two calls on the
+decoder:
 
 ```rust
 /// A validated directory, detached from the source and the decoder.
@@ -618,9 +656,8 @@ impl FramedDecompressor {
 }
 ```
 
-`BookReader` then holds a `FramedDecompressor`, a `FramedIndex` and the source
-as three plain fields. The existing `FramedSeekReader` becomes a wrapper over
-the same two calls.
+`BookReader` holds a `FramedDecompressor`, a `FramedIndex` and the source as
+three plain fields.
 
 ## Drawbacks
 
@@ -651,6 +688,7 @@ the same two calls.
 | | | A UUID for every resource | The format has nowhere to store one, and the path is already a stable unique name. UUID version 7 is used for the book's `id` only. |
 | Line endings and byte order marks | Normalised silently | Rejected with an error | The meaning of the text does not change, and every caller would write the same replacement. |
 | Moving a resource to another path | Remove and add | A `rename` that rewrites links | The crate would start editing chapter text it was given. |
+| Helpers | Established crates for mechanisms; own code for the rules of the format | Hand-written cursors, decoders and temporary files | Less code to test and to keep correct; the exception is listed under [Dependencies and features](#dependencies-and-features). |
 | mopenzl in the API | Hidden behind `Error::Container` and `Limits` | Re-exporting `FramedError` and `FramingConfig` | A mopenzl major version would become an mbook-core major version. |
 
 ## Prior art

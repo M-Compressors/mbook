@@ -1,16 +1,17 @@
 //! Lazy reading of an mbook file.
 
 use crate::book::Book;
-use crate::error::{ResolveError, Result};
+use crate::container;
+use crate::error::{Error, ResolveError, Result};
+use crate::format::{ANCHORS, CONTAINER_MAGIC, FORMAT, META, RESOURCES, SERVICE_COUNT, TOC};
 use crate::id::{ChapterId, PictureId};
+use crate::index::Index;
 use crate::meta::Meta;
-use crate::options::ReadOptions;
-use crate::types::{
-    Anchor, ChapterEntry, Destination, PictureEntry, Resource, ResourceKind, Size, TocEntry,
-    Version,
-};
+use crate::options::{Limits, ReadOptions};
+use crate::types::{Anchor, ChapterEntry, Destination, PictureEntry, Resource, TocEntry, Version};
+use mopenzl::framing::{FramedDecompressor, FramedIndex};
 use std::fs::File;
-use std::io::{Cursor, Read, Seek};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::Path;
 
 /// Reads a book lazily from anything that can seek.
@@ -46,26 +47,12 @@ use std::path::Path;
 #[derive(Debug)]
 pub struct BookReader<R> {
     source: R,
-    version: Version,
-    meta: Meta,
-    toc: Vec<TocEntry>,
-    /// The resource table; the index is the resource number.
-    rows: Vec<Row>,
-    /// Numbers of text resources, in reading order.
-    chapters: Vec<u32>,
-    /// Numbers of picture resources, in file order.
-    pictures: Vec<u32>,
-    /// Numbers of text and picture resources, sorted by path.
-    by_path: Vec<u32>,
-}
-
-/// One row of the resource table.
-#[derive(Debug)]
-struct Row {
-    kind: ResourceKind,
-    path: String,
-    size: Size,
-    decoded_len: u64,
+    decoder: FramedDecompressor,
+    /// Where every resource is in the source.
+    directory: FramedIndex,
+    /// The checked tables.
+    index: Index,
+    limits: Limits,
 }
 
 impl BookReader<File> {
@@ -115,99 +102,133 @@ impl<R: Read + Seek> BookReader<R> {
     /// # Errors
     ///
     /// As [`BookReader::new`], with the limits of `options`.
-    pub fn with_options(_source: R, _options: &ReadOptions) -> Result<Self> {
-        todo!("load the container index and decode resources 0 to 4")
+    pub fn with_options(mut source: R, options: &ReadOptions) -> Result<Self> {
+        let limits = options.limits;
+        check_signature(&mut source)?;
+        // One resource is decoded at a time, so nothing bounds their sum.
+        let mut decoder = container::decoder(&limits, u64::MAX)?;
+        let directory = decoder
+            .framed_index(&mut source)
+            .map_err(container::error)?;
+        let mut read = |number: u32| {
+            let at = usize::try_from(number).unwrap_or(usize::MAX);
+            decoder
+                .read_indexed_resource(&mut source, &directory, at)
+                .map_err(container::error)
+        };
+        if directory.is_empty() {
+            return Err(Error::NotMbook);
+        }
+        let version = container::header(&read(FORMAT)?.outputs)?;
+        if directory.len() < SERVICE_COUNT {
+            return Err(Error::Malformed {
+                resource: FORMAT,
+                reason: "the file has fewer than five resources",
+            });
+        }
+        let meta = read(META)?;
+        let resources = read(RESOURCES)?;
+        let toc = read(TOC)?;
+        let anchors = read(ANCHORS)?;
+        let decoded_lens: Vec<u64> = directory.iter().map(|info| info.decoded_size).collect();
+        let index = Index::from_outputs(
+            version,
+            [
+                &meta.outputs,
+                &resources.outputs,
+                &toc.outputs,
+                &anchors.outputs,
+            ],
+            &decoded_lens,
+        )?;
+        Ok(Self {
+            source,
+            decoder,
+            directory,
+            index,
+            limits,
+        })
     }
 
     /// The format version the file declares.
     #[must_use]
     pub fn version(&self) -> Version {
-        self.version
+        self.index.version()
     }
 
     /// The metadata.
     #[must_use]
     pub fn meta(&self) -> &Meta {
-        &self.meta
+        self.index.meta()
     }
 
     /// The table of contents: a tree listed in pre-order.
     #[must_use]
     pub fn toc(&self) -> &[TocEntry] {
-        &self.toc
+        self.index.toc()
     }
 
     /// The chapters, in reading order.
     pub fn chapters(&self) -> impl ExactSizeIterator<Item = ChapterEntry<'_>> {
-        self.chapters
-            .iter()
-            .map(|&number| self.chapter_entry(number))
+        self.index.chapters()
     }
 
     /// The pictures, in file order.
     pub fn pictures(&self) -> impl ExactSizeIterator<Item = PictureEntry<'_>> {
-        self.pictures
-            .iter()
-            .map(|&number| self.picture_entry(number))
+        self.index.pictures()
     }
 
     /// What the tables say about a chapter. `None` for an id that came from
     /// another book.
     #[must_use]
     pub fn chapter(&self, id: ChapterId) -> Option<ChapterEntry<'_>> {
-        self.chapter_id(id.number())
-            .map(|id| self.chapter_entry(id.number()))
+        self.index.chapter(id)
     }
 
     /// What the tables say about a picture. `None` for an id that came from
     /// another book.
     #[must_use]
     pub fn picture(&self, id: PictureId) -> Option<PictureEntry<'_>> {
-        self.picture_id(id.number())
-            .map(|id| self.picture_entry(id.number()))
+        self.index.picture(id)
     }
 
     /// The chapter with this path.
     #[must_use]
     pub fn find_chapter(&self, path: &str) -> Option<ChapterEntry<'_>> {
-        self.find(path)
-            .and_then(|number| self.chapter_id(number))
-            .map(|id| self.chapter_entry(id.number()))
+        self.index.find_chapter(path)
     }
 
     /// The picture with this path.
     #[must_use]
     pub fn find_picture(&self, path: &str) -> Option<PictureEntry<'_>> {
-        self.find(path)
-            .and_then(|number| self.picture_id(number))
-            .map(|id| self.picture_entry(id.number()))
+        self.index.find_picture(path)
     }
 
     /// The cover named by the metadata, when it is a picture of the book.
     #[must_use]
     pub fn cover(&self) -> Option<PictureEntry<'_>> {
-        self.meta.cover().and_then(|path| self.find_picture(path))
+        self.meta().cover().and_then(|path| self.find_picture(path))
     }
 
     /// The id of the chapter with this resource number, when that resource
     /// is a chapter. Use it to restore an id stored outside the program.
     #[must_use]
     pub fn chapter_id(&self, number: u32) -> Option<ChapterId> {
-        (self.kind_of(number)? == ResourceKind::Text).then(|| ChapterId::new(number))
+        self.index.chapter_id(number)
     }
 
     /// The id of the picture with this resource number, when that resource
     /// is a picture.
     #[must_use]
     pub fn picture_id(&self, number: u32) -> Option<PictureId> {
-        (self.kind_of(number)? == ResourceKind::Picture).then(|| PictureId::new(number))
+        self.index.picture_id(number)
     }
 
     /// The anchors of a chapter, sorted by offset. Empty for an id that came
     /// from another book.
     #[must_use]
-    pub fn anchors(&self, _chapter: ChapterId) -> &[Anchor] {
-        todo!("keep the anchor table grouped by chapter")
+    pub fn anchors(&self, chapter: ChapterId) -> &[Anchor] {
+        self.index.anchors(chapter.number())
     }
 
     /// Tells what a link or picture destination found in a chapter points
@@ -222,26 +243,14 @@ impl<R: Read + Seek> BookReader<R> {
     ///
     /// The destination leads nowhere; the caller shows the link text or the
     /// alternative text instead.
-    pub fn resolve(
-        &self,
-        _from: ChapterId,
-        _destination: &str,
-    ) -> Result<Destination, ResolveError> {
-        todo!("apply the destination rules of RFC 0001")
+    pub fn resolve(&self, from: ChapterId, destination: &str) -> Result<Destination, ResolveError> {
+        self.index.resolve(from, destination)
     }
 
     /// Every row of the resource table, including service rows and kinds
     /// this crate does not know. For tools that list a file.
     pub fn resources(&self) -> impl ExactSizeIterator<Item = Resource<'_>> {
-        // A container holds at most `u32::MAX` resources.
-        let count = u32::try_from(self.rows.len()).unwrap_or(u32::MAX);
-        (0..count).zip(&self.rows).map(|(number, row)| Resource {
-            number,
-            kind: row.kind,
-            path: &row.path,
-            size: (row.kind == ResourceKind::Picture).then_some(row.size),
-            decoded_len: row.decoded_len,
-        })
+        self.index.resources()
     }
 
     /// Reads and decodes one chapter.
@@ -250,10 +259,16 @@ impl<R: Read + Seek> BookReader<R> {
     ///
     /// # Errors
     ///
-    /// The source fails, the record is damaged, the text is not UTF-8, or the
-    /// id came from another book.
-    pub fn read_chapter(&mut self, _id: ChapterId) -> Result<String> {
-        todo!("read and decode one text resource")
+    /// The source fails; the record is damaged or larger than the limit; the
+    /// text is not UTF-8, or a stored position in it is not at the start of
+    /// a line; the id came from another book.
+    pub fn read_chapter(&mut self, id: ChapterId) -> Result<String> {
+        let number = id.number();
+        if self.index.chapter_id(number).is_none() {
+            return Err(Error::NoSuchResource(number));
+        }
+        let bytes = self.read_serial(number)?;
+        self.index.text(number, bytes)
     }
 
     /// Reads one picture as the bytes of an AVIF file.
@@ -262,10 +277,14 @@ impl<R: Read + Seek> BookReader<R> {
     ///
     /// # Errors
     ///
-    /// The source fails, the record is damaged, or the id came from another
-    /// book.
-    pub fn read_picture(&mut self, _id: PictureId) -> Result<Vec<u8>> {
-        todo!("read and decode one picture resource")
+    /// The source fails, the record is damaged or larger than the limit, or
+    /// the id came from another book.
+    pub fn read_picture(&mut self, id: PictureId) -> Result<Vec<u8>> {
+        let number = id.number();
+        if self.index.picture_id(number).is_none() {
+            return Err(Error::NoSuchResource(number));
+        }
+        self.read_serial(number)
     }
 
     /// Reads the cover as the bytes of an AVIF file; `None` when the book
@@ -283,12 +302,27 @@ impl<R: Read + Seek> BookReader<R> {
 
     /// Decodes every chapter and picture into a [`Book`] that can be changed.
     ///
+    /// Resources of a kind this crate does not know are left behind.
+    ///
     /// # Errors
     ///
     /// As [`read_chapter`](Self::read_chapter) and
-    /// [`read_picture`](Self::read_picture), for any resource.
+    /// [`read_picture`](Self::read_picture), for any resource; or the decoded
+    /// book is larger than the file limit.
     pub fn load(&mut self) -> Result<Book> {
-        todo!("decode every resource and build the model")
+        if self.index.content_len() > self.limits.max_file_bytes {
+            return Err(Error::Limit("the decoded book exceeds the file limit"));
+        }
+        let Self {
+            source,
+            decoder,
+            directory,
+            index,
+            ..
+        } = self;
+        Book::assemble(index, |number| {
+            read_serial(decoder, source, directory, number)
+        })
     }
 
     /// Gives the source back.
@@ -297,202 +331,42 @@ impl<R: Read + Seek> BookReader<R> {
         self.source
     }
 
-    fn row(&self, number: u32) -> Option<&Row> {
-        self.rows.get(usize::try_from(number).ok()?)
-    }
-
-    fn kind_of(&self, number: u32) -> Option<ResourceKind> {
-        self.row(number).map(|row| row.kind)
-    }
-
-    /// The number of the text or picture resource with this path.
-    fn find(&self, path: &str) -> Option<u32> {
-        self.by_path
-            .binary_search_by(|&number| self.path_of(number).cmp(path))
-            .ok()
-            .map(|at| self.by_path[at])
-    }
-
-    fn path_of(&self, number: u32) -> &str {
-        self.row(number).map_or("", |row| row.path.as_str())
-    }
-
-    /// The entry of a resource known to be a chapter.
-    fn chapter_entry(&self, number: u32) -> ChapterEntry<'_> {
-        ChapterEntry {
-            id: ChapterId::new(number),
-            path: self.path_of(number),
-            decoded_len: self.row(number).map_or(0, |row| row.decoded_len),
-        }
-    }
-
-    /// The entry of a resource known to be a picture.
-    fn picture_entry(&self, number: u32) -> PictureEntry<'_> {
-        let row = self.row(number);
-        PictureEntry {
-            id: PictureId::new(number),
-            path: self.path_of(number),
-            size: row.map_or(
-                Size {
-                    width: 0,
-                    height: 0,
-                },
-                |row| row.size,
-            ),
-            decoded_len: row.map_or(0, |row| row.decoded_len),
-        }
+    fn read_serial(&mut self, number: u32) -> Result<Vec<u8>> {
+        read_serial(&mut self.decoder, &mut self.source, &self.directory, number)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{BookReader, Row};
-    use crate::id::{ChapterId, PictureId};
-    use crate::meta::Meta;
-    use crate::types::{ResourceKind, Size, Version};
-    use std::io::Cursor;
+/// Reads one resource that must decode to a single serial output.
+fn read_serial<R: Read + Seek>(
+    decoder: &mut FramedDecompressor,
+    source: &mut R,
+    directory: &FramedIndex,
+    number: u32,
+) -> Result<Vec<u8>> {
+    let at = usize::try_from(number).unwrap_or(usize::MAX);
+    let resource = decoder
+        .read_indexed_resource(source, directory, at)
+        .map_err(container::error)?;
+    container::serial(resource).ok_or(Error::Malformed {
+        resource: number,
+        reason: "the resource is not one serial output",
+    })
+}
 
-    fn row(kind: ResourceKind, path: &str, size: (u32, u32), decoded_len: u64) -> Row {
-        Row {
-            kind,
-            path: path.to_owned(),
-            size: Size {
-                width: size.0,
-                height: size.1,
-            },
-            decoded_len,
-        }
-    }
-
-    /// The tables of the example book of RFC 0001, with a resource of an
-    /// unknown kind appended.
-    fn reader() -> BookReader<Cursor<Vec<u8>>> {
-        let mut rows: Vec<Row> = (0..5)
-            .map(|_| row(ResourceKind::Service, "", (0, 0), 8))
-            .collect();
-        rows.push(row(
-            ResourceKind::Picture,
-            "img/cover.avif",
-            (1200, 1800),
-            18_000,
-        ));
-        rows.push(row(ResourceKind::Text, "ch01.md", (0, 0), 279));
-        rows.push(row(ResourceKind::Text, "ch02.md", (0, 0), 101));
-        rows.push(row(
-            ResourceKind::Picture,
-            "img/fig-1.avif",
-            (1600, 900),
-            42_000,
-        ));
-        rows.push(row(ResourceKind::Unknown(9), "data/x.bin", (0, 0), 1));
-        let mut meta = Meta::new("The Example".into(), "en".into(), "urn:uuid:0".into()).unwrap();
-        meta.set_cover("img/cover.avif").unwrap();
-        BookReader {
-            source: Cursor::new(Vec::new()),
-            version: Version { major: 1, minor: 0 },
-            meta,
-            toc: Vec::new(),
-            rows,
-            chapters: vec![6, 7],
-            pictures: vec![5, 8],
-            by_path: vec![6, 7, 5, 8],
-        }
-    }
-
-    #[test]
-    fn chapters_are_listed_in_reading_order() {
-        let reader = reader();
-        let paths: Vec<_> = reader.chapters().map(|chapter| chapter.path).collect();
-        assert_eq!(paths, ["ch01.md", "ch02.md"]);
-    }
-
-    #[test]
-    fn pictures_carry_their_size() {
-        let reader = reader();
-        let size = reader.pictures().next().map(|picture| picture.size);
-        assert_eq!(
-            size,
-            Some(Size {
-                width: 1200,
-                height: 1800
-            })
-        );
-    }
-
-    #[test]
-    fn chapter_id_accepts_the_number_of_a_chapter() {
-        assert_eq!(reader().chapter_id(6).map(ChapterId::number), Some(6));
-    }
-
-    #[test]
-    fn chapter_id_rejects_the_number_of_a_picture() {
-        assert_eq!(reader().chapter_id(5), None);
-    }
-
-    #[test]
-    fn chapter_id_rejects_a_service_resource() {
-        assert_eq!(reader().chapter_id(2), None);
-    }
-
-    #[test]
-    fn chapter_id_rejects_a_number_past_the_table() {
-        assert_eq!(reader().chapter_id(99), None);
-    }
-
-    #[test]
-    fn picture_id_rejects_an_unknown_kind() {
-        assert_eq!(reader().picture_id(9), None);
-    }
-
-    #[test]
-    fn find_picture_returns_the_picture_with_that_path() {
-        let reader = reader();
-        let found = reader
-            .find_picture("img/fig-1.avif")
-            .map(|picture| picture.id);
-        assert_eq!(found.map(PictureId::number), Some(8));
-    }
-
-    #[test]
-    fn find_picture_ignores_the_path_of_a_chapter() {
-        assert!(reader().find_picture("ch01.md").is_none());
-    }
-
-    #[test]
-    fn find_chapter_returns_none_for_an_unknown_path() {
-        assert!(reader().find_chapter("ch99.md").is_none());
-    }
-
-    #[test]
-    fn cover_is_the_picture_named_by_the_metadata() {
-        let reader = reader();
-        assert_eq!(
-            reader.cover().map(|cover| cover.path),
-            Some("img/cover.avif")
-        );
-    }
-
-    #[test]
-    fn chapter_returns_none_for_an_id_from_another_book() {
-        assert!(reader().chapter(ChapterId::new(5)).is_none());
-    }
-
-    #[test]
-    fn resources_lists_every_row() {
-        assert_eq!(reader().resources().len(), 10);
-    }
-
-    #[test]
-    fn resources_gives_a_size_to_pictures_only() {
-        let reader = reader();
-        let sized = reader.resources().filter(|r| r.size.is_some()).count();
-        assert_eq!(sized, 2);
-    }
-
-    #[test]
-    fn resources_keeps_an_unknown_kind() {
-        let reader = reader();
-        let last = reader.resources().last().map(|resource| resource.kind);
-        assert_eq!(last, Some(ResourceKind::Unknown(9)));
+/// Tells a file that is not a framed container from a damaged one, leaving
+/// the source where it was.
+fn check_signature<R: Read + Seek>(source: &mut R) -> Result<()> {
+    let start = source.stream_position()?;
+    let mut signature = [0; CONTAINER_MAGIC.len()];
+    let complete = match source.read_exact(&mut signature) {
+        Ok(()) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => false,
+        Err(error) => return Err(error.into()),
+    };
+    source.seek(SeekFrom::Start(start))?;
+    if complete && signature == CONTAINER_MAGIC {
+        Ok(())
+    } else {
+        Err(Error::NotMbook)
     }
 }

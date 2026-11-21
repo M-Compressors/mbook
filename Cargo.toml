@@ -1,9 +1,47 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = ["crates/mbook-core"]
 
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/M-Compressors/mbook"
+homepage = "https://m-compressors.github.io/mbook/"
+
 [workspace.dependencies]
-# The container layer. Uncomment together with the first code that uses it:
-# Cargo warns about a workspace dependency no member depends on. Each crate
-# picks `compression` and `decompression` itself.
-# mopenzl = { version = "0.2", default-features = false, features = ["std", "framed", "all-codecs"] }
+thiserror = "2"
+uuid = { version = "1", features = ["v7"] }
+# Each crate picks `compression` and `decompression` itself. 0.2.6 is the
+# first version with `FramedIndex`, which `BookReader` is built on.
+mopenzl = { version = "0.2.6", default-features = false, features = ["std", "framed", "all-codecs"] }
+markdown = "1.0.0"
+bytes = "1.10"
+tempfile = "3.10"
+percent-encoding = "2"
+github-slugger = "0.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+unreachable_pub = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+# A library returns errors; it does not panic or print.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+# A lint is silenced with a narrow `#[expect(.., reason = "..")]`, never with
+# `#[allow]`.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
