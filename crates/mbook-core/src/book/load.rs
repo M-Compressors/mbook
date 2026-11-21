@@ -6,6 +6,7 @@ use crate::error::{Error, Result};
 use crate::format::{CONTAINER_MAGIC, FORMAT, SERVICE_COUNT};
 use crate::index::Index;
 use crate::options::ReadOptions;
+use mopenzl::TypedOutput;
 use std::io::{Cursor, Read};
 use std::path::Path;
 
@@ -67,9 +68,9 @@ impl Book {
                     version = Some(container::header(&resource.outputs)?);
                 }
                 service.push(resource.outputs);
-                contents.push(None);
+                contents.push(Vec::new());
             } else {
-                contents.push(container::serial(resource));
+                contents.push(resource.outputs);
             }
         }
         let version = version.ok_or(Error::NotMbook)?;
@@ -81,40 +82,50 @@ impl Book {
         };
         let index = Index::from_outputs(version, [meta, table, toc, anchors], &decoded_lens)?;
         Self::assemble(&index, |number| {
-            usize::try_from(number)
+            // Every resource is asked for once, so its outputs can be moved.
+            let outputs = usize::try_from(number)
                 .ok()
                 .and_then(|at| contents.get_mut(at))
-                .and_then(Option::take)
-                .ok_or(Error::Malformed {
-                    resource: number,
-                    reason: "the resource is not one serial output",
-                })
+                .map(std::mem::take);
+            Ok(outputs.unwrap_or_default())
         })
     }
 
-    /// Builds the model from checked tables. `content` gives the decoded
-    /// bytes of a chapter or a picture by its resource number.
+    /// Builds the model from checked tables. `outputs` gives the decoded
+    /// content of a resource by its number.
     pub(crate) fn assemble(
         index: &Index,
-        mut content: impl FnMut(u32) -> Result<Vec<u8>>,
+        mut outputs: impl FnMut(u32) -> Result<Vec<TypedOutput>>,
     ) -> Result<Self> {
         let mut book = Self::empty(index.meta().clone());
         for entry in index.chapters() {
             let number = entry.id.number();
+            // The table of a chapter is the resource before it.
+            let table = index.anchor_table(number);
+            let extra_anchors = match table {
+                Some(table) => index.read_extra_anchors(number, table, &outputs(table)?)?,
+                None => Vec::new(),
+            };
+            let text = index.text(number, container::serial(number, outputs(number)?)?)?;
+            if let Some(table) = table {
+                Index::check_extra_positions(table, &extra_anchors, &text)?;
+            }
             let chapter = Chapter {
                 path: entry.path.to_owned(),
-                text: index.text(number, content(number)?)?,
+                text,
                 // The anchors stored in the file are kept until the text of
                 // the chapter is replaced.
                 anchors: index.anchors(number).to_vec(),
+                extra_anchors,
             };
             book.place_chapter(book.chapters.len(), chapter);
         }
         for entry in index.pictures() {
+            let number = entry.id.number();
             book.place_picture(Picture {
                 path: entry.path.to_owned(),
                 size: entry.size,
-                data: content(entry.id.number())?,
+                data: container::serial(number, outputs(number)?)?,
             });
         }
         book.toc = Toc::Explicit(

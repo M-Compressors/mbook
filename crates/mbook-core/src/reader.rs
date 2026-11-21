@@ -6,9 +6,13 @@ use crate::error::{Error, ResolveError, Result};
 use crate::format::{ANCHORS, CONTAINER_MAGIC, FORMAT, META, RESOURCES, SERVICE_COUNT, TOC};
 use crate::id::{ChapterId, PictureId};
 use crate::index::Index;
+use crate::index::Resolved;
 use crate::meta::Meta;
 use crate::options::{Limits, ReadOptions};
-use crate::types::{Anchor, ChapterEntry, Destination, PictureEntry, Resource, TocEntry, Version};
+use crate::types::{
+    Anchor, ChapterEntry, Destination, PictureEntry, Position, Resource, TocEntry, Version,
+};
+use mopenzl::TypedOutput;
 use mopenzl::framing::{FramedDecompressor, FramedIndex};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -17,8 +21,9 @@ use std::path::Path;
 /// Reads a book lazily from anything that can seek.
 ///
 /// Opening a reader reads the directory of the file and its five small
-/// tables: enough for the title, the cover and the contents. Each chapter and
-/// each picture is read and decoded when it is asked for.
+/// tables: enough for the title, the cover and the contents. Each chapter,
+/// each picture and the anchor table of each chapter is read and decoded
+/// when it is asked for.
 ///
 /// Methods that only look into the tables take `&self` and do no I/O. Methods
 /// that touch the source start with `read_` and take `&mut self`.
@@ -224,8 +229,11 @@ impl<R: Read + Seek> BookReader<R> {
         self.index.picture_id(number)
     }
 
-    /// The anchors of a chapter, sorted by offset. Empty for an id that came
-    /// from another book.
+    /// The anchors of the headings of a chapter, sorted by offset. Empty for
+    /// an id that came from another book.
+    ///
+    /// Anchors of other places are in the chapter's own table; see
+    /// [`read_extra_anchors`](Self::read_extra_anchors).
     #[must_use]
     pub fn anchors(&self, chapter: ChapterId) -> &[Anchor] {
         self.index.anchors(chapter.number())
@@ -239,12 +247,58 @@ impl<R: Read + Seek> BookReader<R> {
     /// from a picture: a link that resolves to [`Destination::Picture`], or a
     /// picture that resolves to anything else, is unresolved.
     ///
+    /// Nothing is read. A fragment that is not the anchor of a heading may
+    /// be in the anchor table of its chapter: the result is then
+    /// [`Destination::ExtraAnchor`], and
+    /// [`read_resolve`](Self::read_resolve) finds the position.
+    ///
     /// # Errors
     ///
     /// The destination leads nowhere; the caller shows the link text or the
     /// alternative text instead.
     pub fn resolve(&self, from: ChapterId, destination: &str) -> Result<Destination, ResolveError> {
         self.index.resolve(from, destination)
+    }
+
+    /// Tells what a destination points to, reading the anchor table of the
+    /// target chapter when the fragment is not the anchor of a heading.
+    ///
+    /// It is [`resolve`](Self::resolve) for the moment a link is followed:
+    /// the result is never [`Destination::ExtraAnchor`].
+    ///
+    /// The table cannot show whether an offset is at the start of a line;
+    /// [`load`](Self::load), which has the text as well, checks that.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Unresolved`] when the destination leads nowhere; otherwise
+    /// as [`read_extra_anchors`](Self::read_extra_anchors).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use mbook_core::{BookReader, Destination};
+    ///
+    /// let mut book = BookReader::open("example.mbook")?;
+    /// let Some(from) = book.chapters().next().map(|chapter| chapter.id) else {
+    ///     return Ok(());
+    /// };
+    /// // The user followed [the figure](ch01.md#fig-1).
+    /// if let Destination::Chapter(position) = book.read_resolve(from, "ch01.md#fig-1")? {
+    ///     println!("byte {} of chapter {}", position.offset, position.chapter.number());
+    /// }
+    /// # Ok::<(), mbook_core::Error>(())
+    /// ```
+    pub fn read_resolve(&mut self, from: ChapterId, destination: &str) -> Result<Destination> {
+        match self.index.resolve_named(from, destination)? {
+            Resolved::Known(destination) => Ok(destination),
+            Resolved::Extra { chapter, name } => {
+                let anchors = self.read_extra_anchors(chapter)?;
+                let anchor = anchors.iter().find(|anchor| anchor.name == name);
+                let offset = anchor.ok_or(ResolveError::UnknownAnchor)?.offset;
+                Ok(Destination::Chapter(Position { chapter, offset }))
+            }
+        }
     }
 
     /// Every row of the resource table, including service rows and kinds
@@ -269,6 +323,27 @@ impl<R: Read + Seek> BookReader<R> {
         }
         let bytes = self.read_serial(number)?;
         self.index.text(number, bytes)
+    }
+
+    /// Reads the anchors a chapter has besides those of its headings, sorted
+    /// by offset. Empty for a chapter without an anchor table.
+    ///
+    /// An error here does not affect other resources.
+    ///
+    /// # Errors
+    ///
+    /// The source fails; the record is damaged or larger than the limit; the
+    /// table breaks a rule of the format; the id came from another book.
+    pub fn read_extra_anchors(&mut self, chapter: ChapterId) -> Result<Vec<Anchor>> {
+        let number = chapter.number();
+        if self.index.chapter_id(number).is_none() {
+            return Err(Error::NoSuchResource(number));
+        }
+        let Some(table) = self.index.anchor_table(number) else {
+            return Ok(Vec::new());
+        };
+        let outputs = read_outputs(&mut self.decoder, &mut self.source, &self.directory, table)?;
+        self.index.read_extra_anchors(number, table, &outputs)
     }
 
     /// Reads one picture as the bytes of an AVIF file.
@@ -321,7 +396,7 @@ impl<R: Read + Seek> BookReader<R> {
             ..
         } = self;
         Book::assemble(index, |number| {
-            read_serial(decoder, source, directory, number)
+            read_outputs(decoder, source, directory, number)
         })
     }
 
@@ -331,26 +406,25 @@ impl<R: Read + Seek> BookReader<R> {
         self.source
     }
 
+    /// Reads one resource that must decode to a single serial output.
     fn read_serial(&mut self, number: u32) -> Result<Vec<u8>> {
-        read_serial(&mut self.decoder, &mut self.source, &self.directory, number)
+        let outputs = read_outputs(&mut self.decoder, &mut self.source, &self.directory, number)?;
+        container::serial(number, outputs)
     }
 }
 
-/// Reads one resource that must decode to a single serial output.
-fn read_serial<R: Read + Seek>(
+/// Reads and decodes one resource.
+fn read_outputs<R: Read + Seek>(
     decoder: &mut FramedDecompressor,
     source: &mut R,
     directory: &FramedIndex,
     number: u32,
-) -> Result<Vec<u8>> {
+) -> Result<Vec<TypedOutput>> {
     let at = usize::try_from(number).unwrap_or(usize::MAX);
-    let resource = decoder
+    decoder
         .read_indexed_resource(source, directory, at)
-        .map_err(container::error)?;
-    container::serial(resource).ok_or(Error::Malformed {
-        resource: number,
-        reason: "the resource is not one serial output",
-    })
+        .map(|resource| resource.outputs)
+        .map_err(container::error)
 }
 
 /// Tells a file that is not a framed container from a damaged one, leaving

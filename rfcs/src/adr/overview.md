@@ -13,6 +13,7 @@ trade-off, and the consequences.
 | [0005](0005-paths-and-resource-table.md) | Markdown refers to resources by path; a table maps paths to frames | Proposed |
 | [0006](0006-markdown-dialect.md) | Chapters are GitHub Flavored Markdown without raw HTML | Accepted |
 | [0007](0007-positions-and-anchors.md) | Positions are byte offsets; heading anchors are stored in a table | Accepted |
+| [0008](0008-chapter-anchor-tables.md) | Names of lines that are not headings are stored in a table before their chapter | Accepted |
 
 ## Status values
 

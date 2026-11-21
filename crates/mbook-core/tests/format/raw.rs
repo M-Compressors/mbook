@@ -47,6 +47,21 @@ impl Column {
     }
 }
 
+/// The decoded content of one resource after the tables.
+#[derive(Clone, Debug)]
+pub(crate) enum Content {
+    /// A chapter or a picture.
+    Serial(Vec<u8>),
+    /// The anchor table of a chapter.
+    Table(Vec<Column>),
+}
+
+impl From<Vec<u8>> for Content {
+    fn from(bytes: Vec<u8>) -> Self {
+        Self::Serial(bytes)
+    }
+}
+
 /// The parts of a file, each open to tampering.
 #[derive(Clone, Debug)]
 pub(crate) struct Raw {
@@ -55,7 +70,7 @@ pub(crate) struct Raw {
     /// The columns of resources 1 to 4: meta, resources, toc, anchors.
     pub(crate) tables: Vec<Vec<Column>>,
     /// The decoded content of every resource after the tables.
-    pub(crate) contents: Vec<Vec<u8>>,
+    pub(crate) contents: Vec<Content>,
 }
 
 pub(crate) const META: usize = 0;
@@ -103,10 +118,10 @@ impl Raw {
                 ],
             ],
             contents: vec![
-                PLAIN.to_vec(),
-                CH01.as_bytes().to_vec(),
-                CH02.as_bytes().to_vec(),
-                ROTATED.to_vec(),
+                PLAIN.to_vec().into(),
+                CH01.as_bytes().to_vec().into(),
+                CH02.as_bytes().to_vec().into(),
+                ROTATED.to_vec().into(),
             ],
         }
     }
@@ -124,7 +139,34 @@ impl Raw {
         table[1].text_mut().push(path.to_owned());
         table[2].words_mut().push(0);
         table[3].words_mut().push(0);
-        self.contents.push(content.to_vec());
+        self.contents.push(content.to_vec().into());
+    }
+
+    /// Puts an anchor table in front of resource `before`, which makes that
+    /// resource and every later one move up by one. The numbers stored in
+    /// the contents and in the anchors of headings follow.
+    pub(crate) fn insert_anchor_table(&mut self, before: usize, offsets: &[u32], names: &[&str]) {
+        let table = &mut self.tables[RESOURCES];
+        table[0].bytes_mut().insert(before, 3);
+        table[1].text_mut().insert(before, String::new());
+        table[2].words_mut().insert(before, 0);
+        table[3].words_mut().insert(before, 0);
+        let moved = u32::try_from(before).unwrap_or(u32::MAX);
+        for (table, column) in [(TOC, 2), (ANCHORS, 0)] {
+            for number in self.tables[table][column].words_mut() {
+                *number += u32::from(*number >= moved);
+            }
+        }
+        let columns = vec![Column::Words(offsets.to_vec()), Column::text(names)];
+        self.contents.insert(before - 5, Content::Table(columns));
+    }
+
+    /// The columns of the anchor table that is resource `number`.
+    pub(crate) fn anchor_table_mut(&mut self, number: usize) -> &mut Vec<Column> {
+        match &mut self.contents[number - 5] {
+            Content::Table(columns) => columns,
+            Content::Serial(_) => panic!("not a table"),
+        }
     }
 
     /// Encodes the parts as one container.
@@ -138,16 +180,24 @@ impl Raw {
             graph: Some(&store),
             metadata: &[],
         })?;
-        for table in &self.tables {
-            let encoded: Vec<Encoded> = table.iter().map(Encoded::from).collect();
-            let inputs = encoded
-                .iter()
-                .map(Encoded::input)
-                .collect::<Result<Vec<_>, _>>()?;
-            writer.resource(FramedResource::from(inputs.as_slice()))?;
-        }
-        for content in &self.contents {
-            writer.resource(FramedResource::from(content.as_slice()))?;
+        let tables = self
+            .tables
+            .iter()
+            .map(|table| Content::Table(table.clone()));
+        for content in tables.chain(self.contents.iter().cloned()) {
+            match content {
+                Content::Serial(bytes) => {
+                    writer.resource(FramedResource::from(bytes.as_slice()))?;
+                }
+                Content::Table(columns) => {
+                    let encoded: Vec<Encoded> = columns.iter().map(Encoded::from).collect();
+                    let inputs = encoded
+                        .iter()
+                        .map(Encoded::input)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    writer.resource(FramedResource::from(inputs.as_slice()))?;
+                }
+            }
         }
         Ok(writer.finish().map_err(|failure| failure.error)?)
     }

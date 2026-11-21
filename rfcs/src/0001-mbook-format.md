@@ -14,7 +14,9 @@ five frames are fixed: a format header, the book's metadata, a table of every
 resource, the table of contents, and a table of heading anchors. Chapters
 follow as GitHub Flavored Markdown without raw HTML, and pictures as AVIF
 files stored without recompression. Markdown refers to pictures and to other
-chapters by relative path; the resource table maps a path to a frame.
+chapters by relative path; the resource table maps a path to a frame. A link
+into a chapter names a heading, or any other line that the chapter's own
+anchor table gives a name to.
 
 ## Motivation
 
@@ -70,10 +72,13 @@ flowchart TD
     toc["3 · toc<br/>level, title, resource, offset"]
     anc["4 · anchors<br/>resource, offset, name"]
     ch["text resources<br/>chapters in Markdown"]
+    own["anchor table of a chapter<br/>offset, name"]
     pic["picture resources<br/>AVIF files"]
     meta -- "cover: a path" --> res
     ch -- "path of a link or picture" --> res
-    ch -- "fragment of a link" --> anc
+    ch -- "fragment of a link:<br/>a heading" --> anc
+    ch -- "fragment of a link:<br/>another line" --> own
+    own -- "offset in the resource<br/>that follows it" --> ch
     res -- "row number is the resource number" --> ch
     res -- "row number is the resource number" --> pic
     toc -- "resource, offset" --> ch
@@ -89,7 +94,8 @@ resource 1   meta        key, value                          strings
 resource 2   resources   kind, path, width, height           one row per resource
 resource 3   toc         level, title, resource, offset      table of contents
 resource 4   anchors     resource, offset, name              heading anchors
-resource 5…  cover picture, then chapters, then pictures
+resource 5…  cover picture, then chapters, then pictures;
+             a chapter that names other lines follows its own anchor table
 index + footer                                               provided by the container
 ```
 
@@ -120,7 +126,9 @@ and the second line.
 - `img/fig-3.avif` is looked up in the resource table and gives the number of
   the frame that holds the picture, together with its pixel size.
 - `ch01.md#chapter-1` is looked up in the resource table (the chapter) and
-  then in the anchor table (the position inside it).
+  then in the anchor table (the position inside it). A name that is not that
+  of a heading is looked up in the anchor table of the chapter itself
+  ([Anchors that are not headings](#anchors-that-are-not-headings)).
 - A paragraph that contains only a picture is a figure; the link title is its
   caption.
 
@@ -187,6 +195,33 @@ payloads are stand-ins of 18,000 and 42,000 bytes.
 
 Everything a library view needs is in the first 757 bytes plus the cover.
 
+### Anchors that are not headings
+
+The `anchors` table names headings. A chapter can name any other line as
+well: the figure of chapter 1, say, so that chapter 2 can link to it as
+`[the figure](ch01.md#fig-1)`. Those names are stored in a small table of the
+chapter's own, the resource just before the chapter:
+
+| row | kind | path |
+| ---: | ---: | --- |
+| 5 | 2 | `img/cover.avif` |
+| 6 | 3 | |
+| 7 | 1 | `ch01.md` |
+| 8 | 1 | `ch02.md` |
+| 9 | 2 | `img/fig-1.avif` |
+
+Resource 6 is the anchor table of `ch01.md`:
+
+| offset | name |
+| ---: | --- |
+| 43 | `fig-1` |
+
+Chapter 2 has no names besides its heading, so it has no such table. The
+rows of `toc` and `anchors` now say 7 and 8 where they said 6 and 7.
+
+A reader does not decode these tables when it opens a book. It decodes one
+when a link leads to a name that `anchors` does not have for that chapter.
+
 ### How a reader opens a book
 
 ```mermaid
@@ -216,6 +251,8 @@ sequenceDiagram
    and the tree from `toc`.
 5. On navigation, decode the chapter frame; decode picture frames as they
    scroll into view.
+6. When a link with a fragment is followed and `anchors` has no such name
+   for the target chapter, decode the anchor table in front of that chapter.
 
 ### How a packer builds a book
 
@@ -235,7 +272,9 @@ flowchart TD
    top-level headings.
 3. Parse each chapter once to collect headings (for `toc` and `anchors`) and
    to validate every link and picture reference.
-4. Write resources 0 to 4, then the cover, the chapters and the pictures.
+4. Write resources 0 to 4, then the cover, the chapters and the pictures. A
+   chapter with names for lines that are not headings is preceded by its
+   anchor table.
 
 ### Integration points
 
@@ -328,8 +367,9 @@ A file **MUST** contain at least five resources.
 
 ### Tables
 
-Resources 1 to 4 are *tables*. A table is one frame with several typed inputs;
-each input is a column and each element is a row.
+Resources 1 to 4, and every resource of `kind` 3, are *tables*. A table is
+one frame with several typed inputs; each input is a column and each element
+is a row.
 
 | Column type | OpenZL input |
 | --- | --- |
@@ -447,9 +487,12 @@ resources in the container directory.
 | 0 | Service resource | Defined by its position. |
 | 1 | Text | One serial output: a chapter ([Text resources](#text-resources)). |
 | 2 | Picture | One serial output: an AVIF file ([Picture resources](#picture-resources)). |
+| 3 | Chapter anchors | A table that names positions of the next resource ([Chapter anchor tables](#chapter-anchor-tables)). |
 
 - Rows 0 to 4 **MUST** have `kind` 0. No other row may have `kind` 0 in
   version 1.0.
+- A row of `kind` 3 **MUST** be followed by a row of `kind` 1. A text
+  resource therefore has at most one anchor table, the resource before it.
 - A reader **MUST** skip a resource whose `kind` it does not know: it is not
   decoded, and references to it are treated as unresolved.
 - **Reading order** is the order of rows with `kind` 1.
@@ -457,7 +500,7 @@ resources in the container directory.
 
 Rules for `path`:
 
-- It **MUST** be empty when `kind` is 0 and non-empty otherwise.
+- It **MUST** be empty when `kind` is 0 or 3 and non-empty otherwise.
 - Non-empty paths **MUST** be unique within the table, compared byte for byte.
 - It is one or more segments joined by `/`. A segment **MUST NOT** be empty,
   `.` or `..`, and **MUST NOT** contain `/`, `\`, or a character below U+0020.
@@ -466,8 +509,9 @@ Rules for `path`:
   generated names sequentially (`img/0001.avif`), which compresses best.
 
 Writers **SHOULD** place the resource named by `cover` at position 5, then all
-text resources, then the remaining pictures. Readers **MUST NOT** depend on
-this order.
+text resources, each directly after its anchor table when it has one, then
+the remaining pictures. Apart from an anchor table and its chapter, readers
+**MUST NOT** depend on this order.
 
 ### Resource 3: `toc`
 
@@ -487,7 +531,9 @@ Rows form a tree listed in pre-order.
 - `offset` **MUST** be a [valid position](#positions) in that chapter.
 - A row whose `offset` is not 0 **MUST** have the same `resource` and `offset`
   as a row of `anchors`. The target of a contents entry can therefore always
-  be written as a link destination: a path and an optional fragment.
+  be written as a link destination: a path and an optional fragment. A row of
+  a [chapter anchor table](#chapter-anchor-tables) does not satisfy this
+  rule: it is not read when a file is opened.
 - Rows **MUST** be in reading order: by position of `resource` in the reading
   order, then by `offset`.
 
@@ -501,9 +547,11 @@ The table **MAY** be empty. It need not list every heading.
 | 1 | `offset` | `u32` |
 | 2 | `name` | string |
 
-One row gives a name to a position inside a chapter. Link fragments are
-resolved through this table only; readers do not derive anchor names from
-heading text.
+One row gives a name to a position inside a chapter. This table holds the
+names of headings; names of other positions are in
+[chapter anchor tables](#chapter-anchor-tables). Link fragments are resolved
+through these tables only; readers do not derive anchor names from heading
+text.
 
 - `resource` **MUST** be the number of a resource with `kind` 1.
 - `offset` **MUST** be a [valid position](#positions) in that chapter.
@@ -517,6 +565,33 @@ with punctuation removed, spaces replaced by `-`, and `-1`, `-2`, … appended t
 repeated names within a chapter. For example, `Chapter 3. The Seventh Proof`
 becomes `chapter-3-the-seventh-proof`. A heading whose name would be empty,
 such as one made of punctuation only, gets no row.
+
+Writers **SHOULD NOT** put a row into this table for a position that is not
+the start of a heading: the table is decoded whenever a file is opened.
+
+### Chapter anchor tables
+
+A resource of `kind` 3 gives names to positions of the text resource that
+follows it. It lets a link lead to a line that is not a heading: a paragraph,
+a figure, a row of a table.
+
+| # | Column | Type |
+| --- | --- | --- |
+| 0 | `offset` | `u32` |
+| 1 | `name` | string |
+
+- `offset` **MUST** be a [valid position](#positions) in the chapter that
+  follows the table.
+- `name` **MUST NOT** be empty, **MUST** be unique within the table, and
+  **MUST NOT** equal the `name` of a row of `anchors` for the same chapter. A
+  fragment therefore names one position, whichever table holds it.
+- Rows **MUST** be sorted by `offset`. Two rows **MAY** have the same
+  `offset`.
+- The table **MAY** be empty. Writers **SHOULD NOT** write a table without
+  rows: a chapter that needs no such name has no anchor table.
+
+Readers **SHOULD NOT** decode a chapter anchor table before it is needed to
+resolve a fragment.
 
 ### Positions
 
@@ -587,8 +662,10 @@ flowchart TD
     found -- yes --> frag{"Has a<br/>fragment?"}
     frag -- no --> whole["The picture, or<br/>offset 0 of the chapter"]
     frag -- yes --> named{"Name is in anchors<br/>for that chapter?"}
-    named -- no --> bad
     named -- yes --> pos["Resource and offset"]
+    named -- no --> table{"Name is in the chapter's<br/>own anchor table?"}
+    table -- yes --> pos
+    table -- no --> bad
 ```
 
 For every link and picture, a reader takes the destination after CommonMark
@@ -609,7 +686,7 @@ has processed escapes and entities, then:
 | Reference | Target | Fragment |
 | --- | --- | --- |
 | Picture `![alt](dest "title")` | `kind` 2 | not allowed |
-| Link `[text](dest)` | `kind` 1 | optional; **MUST** equal the `name` of an `anchors` row of the target chapter, byte for byte |
+| Link `[text](dest)` | `kind` 1 | optional; **MUST** equal, byte for byte, the `name` of an `anchors` row of the target chapter or of a row of that chapter's [anchor table](#chapter-anchor-tables) |
 
 A link without a fragment leads to offset 0 of the target chapter.
 
@@ -655,13 +732,18 @@ A reader **MUST** reject a file when:
 
 A reader **MUST NOT** reject a file because of unknown `meta` keys, unknown
 `kind` values, extra table columns, or errors confined to one text or picture
-resource; it reports those where they are met.
+resource or to one chapter anchor table; it reports those where they are
+met. A chapter anchor table that is not a table of the defined shape, or
+that breaks a **MUST** rule of its section, is such an error: the chapter it
+belongs to can still be shown, and a link that needs the table is unresolved.
 
 One rule of the tables cannot be checked from the tables: whether a position
 is preceded by a line feed needs the text of its chapter. A reader checks the
 rest of a [valid position](#positions) when it opens a file, and this part
 when it decodes the chapter; a failure there is an error confined to that
-chapter.
+chapter. For a row of a chapter anchor table, a reader checks the rest when
+it decodes the table, and this part when it has decoded both the table and
+the chapter; a failure there is an error confined to that table.
 
 A writer **MUST** produce files that satisfy every **MUST** in this document.
 
@@ -699,7 +781,11 @@ A writer **MUST** produce files that satisfy every **MUST** in this document.
 - **No HTML means no escape hatch.** Layout that Markdown cannot express
   (centred text, columns, drop capitals) cannot be stored at all.
 - **Positions are byte offsets**, so editing a chapter invalidates bookmarks
-  and requires rebuilding `toc` and `anchors`.
+  and requires rebuilding `toc`, `anchors` and the chapter's anchor table.
+- **A fragment is looked up in two places.** A name that is not a heading's
+  costs one more frame to decode when its link is followed, and a reader
+  that opens a file lazily cannot tell such a link from a broken one before
+  that.
 - **Uneven parser support for one extension.** Not every CommonMark library
   implements extended autolinks; see
   [ADR-0006](adr/0006-markdown-dialect.md).
@@ -718,6 +804,7 @@ trade-off and the consequences.
 | References by path through a resource table | Frame numbers in Markdown | [ADR-0005](adr/0005-paths-and-resource-table.md) |
 | GitHub Flavored Markdown without raw HTML | CommonMark with heading attributes | [ADR-0006](adr/0006-markdown-dialect.md) |
 | Byte offsets and a stored anchor table | Readers computing GitHub anchors | [ADR-0007](adr/0007-positions-and-anchors.md) |
+| Names of lines that are not headings in a table before their chapter | All names in resource 4; links only to headings | [ADR-0008](adr/0008-chapter-anchor-tables.md) |
 
 ## Prior art
 
@@ -745,6 +832,9 @@ trade-off and the consequences.
   registered.
 - **Links to pictures.** Links currently target chapters only. A link to a
   picture ("open full size") may be worth allowing.
+- **Chapter anchor tables.** Their `kind` code, the tie to a chapter by
+  position, and the rule that a contents row needs an `anchors` row are
+  proposals of [ADR-0008](adr/0008-chapter-anchor-tables.md).
 
 ## Future possibilities
 

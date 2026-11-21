@@ -93,6 +93,11 @@ fn resource_kinds_follow_the_codes_of_the_format() {
 }
 
 #[test]
+fn kind_code_three_is_the_anchor_table_of_a_chapter() {
+    assert_eq!(ResourceKind::from(3), ResourceKind::ChapterAnchors);
+}
+
+#[test]
 fn an_undefined_kind_code_is_kept() {
     assert_eq!(ResourceKind::from(7), ResourceKind::Unknown(7));
 }

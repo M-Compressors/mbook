@@ -13,8 +13,8 @@
 central types:
 
 - **`BookReader<R>`** reads a book lazily from anything that can seek. Opening
-  it costs the directory and five small frames; each chapter and picture is
-  decoded when asked for.
+  it costs the directory and five small frames; each chapter, each picture
+  and the anchor table of each chapter is decoded when asked for.
 - **`Book`** is a whole book in memory that can be changed and written out. It
   is how a book is created, and how an existing one is edited.
 
@@ -42,7 +42,7 @@ container itself. Four tasks must each take a few lines:
 | Reading costs what is shown | `BookReader` decodes the tables once and one resource per call. |
 | One reading API for files and streams | `BookReader::buffered` turns any `Read` into the same reader type. |
 | An invalid book cannot be written | `Book::write` checks every **MUST** of RFC 0001 first. |
-| Edits cannot leave stale navigation | Anchors and contents offsets are computed from the text when writing. |
+| Edits cannot leave stale navigation | Anchors of headings and contents offsets are computed from the text; anchors given by the caller are dropped when the text is replaced. |
 | The call site reads like the task | Paths, titles and link destinations as arguments; no row numbers when building. |
 | mopenzl stays an implementation detail | No mopenzl type appears in a public signature. |
 
@@ -121,8 +121,23 @@ match book.resolve(first, "img/fig-1.avif") {
         let avif = book.read_picture(id)?;             // decode when visible
     }
     Ok(Destination::Chapter(position)) => { /* jump to position */ }
+    Ok(Destination::ExtraAnchor(chapter)) => { /* a place in `chapter`; see below */ }
     Ok(Destination::External) => { /* open only when the user asks */ }
     Err(_) => { /* show the link text or the alternative text */ }
+}
+```
+
+`resolve` reads nothing, so it can be called for every link of a chapter
+while it is laid out. A link to a heading, or to the start of a chapter, is
+answered in full. A link to another named line, such as
+`ch01.md#fig-1`, is answered with `Destination::ExtraAnchor`: the name may be
+in the anchor table of that chapter, which is not read when a book is opened.
+When the user follows the link, `read_resolve` reads that table:
+
+```rust
+match book.read_resolve(first, "ch01.md#fig-1")? {
+    Destination::Chapter(position) => { /* jump to position */ }
+    _ => { /* as above */ }
 }
 ```
 
@@ -223,6 +238,25 @@ book.set_toc(Toc::Explicit(vec![
 ]));
 ```
 
+### Naming a place that is not a heading
+
+Headings get their anchors by themselves. Any other line can be given a name,
+so that a link can lead to it:
+
+```rust
+let text = fs::read_to_string("ch01.md")?;
+let figure = text.find("![View of the pond]").expect("the figure is there");
+
+let chapter = book.add_chapter("ch01.md", text)?;
+chapter.add_anchor("fig-3", u32::try_from(figure)?)?;
+
+// In another chapter: [the figure](ch01.md#fig-3)
+```
+
+The offset counts bytes of the stored text and must be the first byte of a
+line. It belongs to that text: `set_text` removes the extra anchors of a
+chapter, and links to them are then reported when the book is saved.
+
 ### When something is wrong
 
 Rules about one item are checked when the item is given, so the error points
@@ -278,10 +312,15 @@ pub struct PictureEntry<'a> {
 
 pub struct TocEntry { pub level: u8, pub title: String, pub position: Position }
 pub struct Anchor { pub offset: u32, pub name: String }
-pub enum Destination { External, Chapter(Position), Picture(PictureId) }
+pub enum Destination {
+    External,
+    Chapter(Position),
+    Picture(PictureId),
+    ExtraAnchor(ChapterId),                  // only from BookReader::resolve
+}
 
 // The raw resource table, for tools that list a file.
-pub enum ResourceKind { Service, Text, Picture, Unknown(u8) }   // non-exhaustive
+pub enum ResourceKind { Service, Text, Picture, ChapterAnchors, Unknown(u8) }   // non-exhaustive
 pub struct Resource<'a> {
     pub number: u32,
     pub kind: ResourceKind,
@@ -371,13 +410,16 @@ impl<R: Read + Seek> BookReader<R> {
     pub fn cover(&self) -> Option<PictureEntry<'_>>;
     pub fn chapter_id(&self, number: u32) -> Option<ChapterId>;     // checked
     pub fn picture_id(&self, number: u32) -> Option<PictureId>;     // checked
-    pub fn anchors(&self, chapter: ChapterId) -> &[Anchor];
+    pub fn anchors(&self, chapter: ChapterId) -> &[Anchor];         // of headings
     pub fn resolve(&self, from: ChapterId, destination: &str)
         -> Result<Destination, ResolveError>;
     pub fn resources(&self) -> impl ExactSizeIterator<Item = Resource<'_>>;  // every row
 
     // Seek, read and decode one resource.
     pub fn read_chapter(&mut self, id: ChapterId) -> Result<String>;
+    pub fn read_extra_anchors(&mut self, chapter: ChapterId) -> Result<Vec<Anchor>>;
+    pub fn read_resolve(&mut self, from: ChapterId, destination: &str)
+        -> Result<Destination>;
     pub fn read_picture(&mut self, id: PictureId) -> Result<Vec<u8>>;
     pub fn read_cover(&mut self) -> Result<Option<Vec<u8>>>;
 
@@ -390,15 +432,29 @@ impl<R: Read + Seek> BookReader<R> {
 | --- | --- | --- |
 | `open`, `new`, `buffered` | Footer, directory, resources 0 to 4 | The file must be rejected under [Conformance](0001-mbook-format.md#conformance), or a limit is exceeded. |
 | Table accessors | Nothing | Never; unknown ids give `None` or an empty slice. |
-| `resolve` | Nothing | The destination is unresolved under [Resolving destinations](0001-mbook-format.md#resolving-destinations). |
+| `resolve` | Nothing | The destination is unresolved under [Resolving destinations](0001-mbook-format.md#resolving-destinations), as far as resources 2 and 4 can tell. |
+| `read_extra_anchors` | The anchor table of one chapter; nothing when it has none | I/O; a damaged frame; the table is not of the defined shape or breaks a rule of [Chapter anchor tables](0001-mbook-format.md#chapter-anchor-tables); the id came from another book. |
+| `read_resolve` | That table, and only when the fragment is not the anchor of a heading | `Error::Unresolved` when the destination is unresolved; otherwise as `read_extra_anchors`. |
 | `read_chapter`, `read_picture` | One record | I/O; a damaged frame; the resource exceeds its limit; the text is not UTF-8, or a stored position in it is not at the start of a line; the id came from another book. |
-| `load` | Every text and picture record | As above, for any resource; or the decoded book exceeds the file limit. |
+| `load` | Every text, picture and anchor table record | As above, for any resource; an extra anchor is not at the start of a line; or the decoded book exceeds the file limit. |
 
 - An error in one resource does not poison the reader; other resources can
   still be read.
 - `resolve` takes the destination after the Markdown parser has processed
-  escapes and entities, and applies the steps of RFC 0001. It is the only
-  place a reading application needs for links and pictures.
+  escapes and entities, and applies the steps of RFC 0001. With
+  `read_resolve` it is all a reading application needs for links and
+  pictures.
+- **A fragment is resolved in two steps**, because RFC 0001 stores names in
+  two places. `resolve` knows the anchors of headings. For any other
+  fragment it looks at the resource table: when the target chapter has an
+  anchor table it returns `Destination::ExtraAnchor`, and
+  `ResolveError::UnknownAnchor` when it has none. `read_resolve` takes the
+  second step and never returns `ExtraAnchor`.
+- The anchor table of a chapter cannot show whether an offset is at the
+  start of a line. `read_extra_anchors` and `read_resolve` check everything
+  else; `load` and `Book::read`, which have the text as well, check this too.
+- An anchor table that breaks a rule fails the calls that read it, and
+  nothing else: its chapter is still read by `read_chapter`.
 - A resource of an unknown `kind` is listed by `resources` only. It has no id
   type, so it cannot be decoded, and `load` and `Book::read` leave it behind:
   a file of a later minor version loses such resources when it is edited.
@@ -453,8 +509,11 @@ impl Book {
 impl Chapter {
     pub fn path(&self) -> &str;
     pub fn text(&self) -> &str;
-    pub fn anchors(&self) -> &[Anchor];
+    pub fn anchors(&self) -> &[Anchor];                  // of headings
+    pub fn extra_anchors(&self) -> &[Anchor];            // of other lines
     pub fn set_text(&mut self, text: impl Into<String>) -> Result<()>;
+    pub fn add_anchor(&mut self, name: impl Into<String>, offset: u32) -> Result<()>;
+    pub fn remove_anchor(&mut self, name: &str) -> Option<Anchor>;
 }
 
 impl Picture {
@@ -493,9 +552,10 @@ impl TocItem {
 }
 ```
 
-A `Book` never stores a byte offset that the caller has to keep correct:
+A `Book` computes every byte offset it can, so that the caller does not have
+to keep them correct:
 
-- **Anchors belong to their chapter.** `add_chapter` and `set_text` compute
+- **Anchors of headings belong to their chapter.** `add_chapter` and `set_text` compute
   them from the headings with the naming rule of RFC 0001. The rule is
   defined by GitHub's implementation, so the names come from a port of it,
   the `github-slugger` crate. A heading whose name would be empty, such as
@@ -511,6 +571,31 @@ A `Book` never stores a byte offset that the caller has to keep correct:
   becomes the chapter's path and the name of the first anchor at that
   position.
 
+#### Extra anchors
+
+A heading names itself. Any other line gets a name from the caller, with
+`Chapter::add_anchor`; a converter uses it for the targets of links that do
+not lead to headings. The extra anchors of a chapter are written as its
+[anchor table](0001-mbook-format.md#chapter-anchor-tables), and a chapter
+without them gets no table.
+
+- **An offset given by the caller lives as long as the text it was given
+  for.** This is the one place where a `Book` holds an offset it did not
+  compute. `set_text` removes the extra anchors of the chapter, because an
+  offset that is still the start of a line after an edit would point at
+  another line without any error. Links to the removed names are reported by
+  `check`.
+- `add_anchor` keeps the anchors sorted by offset; anchors with the same
+  offset stay in the order they were added. Two names may share an offset.
+- The anchor of a heading cannot be added or removed by hand: it follows
+  from the text. `remove_anchor` removes extra anchors only.
+- **A contents item leads to a chapter or to a heading**, not to an extra
+  anchor: RFC 0001 wants a contents row inside a chapter to match a row of
+  `anchors`. An item that names an extra anchor is reported as
+  `DanglingTocItem`.
+- A loaded chapter keeps the extra anchors stored in its file, under the same
+  rule as its heading anchors: until its text is replaced.
+
 #### Where each rule is checked
 
 | Rule of RFC 0001 | Checked by | Reported as |
@@ -520,10 +605,11 @@ A `Book` never stores a byte offset that the caller has to keep correct:
 | The chapter to move exists | `move_chapter` | `Error::NoSuchPath` |
 | Text encoding: no control characters other than line feed and tab | `add_chapter`, `insert_chapter`, `set_text`, after normalising | `Error::InvalidText`, with the byte offset |
 | The same rule, for a chapter that was loaded and never replaced | `check`, `write` | `Problems` |
+| An extra anchor has a name that is not empty and not used in its chapter, at the start of a line | `add_anchor` | `Error::InvalidAnchor`, with an `AnchorError` as its source |
 | The picture is an AVIF file with a primary item | `add_picture` | `Error::InvalidPicture` |
 | `meta` key syntax and counts | `Meta` setters | `Error::InvalidMeta` |
 | No raw HTML, allowed URI schemes | `check`, `write` | `Problems` |
-| Every link and picture reference resolves | `check`, `write` | `Problems` |
+| Every link and picture reference resolves, a fragment against the anchors of headings and the extra anchors of its chapter | `check`, `write` | `Problems` |
 | `cover` names a picture | `check`, `write` | `Problems` |
 | Contents entries resolve; levels form a tree | `check`, `write` | `Problems` |
 
@@ -537,8 +623,9 @@ A `Book` never stores a byte offset that the caller has to keep correct:
 
 #### What `write` produces
 
-Resources 0 to 4, then the cover, then chapters in reading order, then the
-remaining pictures, as RFC 0001 recommends. Pictures use the *store* graph.
+Resources 0 to 4, then the cover, then chapters in reading order, each
+directly after its anchor table when it has extra anchors, then the remaining
+pictures, as RFC 0001 recommends. Pictures use the *store* graph.
 The same `Book` written twice with the same options gives identical bytes.
 
 ### Options and limits
@@ -584,7 +671,8 @@ One `Error` enum, non-exhaustive, with `Result<T> = Result<T, Error>`.
 | `Malformed { resource, reason }` | A table breaks a **MUST** of RFC 0001. |
 | `Limit` | A configured limit was exceeded. |
 | `NoSuchResource` | A `read_` call was given an id from another book. |
-| `InvalidPath`, `DuplicatePath`, `InvalidText`, `InvalidPicture`, `InvalidMeta` | An argument to a `Book` or `Meta` method broke a rule. |
+| `Unresolved` | `read_resolve` was given a destination that leads nowhere. The `ResolveError` is the `source()`. |
+| `InvalidPath`, `DuplicatePath`, `InvalidText`, `InvalidPicture`, `InvalidMeta`, `InvalidAnchor` | An argument to a `Book`, `Chapter` or `Meta` method broke a rule. |
 | `NoSuchPath`, `IndexOutOfRange` | `move_chapter` or `insert_chapter` named a chapter or a position that does not exist. |
 | `Invalid(Problems)` | `write` or `save` refused the book. |
 
@@ -669,6 +757,11 @@ three plain fields.
   they cost a copy and a checksum; text costs a real compression pass.
 - **The write side carries a Markdown parser**, although the crate renders
   nothing.
+- **Two calls resolve a link.** `resolve` cannot say where a fragment leads
+  when it is not a heading's, and a reading application has to handle
+  `Destination::ExtraAnchor`.
+- **Extra anchors do not survive an edit of their chapter.** A program that
+  changes text has to place them again.
 - **`buffered` waits for the end of the stream** before anything can be shown,
   because the directory is at the end of the file.
 
@@ -682,6 +775,10 @@ three plain fields.
 | Editing | Load into `Book`, change, write a new file | Nothing else was considered | Decided by the format author: one in-memory model serves both creating and editing. |
 | Addressing in `Book` | Path | Resource number; opaque handles | Numbers shift on every insertion. Paths are stable, unique, and already what chapters use. |
 | Navigation data | Derived from text at write time | Editable `toc` and `anchors` tables with offsets | An offset that is still a valid position after an edit points at the wrong heading without any error. |
+| Anchors of lines that are not headings | Given by the caller as a name and an offset; dropped when the text is replaced | Kept across `set_text` when the offset is still the start of a line | The same silent error: the anchor would name another line. |
+| | | Marked in the text and found by the crate | The dialect has no syntax for it; [ADR-0006](adr/0006-markdown-dialect.md) dropped heading attributes. |
+| Resolving a fragment that is not a heading's | `resolve` without I/O returns `ExtraAnchor`; `read_resolve` reads the table | `resolve` reads the table itself | Table lookups take `&self` and do no I/O; a renderer calls `resolve` for every link of a page. |
+| | | The reader keeps every anchor table it has read | Memory would grow with the chapters visited, for a table of a few hundred bytes that sits next to the chapter. |
 | When rules are checked | One-item rules at the call, cross-item rules at `write` | Everything at `write` | The error names the call that caused it. |
 | | | Everything at the call | A chapter could not be added before the pictures it shows. |
 | Ids in `BookReader` | `ChapterId` and `PictureId` | One `ResourceId` | Reading a picture as a chapter becomes a compile error instead of `WrongKind` at run time. |
@@ -702,8 +799,8 @@ three plain fields.
 
 ## Unresolved questions
 
-None. The questions raised by the first draft were settled by the format
-author on 2026-11-21:
+The questions raised by the first draft were settled by the format author on
+2026-11-21:
 
 | Question | Decision |
 | --- | --- |
@@ -716,10 +813,18 @@ author on 2026-11-21:
 | Renaming a resource? | Not provided; remove and add. |
 | One id type or two? | `ChapterId` and `PictureId`. |
 | `Limits::default()`? | 1,000,000 resources, 64 MiB per resource, 16 GiB per file. |
+| Can a link lead to a line that is not a heading? | Yes, through the anchor table of its chapter ([ADR-0008](adr/0008-chapter-anchor-tables.md)). |
 
 The change required from mopenzl
 ([Required from mopenzl](#required-from-mopenzl)) is a dependency, not an open
 question of this design.
+
+Still *proposed*, and not confirmed by the format author:
+
+- the names `extra_anchors`, `add_anchor`, `remove_anchor`,
+  `read_extra_anchors`, `read_resolve` and `Destination::ExtraAnchor`;
+- that `set_text` removes the extra anchors of a chapter;
+- that a contents item cannot lead to an extra anchor.
 
 ## Future possibilities
 

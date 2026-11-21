@@ -59,7 +59,8 @@ mod types;
 
 pub use book::{Book, Chapter, Picture, Toc, TocItem};
 pub use error::{
-    Error, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError, Result, TextError,
+    AnchorError, Error, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError, Result,
+    TextError,
 };
 pub use id::{ChapterId, PictureId};
 pub use meta::{Meta, Series};

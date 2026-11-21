@@ -4,6 +4,9 @@
 //! rule. One rule cannot be checked here: that a position is at the start of
 //! a line needs the text of its chapter, so [`Index::check_positions`] checks
 //! it when that chapter is decoded.
+//!
+//! The anchor table of a chapter is not one of the tables read when a file is
+//! opened. [`Index::read_extra_anchors`] checks it when it is decoded.
 
 use crate::error::{Error, MetaError, ResolveError, Result};
 use crate::format::{ANCHORS, KIND_SERVICE, META, RESOURCES, SERVICE_COUNT, TOC};
@@ -14,7 +17,7 @@ use crate::path;
 use crate::tables::{self, AnchorRow, ResourceRow, Tables, TocRow};
 use crate::types::{
     Anchor, ChapterEntry, Destination, PictureEntry, Position, Resource, ResourceKind, Size,
-    TocEntry, Version,
+    TocEntry, Version, is_line_start,
 };
 use mopenzl::TypedOutput;
 use std::collections::HashSet;
@@ -38,6 +41,21 @@ pub(crate) struct Index {
     anchors: Vec<Anchor>,
     /// Which part of `anchors` belongs to a chapter; sorted by chapter.
     anchor_spans: Vec<(u32, Range<usize>)>,
+}
+
+/// What a destination leads to, as far as the tables read at opening tell.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Resolved {
+    /// Everything is known.
+    Known(Destination),
+    /// A fragment that is not the anchor of a heading, in a chapter that has
+    /// an anchor table of its own.
+    Extra {
+        /// The chapter the destination names.
+        chapter: ChapterId,
+        /// The fragment, percent-decoded.
+        name: String,
+    },
 }
 
 /// One row of the resource table, joined with the container directory.
@@ -201,6 +219,68 @@ impl Index {
         Ok(())
     }
 
+    /// Reads the anchor table of a chapter from its decoded columns and
+    /// checks it. `table` is the number of the resource that holds it.
+    pub(crate) fn read_extra_anchors(
+        &self,
+        chapter: u32,
+        table: u32,
+        outputs: &[TypedOutput],
+    ) -> Result<Vec<Anchor>> {
+        let anchors =
+            tables::chapter_anchors(outputs).map_err(|reason| malformed(table, reason))?;
+        self.extra_anchors(chapter, table, anchors)
+    }
+
+    /// Checks the rows of the anchor table of a chapter. That an offset is at
+    /// the start of a line is checked by [`Self::check_extra_positions`].
+    fn extra_anchors(&self, chapter: u32, table: u32, anchors: Vec<Anchor>) -> Result<Vec<Anchor>> {
+        let len = self.row(chapter).map_or(0, |row| row.decoded_len);
+        // A fragment names one place, whichever table holds it.
+        let mut names: HashSet<&str> = self
+            .anchors(chapter)
+            .iter()
+            .map(|anchor| anchor.name.as_str())
+            .collect();
+        let mut previous = 0;
+        for anchor in &anchors {
+            if anchor.name.is_empty() {
+                return Err(malformed(table, "a name is empty"));
+            }
+            if anchor.offset != 0 && u64::from(anchor.offset) >= len {
+                return Err(malformed(table, "an offset is past the end of its chapter"));
+            }
+            if anchor.offset < previous {
+                return Err(malformed(table, "the rows are not sorted"));
+            }
+            if !names.insert(anchor.name.as_str()) {
+                return Err(malformed(table, "a name repeats in a chapter"));
+            }
+            previous = anchor.offset;
+        }
+        Ok(anchors)
+    }
+
+    /// Checks, against the decoded text of a chapter, that every anchor of
+    /// its own table is at the start of a line.
+    pub(crate) fn check_extra_positions(table: u32, anchors: &[Anchor], text: &str) -> Result<()> {
+        if anchors
+            .iter()
+            .all(|anchor| is_line_start(text.as_bytes(), anchor.offset))
+        {
+            Ok(())
+        } else {
+            Err(malformed(table, "a position is not at the start of a line"))
+        }
+    }
+
+    /// The number of the resource that holds the anchor table of a chapter:
+    /// the one before the chapter, when it is of that kind.
+    pub(crate) fn anchor_table(&self, chapter: u32) -> Option<u32> {
+        let table = chapter.checked_sub(1)?;
+        (self.row(table)?.kind == ResourceKind::ChapterAnchors).then_some(table)
+    }
+
     /// A position must name a chapter and lie inside its text. That it is at
     /// the start of a line is checked by [`Self::check_positions`].
     fn check_position(&self, table: u32, resource: u32, offset: u32) -> Result<()> {
@@ -219,16 +299,13 @@ impl Index {
     /// Checks, against the decoded text of a chapter, that every stored
     /// position in it is at the start of a line.
     pub(crate) fn check_positions(&self, chapter: u32, text: &str) -> Result<()> {
-        let bytes = text.as_bytes();
-        let at_line_start = |anchor: &Anchor| {
-            let Ok(offset) = usize::try_from(anchor.offset) else {
-                return false;
-            };
-            offset == 0 || (offset < bytes.len() && bytes.get(offset - 1) == Some(&b'\n'))
-        };
         // Every contents row inside a chapter has an anchor at its offset, so
         // checking the anchors covers the contents as well.
-        if self.anchors(chapter).iter().all(at_line_start) {
+        if self
+            .anchors(chapter)
+            .iter()
+            .all(|anchor| is_line_start(text.as_bytes(), anchor.offset))
+        {
             Ok(())
         } else {
             Err(malformed(
@@ -307,7 +384,7 @@ impl Index {
             .map(|id| self.picture_entry(id.number()))
     }
 
-    /// The anchors of a chapter, sorted by offset.
+    /// The anchors of the headings of a chapter, sorted by offset.
     pub(crate) fn anchors(&self, chapter: u32) -> &[Anchor] {
         self.anchor_spans
             .binary_search_by_key(&chapter, |(number, _)| *number)
@@ -317,45 +394,68 @@ impl Index {
             .unwrap_or_default()
     }
 
-    /// The decoded size of every chapter and picture together.
+    /// The decoded size of everything a loaded book is built from: every
+    /// chapter, picture and anchor table of a chapter.
     pub(crate) fn content_len(&self) -> u64 {
-        self.chapters
+        let loaded = |row: &&Row| {
+            matches!(
+                row.kind,
+                ResourceKind::Text | ResourceKind::Picture | ResourceKind::ChapterAnchors
+            )
+        };
+        self.rows
             .iter()
-            .chain(&self.pictures)
-            .filter_map(|&number| self.row(number))
+            .filter(loaded)
             .fold(0, |total, row| total.saturating_add(row.decoded_len))
     }
 
-    /// Applies "Resolving destinations" of RFC 0001.
+    /// Applies "Resolving destinations" of RFC 0001 without reading
+    /// anything.
     pub(crate) fn resolve(
         &self,
         from: ChapterId,
         destination: &str,
     ) -> Result<Destination, ResolveError> {
+        Ok(match self.resolve_named(from, destination)? {
+            Resolved::Known(destination) => destination,
+            Resolved::Extra { chapter, .. } => Destination::ExtraAnchor(chapter),
+        })
+    }
+
+    /// Applies "Resolving destinations" of RFC 0001 as far as the tables read
+    /// at opening allow, and keeps the fragment when more is needed.
+    pub(crate) fn resolve_named(
+        &self,
+        from: ChapterId,
+        destination: &str,
+    ) -> Result<Resolved, ResolveError> {
         let from = self.chapter(from).ok_or(ResolveError::NotFound)?;
         let (path, fragment) = match link::parse(from.path, destination)? {
-            Parsed::External => return Ok(Destination::External),
+            Parsed::External => return Ok(Resolved::Known(Destination::External)),
             Parsed::Internal { path, fragment } => (path, fragment),
         };
         let number = self.find(&path).ok_or(ResolveError::NotFound)?;
         if let Some(picture) = self.picture_id(number) {
             return match fragment {
                 Some(_) => Err(ResolveError::FragmentOnPicture),
-                None => Ok(Destination::Picture(picture)),
+                None => Ok(Resolved::Known(Destination::Picture(picture))),
             };
         }
         // A resource of a kind this crate does not know is unresolved.
         let chapter = self.chapter_id(number).ok_or(ResolveError::NotFound)?;
-        let offset = match fragment {
-            None => 0,
-            Some(name) => self
-                .anchors(number)
-                .iter()
-                .find(|anchor| anchor.name == name)
-                .map(|anchor| anchor.offset)
-                .ok_or(ResolveError::UnknownAnchor)?,
+        let at = |offset| Resolved::Known(Destination::Chapter(Position { chapter, offset }));
+        let Some(name) = fragment else {
+            return Ok(at(0));
         };
-        Ok(Destination::Chapter(Position { chapter, offset }))
+        let heading = self
+            .anchors(number)
+            .iter()
+            .find(|anchor| anchor.name == name);
+        match heading {
+            Some(anchor) => Ok(at(anchor.offset)),
+            None if self.anchor_table(number).is_some() => Ok(Resolved::Extra { chapter, name }),
+            None => Err(ResolveError::UnknownAnchor),
+        }
     }
 
     fn row(&self, number: u32) -> Option<&Row> {
@@ -418,16 +518,18 @@ fn rows(table: Vec<ResourceRow>, decoded_lens: &[u64]) -> Result<Vec<Row>> {
                 "kind 0 is not exactly the first five rows",
             ));
         }
-        if is_service != row.path.is_empty() {
+        let kind = ResourceKind::from(row.kind);
+        // Service resources and anchor tables are found by position.
+        let has_path = !is_service && kind != ResourceKind::ChapterAnchors;
+        if has_path == row.path.is_empty() {
             return Err(malformed(
                 RESOURCES,
-                "a path is empty or a fixed row has one",
+                "a path is missing, or a row that takes none has one",
             ));
         }
-        if !is_service && path::validate(&row.path).is_err() {
+        if has_path && path::validate(&row.path).is_err() {
             return Err(malformed(RESOURCES, "a path is not valid"));
         }
-        let kind = ResourceKind::from(row.kind);
         if kind != ResourceKind::Picture && (row.width, row.height) != (0, 0) {
             return Err(malformed(
                 RESOURCES,
@@ -443,6 +545,18 @@ fn rows(table: Vec<ResourceRow>, decoded_lens: &[u64]) -> Result<Vec<Row>> {
             },
             decoded_len,
         });
+    }
+    let followed_by_chapter = |at: usize| {
+        rows.get(at + 1)
+            .is_some_and(|next| next.kind == ResourceKind::Text)
+    };
+    if (0..rows.len())
+        .any(|at| rows[at].kind == ResourceKind::ChapterAnchors && !followed_by_chapter(at))
+    {
+        return Err(malformed(
+            RESOURCES,
+            "an anchor table is not followed by its chapter",
+        ));
     }
     Ok(rows)
 }
@@ -473,12 +587,12 @@ fn by_path(rows: &[Row]) -> Result<Vec<u32>> {
 
 #[cfg(test)]
 mod tests {
-    use super::Index;
+    use super::{Index, Resolved};
     use crate::error::{Error, ResolveError};
     use crate::format::{ANCHORS, META, RESOURCES, TOC};
     use crate::id::ChapterId;
     use crate::tables::{AnchorRow, ResourceRow, Tables, TocRow};
-    use crate::types::{Destination, ResourceKind, Size, Version};
+    use crate::types::{Anchor, Destination, ResourceKind, Size, Version};
 
     const VERSION: Version = Version { major: 1, minor: 0 };
 
@@ -787,7 +901,10 @@ mod tests {
     #[test]
     fn a_resource_without_a_path_is_rejected() {
         let (_, reason) = rejection(|t| t.resources[6].path.clear());
-        assert_eq!(reason, "a path is empty or a fixed row has one");
+        assert_eq!(
+            reason,
+            "a path is missing, or a row that takes none has one"
+        );
     }
 
     #[test]
@@ -912,6 +1029,208 @@ mod tests {
         let mut tables = tables();
         tables.anchors[2].name = "chapter-1-arrival".into();
         assert!(Index::build(VERSION, tables, &LENS).is_ok());
+    }
+
+    /// The example with an anchor table in front of the first chapter: the
+    /// table is resource 6, the chapters are 7 and 8.
+    fn with_anchor_table() -> Index {
+        let mut tables = tables();
+        tables.resources.insert(6, resource(3, "", 0, 0));
+        for row in &mut tables.toc {
+            row.resource += 1;
+        }
+        for row in &mut tables.anchors {
+            row.resource += 1;
+        }
+        let mut lens = LENS.to_vec();
+        lens.insert(6, 40);
+        Index::build(VERSION, tables, &lens).unwrap()
+    }
+
+    fn extra(offset: u32, name: &str) -> Anchor {
+        Anchor {
+            offset,
+            name: name.to_owned(),
+        }
+    }
+
+    /// The rule the anchor table of the first chapter is rejected for.
+    fn extra_rejection(anchors: Vec<Anchor>) -> &'static str {
+        match with_anchor_table().extra_anchors(7, 6, anchors) {
+            Err(Error::Malformed {
+                resource: 6,
+                reason,
+            }) => reason,
+            other => panic!("expected a malformed anchor table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_anchor_table_belongs_to_the_chapter_after_it() {
+        let index = with_anchor_table();
+        assert_eq!(
+            (index.anchor_table(7), index.anchor_table(8)),
+            (Some(6), None)
+        );
+        assert_eq!(index.anchor_table(0), None);
+    }
+
+    #[test]
+    fn an_anchor_table_is_listed_but_is_neither_chapter_nor_picture() {
+        let index = with_anchor_table();
+        let listed = index.resources().nth(6).map(|r| (r.kind, r.path, r.size));
+        assert_eq!(listed, Some((ResourceKind::ChapterAnchors, "", None)));
+        assert!(index.chapter_id(6).is_none() && index.picture_id(6).is_none());
+        assert_eq!(index.chapters().len(), 2);
+    }
+
+    #[test]
+    fn the_content_length_counts_anchor_tables() {
+        let plain = index().content_len();
+        assert_eq!(with_anchor_table().content_len(), plain + 40);
+    }
+
+    #[test]
+    fn an_anchor_table_before_a_picture_is_rejected() {
+        let (table, reason) = rejection(|t| t.resources[7] = resource(3, "", 0, 0));
+        assert_eq!(
+            (table, reason),
+            (RESOURCES, "an anchor table is not followed by its chapter")
+        );
+    }
+
+    #[test]
+    fn an_anchor_table_at_the_end_of_a_file_is_rejected() {
+        let (_, reason) = rejection(|t| t.resources[8] = resource(3, "", 0, 0));
+        assert_eq!(reason, "an anchor table is not followed by its chapter");
+    }
+
+    #[test]
+    fn an_anchor_table_with_a_path_is_rejected() {
+        let (_, reason) = rejection(|t| t.resources[5] = resource(3, "anchors", 0, 0));
+        assert_eq!(
+            reason,
+            "a path is missing, or a row that takes none has one"
+        );
+    }
+
+    #[test]
+    fn an_anchor_table_with_a_size_is_rejected() {
+        let (_, reason) = rejection(|t| t.resources[5] = resource(3, "", 1, 1));
+        assert_eq!(reason, "a row that is not a picture has a size");
+    }
+
+    #[test]
+    fn a_fragment_that_is_not_a_heading_is_left_to_the_anchor_table() {
+        let index = with_anchor_table();
+        let from = index.chapter_id(8).unwrap();
+        let chapter = index.chapter_id(7).unwrap();
+        assert_eq!(
+            index.resolve(from, "ch01.md#fig%2D1"),
+            Ok(Destination::ExtraAnchor(chapter))
+        );
+        assert_eq!(
+            index.resolve_named(from, "ch01.md#fig%2D1"),
+            Ok(Resolved::Extra {
+                chapter,
+                name: "fig-1".to_owned()
+            })
+        );
+    }
+
+    #[test]
+    fn the_anchor_of_a_heading_needs_no_anchor_table() {
+        let index = with_anchor_table();
+        let from = index.chapter_id(8).unwrap();
+        assert!(matches!(
+            index.resolve(from, "ch01.md#the-station"),
+            Ok(Destination::Chapter(position))
+                if position.chapter.number() == 7 && position.offset == 130
+        ));
+    }
+
+    #[test]
+    fn a_fragment_into_a_chapter_without_an_anchor_table_is_unknown() {
+        let index = with_anchor_table();
+        let from = index.chapter_id(7).unwrap();
+        assert_eq!(
+            index.resolve(from, "ch02.md#fig-1"),
+            Err(ResolveError::UnknownAnchor)
+        );
+    }
+
+    #[test]
+    fn extra_anchors_that_follow_the_rules_are_accepted() {
+        let anchors = vec![extra(0, "top"), extra(22, "fig-1"), extra(22, "figure")];
+        let checked = with_anchor_table().extra_anchors(7, 6, anchors.clone());
+        assert_eq!(checked.unwrap(), anchors);
+    }
+
+    #[test]
+    fn an_empty_anchor_table_is_accepted() {
+        let checked = with_anchor_table().extra_anchors(7, 6, Vec::new());
+        assert_eq!(checked.unwrap(), []);
+    }
+
+    #[test]
+    fn an_extra_anchor_without_a_name_is_rejected() {
+        assert_eq!(extra_rejection(vec![extra(0, "")]), "a name is empty");
+    }
+
+    #[test]
+    fn an_extra_anchor_past_the_end_of_its_chapter_is_rejected() {
+        assert_eq!(
+            extra_rejection(vec![extra(279, "end")]),
+            "an offset is past the end of its chapter"
+        );
+    }
+
+    #[test]
+    fn unsorted_extra_anchors_are_rejected() {
+        assert_eq!(
+            extra_rejection(vec![extra(22, "b"), extra(0, "a")]),
+            "the rows are not sorted"
+        );
+    }
+
+    #[test]
+    fn an_extra_anchor_name_that_repeats_is_rejected() {
+        assert_eq!(
+            extra_rejection(vec![extra(0, "a"), extra(22, "a")]),
+            "a name repeats in a chapter"
+        );
+    }
+
+    #[test]
+    fn an_extra_anchor_named_like_a_heading_is_rejected() {
+        assert_eq!(
+            extra_rejection(vec![extra(22, "the-station")]),
+            "a name repeats in a chapter"
+        );
+    }
+
+    #[test]
+    fn extra_anchors_at_line_starts_pass_the_text_check() {
+        let anchors = [extra(0, "top"), extra(4, "second")];
+        assert!(Index::check_extra_positions(6, &anchors, "one\ntwo\n").is_ok());
+    }
+
+    #[test]
+    fn an_extra_anchor_inside_a_line_fails_the_text_check() {
+        let anchors = [extra(5, "inside")];
+        assert!(matches!(
+            Index::check_extra_positions(6, &anchors, "one\ntwo\n"),
+            Err(Error::Malformed {
+                resource: 6,
+                reason: "a position is not at the start of a line"
+            })
+        ));
+    }
+
+    #[test]
+    fn an_extra_anchor_at_the_end_of_the_text_fails_the_text_check() {
+        let anchors = [extra(8, "end")];
+        assert!(Index::check_extra_positions(6, &anchors, "one\ntwo\n").is_err());
     }
 
     #[test]

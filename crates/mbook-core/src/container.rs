@@ -51,7 +51,7 @@ mod read {
     use crate::format::{self, FORMAT};
     use crate::options::Limits;
     use crate::types::Version;
-    use mopenzl::framing::{DecodedResource, FramedDecodeConfig, FramedDecompressor};
+    use mopenzl::framing::{FramedDecodeConfig, FramedDecompressor};
     use mopenzl::{DataType, DecodeLimits, DecoderConfig, TypedOutput};
 
     /// A decoder bounded by `limits`; see [`framing`] for `total`.
@@ -65,12 +65,18 @@ mod read {
         .map_err(error)
     }
 
-    /// The content of a resource that must decode to one serial output, as
-    /// every chapter and picture does. `None` for any other shape.
-    pub(crate) fn serial(resource: DecodedResource) -> Option<Vec<u8>> {
-        let mut outputs = resource.outputs.into_iter();
-        let only = outputs.next().filter(|_| outputs.next().is_none())?;
-        (only.data_type() == DataType::Serial).then(|| only.into_content())
+    /// The content of resource `number`, which must have decoded to one
+    /// serial output, as every chapter and picture does.
+    pub(crate) fn serial(number: u32, outputs: Vec<TypedOutput>) -> Result<Vec<u8>> {
+        let mut outputs = outputs.into_iter();
+        outputs
+            .next()
+            .filter(|only| outputs.next().is_none() && only.data_type() == DataType::Serial)
+            .map(TypedOutput::into_content)
+            .ok_or(Error::Malformed {
+                resource: number,
+                reason: "the resource is not one serial output",
+            })
     }
 
     /// The version declared by resource 0, when it is a format header of a

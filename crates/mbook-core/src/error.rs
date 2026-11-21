@@ -67,6 +67,18 @@ pub enum Error {
     /// A change to the metadata breaks the rules of the format.
     #[error("invalid metadata")]
     InvalidMeta(#[from] MetaError),
+    /// An anchor cannot be added to a chapter.
+    #[error("invalid anchor {name:?}")]
+    InvalidAnchor {
+        /// The name that was given.
+        name: String,
+        /// The rule that is broken.
+        #[source]
+        reason: AnchorError,
+    },
+    /// A link or picture destination leads nowhere.
+    #[error("the destination leads nowhere")]
+    Unresolved(#[from] ResolveError),
     /// The book as a whole is not valid and was not written.
     #[error("the book cannot be written")]
     Invalid(#[from] Problems),
@@ -121,6 +133,22 @@ pub enum MetaError {
     /// The title is empty.
     #[error("the title is empty")]
     EmptyTitle,
+}
+
+/// Why an anchor was refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum AnchorError {
+    /// The name is empty.
+    #[error("the name is empty")]
+    EmptyName,
+    /// The chapter already has an anchor with this name, of a heading or an
+    /// extra one.
+    #[error("the chapter already has an anchor with this name")]
+    DuplicateName,
+    /// The offset is neither 0 nor the first byte of a line of the chapter.
+    #[error("the offset is not the start of a line of the chapter")]
+    NotAtLineStart,
 }
 
 /// Why a link or picture destination leads nowhere.
@@ -260,7 +288,8 @@ pub enum ProblemKind {
 #[cfg(test)]
 mod tests {
     use super::{
-        Error, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError, TextError,
+        AnchorError, Error, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError,
+        TextError,
     };
     use crate::types::Version;
     use std::error::Error as _;
@@ -353,6 +382,54 @@ mod tests {
         let error = Error::from(MetaError::Required("id".into()));
         let source = error.source().map(ToString::to_string);
         assert_eq!(source.as_deref(), Some(r#"the key "id" is required"#));
+    }
+
+    #[test]
+    fn invalid_anchor_quotes_the_name() {
+        let error = Error::InvalidAnchor {
+            name: "fig-1".into(),
+            reason: AnchorError::DuplicateName,
+        };
+        assert_eq!(error.to_string(), r#"invalid anchor "fig-1""#);
+    }
+
+    #[test]
+    fn invalid_anchor_keeps_the_reason_as_its_source() {
+        let error = Error::InvalidAnchor {
+            name: "fig-1".into(),
+            reason: AnchorError::NotAtLineStart,
+        };
+        let source = error.source().map(ToString::to_string);
+        assert_eq!(
+            source.as_deref(),
+            Some("the offset is not the start of a line of the chapter")
+        );
+    }
+
+    #[test]
+    fn anchor_errors_have_messages() {
+        let messages =
+            [AnchorError::EmptyName, AnchorError::DuplicateName].map(|reason| reason.to_string());
+        assert_eq!(
+            messages,
+            [
+                "the name is empty",
+                "the chapter already has an anchor with this name"
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_error_is_the_source_of_unresolved() {
+        let error = Error::from(ResolveError::UnknownAnchor);
+        let source = error.source().map(ToString::to_string);
+        assert_eq!(
+            (error.to_string().as_str(), source.as_deref()),
+            (
+                "the destination leads nowhere",
+                Some("the chapter has no such anchor")
+            )
+        );
     }
 
     #[test]

@@ -1,9 +1,10 @@
 //! Writing a book and reading back what was written.
 
 use crate::sample;
-use crate::texts::{CH01, CH02, CROPPED, MIRRORED, PLAIN, ROTATED};
+use crate::texts::{CH01, CH02, CROPPED, MIRRORED, PLAIN, ROTATED, figure_offset, remark_offset};
 use mbook_core::{
-    Book, BookReader, Error, Limits, Result, Size, Toc, TocItem, WriteOptions, is_mbook,
+    Book, BookReader, ChapterId, Destination, Error, Limits, Position, ResolveError, ResourceKind,
+    Result, Size, Toc, TocItem, WriteOptions, is_mbook,
 };
 use std::io::Cursor;
 use std::path::Path;
@@ -445,5 +446,205 @@ fn the_second_chapter_of_the_example_is_what_was_given() -> Result<()> {
         book.chapter("ch02.md").map(mbook_core::Chapter::text),
         Some(CH02)
     );
+    Ok(())
+}
+
+/// The annotated example as a file: the anchor table of the first chapter is
+/// resource 6, and the chapters are 7, 8 and 9.
+fn annotated() -> Result<Vec<u8>> {
+    written(&sample::annotated()?)
+}
+
+fn open(bytes: Vec<u8>) -> Result<BookReader<Cursor<Vec<u8>>>> {
+    BookReader::new(Cursor::new(bytes))
+}
+
+/// The ids of the chapters of a reader, in reading order.
+fn chapter_ids<R: std::io::Read + std::io::Seek>(reader: &BookReader<R>) -> Vec<ChapterId> {
+    reader.chapters().map(|chapter| chapter.id).collect()
+}
+
+#[test]
+fn an_anchor_table_is_written_in_front_of_its_chapter() -> Result<()> {
+    let reader = open(annotated()?)?;
+    let kinds: Vec<_> = reader.resources().skip(5).map(|r| r.kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            ResourceKind::Picture,
+            ResourceKind::ChapterAnchors,
+            ResourceKind::Text,
+            ResourceKind::Text,
+            ResourceKind::Text,
+            ResourceKind::Picture,
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn contents_and_heading_anchors_count_the_anchor_table() -> Result<()> {
+    let reader = open(annotated()?)?;
+    let numbers: Vec<_> = chapter_ids(&reader).iter().map(|id| id.number()).collect();
+    let listed: Vec<_> = reader
+        .toc()
+        .iter()
+        .map(|entry| entry.position.chapter.number())
+        .collect();
+    assert_eq!((numbers, listed), (vec![7, 8, 9], vec![7, 7, 8, 9]));
+    let first = chapter_ids(&reader)[0];
+    assert_eq!(reader.anchors(first).len(), 2);
+    Ok(())
+}
+
+#[test]
+fn extra_anchors_are_read_sorted_by_offset() -> Result<()> {
+    let mut reader = open(annotated()?)?;
+    let first = chapter_ids(&reader)[0];
+    let anchors: Vec<_> = reader
+        .read_extra_anchors(first)?
+        .into_iter()
+        .map(|anchor| (anchor.name, anchor.offset))
+        .collect();
+    assert_eq!(
+        anchors,
+        [
+            ("fig-1".to_owned(), figure_offset()),
+            ("remark".to_owned(), remark_offset())
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_chapter_without_an_anchor_table_has_no_extra_anchors() -> Result<()> {
+    let mut reader = open(annotated()?)?;
+    let second = chapter_ids(&reader)[1];
+    assert_eq!(reader.read_extra_anchors(second)?.len(), 0);
+    Ok(())
+}
+
+#[test]
+fn extra_anchors_of_an_id_from_another_book_are_refused() -> Result<()> {
+    let other = open(annotated()?)?;
+    let foreign = chapter_ids(&other)[2];
+    let mut reader = open(sample::bytes()?)?;
+    assert!(matches!(
+        reader.read_extra_anchors(foreign),
+        Err(Error::NoSuchResource(9))
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_link_to_an_extra_anchor_is_known_to_need_the_anchor_table() -> Result<()> {
+    let reader = open(annotated()?)?;
+    let ids = chapter_ids(&reader);
+    assert_eq!(
+        reader.resolve(ids[2], "ch01.md#fig-1"),
+        Ok(Destination::ExtraAnchor(ids[0]))
+    );
+    Ok(())
+}
+
+#[test]
+fn read_resolve_follows_a_link_to_an_extra_anchor() -> Result<()> {
+    let mut reader = open(annotated()?)?;
+    let ids = chapter_ids(&reader);
+    let position = Position {
+        chapter: ids[0],
+        offset: remark_offset(),
+    };
+    assert_eq!(
+        reader.read_resolve(ids[2], "ch01.md#remark")?,
+        Destination::Chapter(position)
+    );
+    Ok(())
+}
+
+#[test]
+fn read_resolve_answers_like_resolve_when_no_table_is_needed() -> Result<()> {
+    let mut reader = open(annotated()?)?;
+    let from = chapter_ids(&reader)[2];
+    for destination in [
+        "ch01.md#the-station",
+        "ch02.md",
+        "img/fig-1.avif",
+        "https://example.org",
+    ] {
+        let known = reader.resolve(from, destination);
+        assert_eq!(reader.read_resolve(from, destination).ok(), known.ok());
+    }
+    Ok(())
+}
+
+#[test]
+fn read_resolve_says_why_a_destination_leads_nowhere() -> Result<()> {
+    let mut reader = open(annotated()?)?;
+    let from = chapter_ids(&reader)[2];
+    let reasons = ["ch01.md#nope", "ch02.md#nope", "ch09.md"].map(|destination| {
+        match reader.read_resolve(from, destination) {
+            Err(Error::Unresolved(reason)) => Some(reason),
+            _ => None,
+        }
+    });
+    assert_eq!(
+        reasons,
+        [
+            Some(ResolveError::UnknownAnchor),
+            Some(ResolveError::UnknownAnchor),
+            Some(ResolveError::NotFound)
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn extra_anchors_survive_being_written_and_read() -> Result<()> {
+    let book = sample::annotated()?;
+    let read = Book::read(written(&book)?.as_slice())?;
+    assert_eq!(read.chapters(), book.chapters());
+    Ok(())
+}
+
+#[test]
+fn a_lazily_opened_book_loads_its_extra_anchors() -> Result<()> {
+    let book = sample::annotated()?;
+    let loaded = open(written(&book)?)?.load()?;
+    assert_eq!(loaded.chapters(), book.chapters());
+    Ok(())
+}
+
+#[test]
+fn a_loaded_book_with_extra_anchors_writes_back_to_the_same_bytes() -> Result<()> {
+    let first = annotated()?;
+    let second = written(&Book::read(first.as_slice())?)?;
+    assert!(first == second);
+    Ok(())
+}
+
+#[test]
+fn a_book_whose_last_extra_anchor_is_removed_gets_no_anchor_table() -> Result<()> {
+    let mut book = sample::book()?;
+    let Some(chapter) = book.chapter_mut("ch01.md") else {
+        panic!("the example has a first chapter");
+    };
+    chapter.add_anchor("remark", remark_offset())?;
+    chapter.remove_anchor("remark");
+    assert!(written(&book)? == FIXTURE);
+    Ok(())
+}
+
+#[test]
+fn an_anchor_table_above_the_resource_limit_is_refused() -> Result<()> {
+    let mut book = Book::new("Anchors", "en")?;
+    let chapter = book.add_chapter("a.md", "# One\n")?;
+    chapter.add_anchor("n".repeat(200), 0)?;
+    let mut options = WriteOptions::default();
+    options.limits.max_resource_bytes = 100;
+    assert!(matches!(
+        book.write_with(Vec::new(), &options),
+        Err(Error::Limit(_))
+    ));
     Ok(())
 }

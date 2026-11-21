@@ -20,6 +20,20 @@ pub(crate) const CH02: &str = "# Chapter 2. The letter
 See [the station](ch01.md#the-station), or <https://example.org>.
 ";
 
+/// A third chapter: links to places of the first one that are not headings.
+#[cfg(feature = "write")]
+pub(crate) const CH03: &str = "# Chapter 3. The picture
+
+See [the figure](ch01.md#fig-1) and [the remark](ch01.md#remark).
+";
+
+/// Where a line of the first chapter starts.
+pub(crate) fn offset_in_ch01(line: &str) -> u32 {
+    CH01.find(line)
+        .and_then(|offset| u32::try_from(offset).ok())
+        .unwrap_or(0)
+}
+
 /// The identifier of the example book.
 pub(crate) const ID: &str = "urn:uuid:3f1c2a7e-8a54-4d0b-9c1e-6b2f0d9a7e11";
 
@@ -37,7 +51,16 @@ pub(crate) const MIRRORED: &[u8] = include_bytes!("../fixtures/mirrored.avif");
 /// Where the second heading of the first chapter starts.
 #[cfg(feature = "read")]
 pub(crate) fn station_offset() -> u32 {
-    CH01.find("## The station")
-        .and_then(|offset| u32::try_from(offset).ok())
-        .unwrap_or(0)
+    offset_in_ch01("## The station")
+}
+
+/// Where the figure of the first chapter starts.
+pub(crate) fn figure_offset() -> u32 {
+    offset_in_ch01("![The station")
+}
+
+/// Where the last paragraph of the first chapter starts.
+#[cfg(feature = "write")]
+pub(crate) fn remark_offset() -> u32 {
+    offset_in_ch01("It was empty")
 }

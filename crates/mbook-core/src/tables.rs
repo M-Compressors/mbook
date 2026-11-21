@@ -1,4 +1,4 @@
-//! The four tables as plain rows, and their encoding as typed columns.
+//! The tables of a file as plain rows, and their encoding as typed columns.
 //!
 //! A table is one frame with several typed inputs; each input is a column and
 //! each element a row. This module only moves rows in and out of columns. The
@@ -41,14 +41,15 @@ pub(crate) struct Tables {
 }
 
 #[cfg(feature = "read")]
-pub(crate) use decode::{anchors, meta, resources, toc};
+pub(crate) use decode::{anchors, chapter_anchors, meta, resources, toc};
 #[cfg(feature = "write")]
-pub(crate) use encode::Column;
+pub(crate) use encode::{Column, chapter_anchor_columns};
 
 /// Rows out of decoded columns.
 #[cfg(feature = "read")]
 mod decode {
     use super::{AnchorRow, ResourceRow, TocRow};
+    use crate::types::Anchor;
     use mopenzl::{DataType, TypedOutput};
 
     /// Why a table cannot be read; the caller adds the resource number.
@@ -183,6 +184,21 @@ mod decode {
             })
             .collect())
     }
+
+    /// The rows of the anchor table of one chapter: offset, name.
+    pub(crate) fn chapter_anchors(outputs: &[TypedOutput]) -> Result<Vec<Anchor>, Reason> {
+        let columns = Columns::new(outputs, 2)?;
+        let offsets = columns.words(0)?;
+        let names = columns.strings(1)?;
+        Ok(offsets
+            .into_iter()
+            .zip(names)
+            .map(|(offset, name)| Anchor {
+                offset,
+                name: name.to_owned(),
+            })
+            .collect())
+    }
 }
 
 /// Rows into columns ready to be compressed.
@@ -190,6 +206,7 @@ mod decode {
 mod encode {
     use super::{AnchorRow, ResourceRow, Tables, TocRow};
     use crate::error::{Error, Result};
+    use crate::types::Anchor;
     use bytes::BufMut;
     use mopenzl::input::{Input, InputError, Numbers, Strings};
 
@@ -240,6 +257,14 @@ mod encode {
                 }
             })
         }
+    }
+
+    /// The columns of the anchor table of one chapter.
+    pub(crate) fn chapter_anchor_columns(anchors: &[Anchor]) -> Result<Vec<Column>> {
+        Ok(vec![
+            Column::words(anchors, |anchor: &Anchor| anchor.offset),
+            Column::strings(anchors, |anchor| anchor.name.as_str())?,
+        ])
     }
 
     impl Tables {

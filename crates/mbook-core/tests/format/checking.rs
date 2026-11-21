@@ -250,3 +250,58 @@ fn an_invalid_book_is_not_written() -> Result<()> {
     assert_eq!(bytes.len(), 0);
     Ok(())
 }
+
+#[test]
+fn links_to_extra_anchors_pass_the_check() -> Result<()> {
+    assert!(sample::annotated()?.check().is_ok());
+    Ok(())
+}
+
+#[test]
+fn a_link_to_a_removed_extra_anchor_is_reported() -> Result<()> {
+    let mut book = sample::annotated()?;
+    let removed = book
+        .chapter_mut("ch01.md")
+        .and_then(|chapter| chapter.remove_anchor("fig-1"));
+    assert!(removed.is_some());
+    assert_eq!(
+        problems(&book),
+        [(
+            Some("ch03.md".to_owned()),
+            ProblemKind::UnresolvedLink("ch01.md#fig-1".into())
+        )]
+    );
+    Ok(())
+}
+
+#[test]
+fn replacing_a_text_reports_the_links_to_its_extra_anchors() -> Result<()> {
+    let mut book = sample::annotated()?;
+    if let Some(chapter) = book.chapter_mut("ch01.md") {
+        chapter.set_text(crate::texts::CH01)?;
+    }
+    let kinds: Vec<_> = problems(&book).into_iter().map(|(_, kind)| kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            ProblemKind::UnresolvedLink("ch01.md#fig-1".into()),
+            ProblemKind::UnresolvedLink("ch01.md#remark".into())
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_contents_item_cannot_lead_to_an_extra_anchor() -> Result<()> {
+    let mut book = sample::annotated()?;
+    book.set_toc(Toc::Explicit(vec![TocItem::new(
+        1,
+        "The figure",
+        "ch01.md#fig-1",
+    )]));
+    assert_eq!(
+        problems(&book),
+        [(None, ProblemKind::DanglingTocItem("The figure".into()))]
+    );
+    Ok(())
+}

@@ -4,16 +4,18 @@ use super::{Book, Chapter, Picture, Slot, Toc, TocItem};
 use crate::analysis::{self, Heading, Reference, ReferenceKind};
 use crate::container::{self, Writer};
 use crate::error::{Error, Problem, ProblemKind, Problems, ResolveError, Result};
-use crate::format::{KIND_PICTURE, KIND_SERVICE, KIND_TEXT, SERVICE_COUNT};
+use crate::format::{KIND_ANCHORS, KIND_PICTURE, KIND_SERVICE, KIND_TEXT, SERVICE_COUNT};
 use crate::link::{self, Parsed};
 use crate::options::{Limits, WriteOptions};
-use crate::tables::{AnchorRow, ResourceRow, Tables, TocRow};
+use crate::tables::{self, AnchorRow, ResourceRow, Tables, TocRow};
 use crate::text;
 use std::io::Write;
 use std::path::Path;
 
 /// One resource after the five fixed ones.
 enum Content<'a> {
+    /// The anchor table of a chapter, which is the next resource.
+    Anchors(&'a Chapter),
     Chapter(&'a Chapter),
     Picture(&'a Picture),
 }
@@ -66,7 +68,8 @@ impl Book {
     /// The book is checked first, and nothing is written if the check fails.
     /// Writing the same book twice with the same options gives the same
     /// bytes. The cover comes first, then the chapters in reading order,
-    /// then the other pictures.
+    /// each after its anchor table when it has extra anchors, then the other
+    /// pictures.
     ///
     /// # Errors
     ///
@@ -84,6 +87,9 @@ impl Book {
         out.table(&layout.tables.anchor_columns()?)?;
         for content in &layout.contents {
             match content {
+                Content::Anchors(chapter) => {
+                    out.table(&tables::chapter_anchor_columns(&chapter.extra_anchors)?)?;
+                }
                 Content::Chapter(chapter) => out.text(&chapter.text)?,
                 Content::Picture(picture) => out.stored(&picture.data)?,
             }
@@ -132,9 +138,19 @@ impl Book {
         }
         let cover = cover.flatten();
         // The cover, when there is one, takes the first number after the
-        // fixed resources; chapters follow in reading order.
-        let first_chapter = SERVICE_COUNT + usize::from(cover.is_some());
-        let number_of = |chapter: usize| to_u32(first_chapter + chapter);
+        // fixed resources; chapters follow in reading order, each after its
+        // anchor table when it has one.
+        let mut next = SERVICE_COUNT + usize::from(cover.is_some());
+        let numbers: Vec<u32> = self
+            .chapters
+            .iter()
+            .map(|chapter| {
+                next += usize::from(!chapter.extra_anchors.is_empty());
+                next += 1;
+                to_u32(next - 1)
+            })
+            .collect();
+        let number_of = |chapter: usize| numbers.get(chapter).copied().unwrap_or(u32::MAX);
 
         let headings: Vec<Vec<Heading>> = self
             .chapters
@@ -153,7 +169,13 @@ impl Book {
         let contents: Vec<Content<'_>> = pictures()
             .filter(|(index, _)| Some(*index) == cover)
             .map(|(_, picture)| Content::Picture(picture))
-            .chain(self.chapters.iter().map(Content::Chapter))
+            .chain(self.chapters.iter().flat_map(|chapter| {
+                let table = (!chapter.extra_anchors.is_empty()).then_some(chapter);
+                table
+                    .map(Content::Anchors)
+                    .into_iter()
+                    .chain([Content::Chapter(chapter)])
+            }))
             .chain(
                 pictures()
                     .filter(|(index, _)| Some(*index) != cover)
@@ -228,7 +250,7 @@ impl Book {
                 let resolves = self.chapter(&path).is_some_and(|target| {
                     fragment
                         .as_deref()
-                        .is_none_or(|name| target.anchors.iter().any(|anchor| anchor.name == name))
+                        .is_none_or(|name| target.has_anchor(name))
                 });
                 (!resolves).then(|| ProblemKind::UnresolvedLink(destination()))
             }
@@ -331,6 +353,10 @@ impl Book {
     }
 
     /// Where a contents item leads: the index of its chapter and an offset.
+    ///
+    /// Inside a chapter an item leads to a heading: the format wants a
+    /// contents row to match a row of the `anchors` table, which holds the
+    /// anchors of headings only.
     fn toc_position(&self, item: &TocItem) -> Option<(usize, u32)> {
         let Some(Slot::Chapter(index)) = self.slots.get(&item.chapter).copied() else {
             return None;
@@ -350,6 +376,12 @@ impl Content<'_> {
     /// The row of the resource table that describes this resource.
     fn row(&self) -> ResourceRow {
         match self {
+            Self::Anchors(_) => ResourceRow {
+                kind: KIND_ANCHORS,
+                path: String::new(),
+                width: 0,
+                height: 0,
+            },
             Self::Chapter(chapter) => ResourceRow {
                 kind: KIND_TEXT,
                 path: chapter.path.clone(),
@@ -365,8 +397,15 @@ impl Content<'_> {
         }
     }
 
+    /// The decoded size of the resource.
     fn len(&self) -> usize {
         match self {
+            // One 32-bit offset and one name for every row.
+            Self::Anchors(chapter) => chapter
+                .extra_anchors
+                .iter()
+                .map(|anchor| anchor.name.len() + 4)
+                .sum(),
             Self::Chapter(chapter) => chapter.text.len(),
             Self::Picture(picture) => picture.data.len(),
         }
@@ -387,7 +426,7 @@ impl Layout<'_> {
             Ok(())
         } else {
             Err(Error::Limit(
-                "a chapter or a picture exceeds the resource limit",
+                "a chapter, its anchor table or a picture exceeds the resource limit",
             ))
         }
     }

@@ -1,6 +1,8 @@
 # ADR-0007: Byte offsets and a stored anchor table
 
-**Status:** Accepted (the anchor table); byte offsets in `toc` are proposed\
+**Status:** Accepted (the anchor table); byte offsets in `toc` are proposed.
+Extended by [ADR-0008](0008-chapter-anchor-tables.md), which adds names for
+positions that are not headings\
 **Date:** 2026-11-21\
 **Deciders:** Format author
 
@@ -58,6 +60,9 @@ no parsing to apply and are the value a parser already reports for a heading.
   rebuilding `toc` and `anchors`.
 - To revisit: whether the GitHub naming rule should be specified exactly for
   writers, or stay a recommendation.
+- Later: resource 4 holds the names of headings only. Names of other
+  positions go into a table of their chapter
+  ([ADR-0008](0008-chapter-anchor-tables.md)).
 
 ## Action items
 

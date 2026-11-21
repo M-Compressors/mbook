@@ -11,7 +11,8 @@ container.
 | implement a reader or a writer | [RFC 0001, reference-level explanation](0001-mbook-format.md#reference-level-explanation) |
 | understand why the format looks this way | [Decision records](adr/overview.md) |
 | read or write books from Rust | [RFC 0002, guide-level explanation](0002-mbook-core-api.md#guide-level-explanation) |
-| know what is still open | [RFC 0001, unresolved questions](0001-mbook-format.md#unresolved-questions) |
+| convert EPUB, FB2 or PDF into mbook | [RFC 0003, guide-level explanation](0003-mbook-converter-api.md#guide-level-explanation) |
+| know what is still open | Unresolved questions of [RFC 0001](0001-mbook-format.md#unresolved-questions) and [RFC 0003](0003-mbook-converter-api.md#unresolved-questions) |
 
 ## Documents
 
@@ -19,7 +20,8 @@ container.
 | --- | --- | --- |
 | [RFC 0001](0001-mbook-format.md) | The mbook file format, version 1 | Draft |
 | [RFC 0002](0002-mbook-core-api.md) | The mbook-core API | Draft |
-| [ADR-0001 … ADR-0007](adr/overview.md) | Decisions behind RFC 0001 | See the overview |
+| [RFC 0003](0003-mbook-converter-api.md) | The mbook-converter API | Draft; not implemented |
+| [ADR-0001 … ADR-0008](adr/overview.md) | Decisions behind RFC 0001 | See the overview |
 
 An **RFC** specifies behaviour: it is what an implementation is checked
 against. A **decision record** (ADR) explains one choice the RFC makes: the

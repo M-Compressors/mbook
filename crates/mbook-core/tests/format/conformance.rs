@@ -2,8 +2,10 @@
 //! they do not depend on the writer of this crate.
 
 use crate::raw::{ANCHORS, Column, META, RESOURCES, Raw, TOC};
-use crate::texts::{CH01, CH02, station_offset};
-use mbook_core::{Book, BookReader, Error, ResolveError, ResourceKind, Result, Size, Toc, Version};
+use crate::texts::{CH01, CH02, figure_offset, station_offset};
+use mbook_core::{
+    Book, BookReader, Destination, Error, ResolveError, ResourceKind, Result, Size, Toc, Version,
+};
 use std::io::Cursor;
 
 type Reader = BookReader<Cursor<Vec<u8>>>;
@@ -169,7 +171,7 @@ fn a_resource_of_an_unknown_kind_is_listed_and_skipped() -> Result<()> {
 
 #[test]
 fn a_resource_table_shorter_than_the_container_is_rejected() -> Result<()> {
-    let table = rejected_table(|raw| raw.contents.push(b"extra".to_vec()))?;
+    let table = rejected_table(|raw| raw.contents.push(b"extra".to_vec().into()))?;
     assert_eq!(table, 2);
     Ok(())
 }
@@ -240,7 +242,7 @@ fn a_position_inside_a_line_fails_when_its_chapter_is_read() -> Result<()> {
 
 #[test]
 fn a_chapter_that_is_not_utf8_fails_alone() -> Result<()> {
-    let raw = changed(|raw| raw.contents[1] = vec![0xff; CH01.len()]);
+    let raw = changed(|raw| raw.contents[1] = vec![0xff; CH01.len()].into());
     let mut reader = open(&raw)?;
     let (Some(first), Some(second)) = (reader.chapter_id(6), reader.chapter_id(7)) else {
         panic!("the example has two chapters");
@@ -284,5 +286,190 @@ fn a_compressed_picture_is_read_like_a_stored_one() -> Result<()> {
     // The hand-built file compresses every resource, pictures included.
     let mut reader = open(&Raw::example())?;
     assert_eq!(reader.read_cover()?.as_deref(), Some(crate::texts::PLAIN));
+    Ok(())
+}
+
+/// The example with an anchor table in front of the first chapter. The table
+/// is resource 6; the chapters move to 7 and 8.
+fn with_anchor_table(offsets: &[u32], names: &[&str]) -> Raw {
+    changed(|raw| raw.insert_anchor_table(6, offsets, names))
+}
+
+/// The rule the anchor table of the first chapter is refused for, and
+/// whether the rest of the file can still be read.
+fn refused_anchor_table(raw: &Raw) -> Result<&'static str> {
+    let mut reader = open(raw)?;
+    let (Some(first), Some(second)) = (reader.chapter_id(7), reader.chapter_id(8)) else {
+        panic!("the chapters are resources 7 and 8");
+    };
+    let reason = match reader.read_extra_anchors(first) {
+        Err(Error::Malformed {
+            resource: 6,
+            reason,
+        }) => reason,
+        Ok(_) => panic!("the anchor table must be refused"),
+        Err(other) => return Err(other),
+    };
+    // The error is confined to the table: both chapters still decode.
+    assert_eq!(reader.read_chapter(first)?, CH01);
+    assert_eq!(reader.read_chapter(second)?, CH02);
+    Ok(reason)
+}
+
+#[test]
+fn an_anchor_table_built_by_hand_is_read() -> Result<()> {
+    let raw = with_anchor_table(&[figure_offset()], &["fig-1"]);
+    let mut reader = open(&raw)?;
+    let (Some(first), Some(second)) = (reader.chapter_id(7), reader.chapter_id(8)) else {
+        panic!("the chapters are resources 7 and 8");
+    };
+    let anchors = reader.read_extra_anchors(first)?;
+    let names: Vec<_> = anchors
+        .iter()
+        .map(|a| (a.name.as_str(), a.offset))
+        .collect();
+    assert_eq!(names, [("fig-1", figure_offset())]);
+    assert!(matches!(
+        reader.read_resolve(second, "ch01.md#fig-1")?,
+        Destination::Chapter(position) if position.offset == figure_offset()
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_book_with_an_anchor_table_built_by_hand_is_loaded() -> Result<()> {
+    let raw = with_anchor_table(&[0, figure_offset()], &["top", "fig-1"]);
+    let book = Book::read(bytes(&raw)?.as_slice())?;
+    let extra: Vec<_> = book
+        .chapters()
+        .iter()
+        .map(|chapter| chapter.extra_anchors().len())
+        .collect();
+    assert_eq!(extra, [2, 0]);
+    Ok(())
+}
+
+#[test]
+fn an_anchor_table_that_no_chapter_follows_is_rejected() -> Result<()> {
+    let before_a_picture = rejected_table(|raw| raw.insert_anchor_table(5, &[0], &["cover"]))?;
+    let at_the_end = rejected_table(|raw| raw.push_resource(3, "", b""))?;
+    assert_eq!((before_a_picture, at_the_end), (2, 2));
+    Ok(())
+}
+
+#[test]
+fn an_anchor_table_with_a_path_is_rejected() -> Result<()> {
+    let table = rejected_table(|raw| {
+        raw.insert_anchor_table(6, &[0], &["top"]);
+        raw.tables[RESOURCES][1].text_mut()[6] = "ch01.anchors".to_owned();
+    })?;
+    assert_eq!(table, 2);
+    Ok(())
+}
+
+#[test]
+fn an_anchor_table_of_another_shape_fails_alone() -> Result<()> {
+    let one_column = with_anchor_table(&[0], &["top"]).with(|raw| {
+        raw.anchor_table_mut(6).pop();
+    });
+    let swapped = with_anchor_table(&[0], &["top"]).with(|raw| raw.anchor_table_mut(6).reverse());
+    let not_a_table = with_anchor_table(&[0], &["top"]).with(|raw| {
+        raw.contents[1] = b"top".to_vec().into();
+    });
+    assert_eq!(refused_anchor_table(&one_column)?, "a column is missing");
+    assert_eq!(
+        refused_anchor_table(&swapped)?,
+        "a numeric column has another type or width"
+    );
+    assert_eq!(refused_anchor_table(&not_a_table)?, "a column is missing");
+    Ok(())
+}
+
+#[test]
+fn an_anchor_table_that_breaks_a_rule_fails_alone() -> Result<()> {
+    let past_the_end = u32::try_from(CH01.len()).unwrap_or(u32::MAX);
+    let cases = [
+        (with_anchor_table(&[0], &[""]), "a name is empty"),
+        (
+            with_anchor_table(&[past_the_end], &["end"]),
+            "an offset is past the end of its chapter",
+        ),
+        (
+            with_anchor_table(&[figure_offset(), 0], &["fig-1", "top"]),
+            "the rows are not sorted",
+        ),
+        (
+            with_anchor_table(&[0, figure_offset()], &["a", "a"]),
+            "a name repeats in a chapter",
+        ),
+        (
+            with_anchor_table(&[figure_offset()], &["the-station"]),
+            "a name repeats in a chapter",
+        ),
+    ];
+    for (raw, reason) in cases {
+        assert_eq!(refused_anchor_table(&raw)?, reason);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_book_with_a_refused_anchor_table_does_not_load() -> Result<()> {
+    let raw = with_anchor_table(&[0], &[""]);
+    assert!(matches!(
+        Book::read(bytes(&raw)?.as_slice()),
+        Err(Error::Malformed { resource: 6, .. })
+    ));
+    assert!(matches!(
+        open(&raw)?.load(),
+        Err(Error::Malformed { resource: 6, .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn an_extra_anchor_inside_a_line_is_found_when_the_book_is_loaded() -> Result<()> {
+    let raw = with_anchor_table(&[figure_offset() + 2], &["inside"]);
+    // The table alone cannot show it.
+    let mut reader = open(&raw)?;
+    let Some(first) = reader.chapter_id(7) else {
+        panic!("resource 7 is the first chapter");
+    };
+    assert_eq!(reader.read_extra_anchors(first)?.len(), 1);
+    assert!(matches!(
+        reader.load(),
+        Err(Error::Malformed {
+            resource: 6,
+            reason: "a position is not at the start of a line"
+        })
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_name_missing_from_an_anchor_table_is_an_unknown_anchor() -> Result<()> {
+    let mut reader = open(&with_anchor_table(&[0], &["top"]))?;
+    let Some(second) = reader.chapter_id(8) else {
+        panic!("resource 8 is the second chapter");
+    };
+    assert!(matches!(
+        reader.read_resolve(second, "ch01.md#bottom"),
+        Err(Error::Unresolved(ResolveError::UnknownAnchor))
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_refused_anchor_table_fails_the_link_that_needs_it() -> Result<()> {
+    let mut reader = open(&with_anchor_table(&[0], &[""]))?;
+    let Some(second) = reader.chapter_id(8) else {
+        panic!("resource 8 is the second chapter");
+    };
+    assert!(matches!(
+        reader.read_resolve(second, "ch01.md#top"),
+        Err(Error::Malformed { resource: 6, .. })
+    ));
+    // A link to a heading of the same chapter does not need the table.
+    assert!(reader.read_resolve(second, "ch01.md#the-station").is_ok());
     Ok(())
 }

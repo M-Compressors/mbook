@@ -36,6 +36,14 @@ pub struct Position {
     pub offset: u32,
 }
 
+/// Tells whether an offset is a valid position in a chapter with this text:
+/// 0, or the first byte of a line.
+pub(crate) fn is_line_start(text: &[u8], offset: u32) -> bool {
+    usize::try_from(offset).is_ok_and(|offset| {
+        offset == 0 || (offset < text.len() && text.get(offset - 1) == Some(&b'\n'))
+    })
+}
+
 /// One chapter, as listed by a `BookReader`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChapterEntry<'a> {
@@ -74,6 +82,9 @@ pub struct TocEntry {
 }
 
 /// A named place inside a chapter, the target of a link fragment.
+///
+/// A chapter has one anchor for each of its headings, and may have extra
+/// anchors for other places: a paragraph, a figure, a line of a table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Anchor {
     /// A count of bytes from the start of the chapter's text.
@@ -91,6 +102,12 @@ pub enum Destination {
     Chapter(Position),
     /// A picture of this book.
     Picture(PictureId),
+    /// A named place in this chapter that is not the anchor of a heading.
+    ///
+    /// The name may be in the chapter's own anchor table, which is not read
+    /// when a book is opened. `BookReader::read_resolve` reads it and gives
+    /// the position, or tells that the chapter has no such anchor.
+    ExtraAnchor(ChapterId),
 }
 
 /// What a resource holds, as declared by the resource table.
@@ -103,6 +120,8 @@ pub enum ResourceKind {
     Text,
     /// A picture.
     Picture,
+    /// The anchor table of the chapter that follows it.
+    ChapterAnchors,
     /// A kind defined by a later minor version of the format.
     Unknown(u8),
 }
@@ -113,6 +132,7 @@ impl From<u8> for ResourceKind {
             0 => Self::Service,
             1 => Self::Text,
             2 => Self::Picture,
+            3 => Self::ChapterAnchors,
             other => Self::Unknown(other),
         }
     }
@@ -127,7 +147,7 @@ pub struct Resource<'a> {
     pub number: u32,
     /// What the resource holds.
     pub kind: ResourceKind,
-    /// The path; empty for service resources.
+    /// The path; empty for service resources and anchor tables.
     pub path: &'a str,
     /// The size in pixels; pictures only.
     pub size: Option<Size>,

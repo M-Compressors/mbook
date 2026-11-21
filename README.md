@@ -21,7 +21,9 @@ mbook is not released yet, and the format may still change.
 | --- | --- |
 | File format, version 1.0 | Draft: [RFC 0001][format] |
 | Library API | Draft: [RFC 0002][api] |
-| `mbook-core` | Implements the whole of both drafts: lazy reading, loading into memory, creating, editing, checking and writing. Tested against files built by hand and against real AVIF pictures. Not published to crates.io. |
+| Converter API | Draft: [RFC 0003][converter]. Most details are proposals that the format author has not confirmed. |
+| `mbook-core` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including anchor tables of chapters. Tested against files built by hand and against real AVIF pictures. Not published to crates.io. |
+| `mbook-converter` | Designed in RFC 0003; not implemented. No crate exists yet. |
 
 ## Why another book format
 
@@ -51,8 +53,9 @@ resource 0   format      "MBOOK\0", major, minor
 resource 1   meta        key, value
 resource 2   resources   kind, path, width, height      one row per resource
 resource 3   toc         level, title, resource, offset
-resource 4   anchors     resource, offset, name
-resource 5…  cover picture, then chapters, then pictures
+resource 4   anchors     resource, offset, name         heading anchors
+resource 5…  cover picture, then chapters, then pictures;
+             a chapter that names other lines follows its own anchor table
 index + footer                                          provided by the container
 ```
 
@@ -139,6 +142,7 @@ conditions.
 [site]: https://m-compressors.github.io/mbook/
 [format]: https://m-compressors.github.io/mbook/0001-mbook-format.html
 [api]: https://m-compressors.github.io/mbook/0002-mbook-core-api.html
+[converter]: https://m-compressors.github.io/mbook/0003-mbook-converter-api.html
 [adr]: https://m-compressors.github.io/mbook/adr/overview.html
 [mopenzl]: https://github.com/M-Compressors/mopenzl
 [OpenZL]: https://github.com/facebook/openzl
