@@ -70,6 +70,9 @@ pub enum Error {
     /// A link or picture destination leads nowhere.
     #[error("the destination leads nowhere")]
     Unresolved(#[from] ResolveError),
+    /// The landmarks given to a book break a rule of the format.
+    #[error("invalid landmarks")]
+    InvalidLandmark(#[from] LandmarkError),
     /// The book as a whole is not valid and was not written.
     #[error("the book cannot be written")]
     Invalid(#[from] Problems),
@@ -124,6 +127,18 @@ pub enum MetaError {
     /// The title is empty.
     #[error("the title is empty")]
     EmptyTitle,
+}
+
+/// Why the landmarks of a book were refused.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum LandmarkError {
+    /// The kind does not match `[a-z0-9]+(-[a-z0-9]+)*`.
+    #[error("{0:?} is not a valid kind of landmark")]
+    InvalidKind(String),
+    /// More than one landmark has the kind `start`.
+    #[error("a book has one start")]
+    RepeatedStart,
 }
 
 /// Why a link or picture destination leads nowhere.
@@ -247,6 +262,10 @@ pub enum ProblemKind {
     /// that does not exist.
     #[error("the contents item {0:?} leads nowhere")]
     DanglingTocItem(String),
+    /// A landmark, named by its kind, leads to a chapter or an anchor that
+    /// does not exist.
+    #[error("the landmark {0:?} leads nowhere")]
+    DanglingLandmark(String),
     /// A contents item has an empty title.
     #[error("a contents item has no title")]
     EmptyTocTitle,
@@ -263,7 +282,8 @@ pub enum ProblemKind {
 #[cfg(test)]
 mod tests {
     use super::{
-        Error, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError, TextError,
+        Error, LandmarkError, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError,
+        TextError,
     };
     use crate::types::Version;
     use std::error::Error as _;
@@ -369,6 +389,29 @@ mod tests {
                 Some("the chapter has no such anchor")
             )
         );
+    }
+
+    #[test]
+    fn landmark_error_is_the_source_of_invalid_landmark() {
+        let error = Error::from(LandmarkError::InvalidKind("The Index".into()));
+        let source = error.source().map(ToString::to_string);
+        assert_eq!(
+            (error.to_string().as_str(), source.as_deref()),
+            (
+                "invalid landmarks",
+                Some(r#""The Index" is not a valid kind of landmark"#)
+            )
+        );
+        assert_eq!(
+            LandmarkError::RepeatedStart.to_string(),
+            "a book has one start"
+        );
+    }
+
+    #[test]
+    fn a_dangling_landmark_names_its_kind() {
+        let kind = ProblemKind::DanglingLandmark("index".into());
+        assert_eq!(kind.to_string(), r#"the landmark "index" leads nowhere"#);
     }
 
     #[test]

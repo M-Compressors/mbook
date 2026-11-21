@@ -4,8 +4,8 @@ use crate::raw::Raw;
 use crate::sample;
 use crate::texts::{CH01, CH01_NAMED, CH02, CROPPED, MIRRORED, PLAIN, ROTATED, named_offset};
 use mbook_core::{
-    Book, BookReader, ChapterId, Destination, Error, Limits, Position, ResolveError, ResourceKind,
-    Result, Size, Toc, TocItem, WriteOptions, is_mbook,
+    Book, BookReader, ChapterId, Destination, Error, Landmark, Limits, Position, ResolveError,
+    ResourceKind, Result, Size, Toc, TocItem, WriteOptions, is_mbook,
 };
 use std::io::Cursor;
 use std::path::Path;
@@ -680,5 +680,113 @@ fn an_anchor_table_above_the_resource_limit_is_refused() -> Result<()> {
         book.write_with(Vec::new(), &options),
         Err(Error::Limit(_))
     ));
+    Ok(())
+}
+
+/// The example with landmarks as a file: the landmarks are resource 5, the
+/// cover 6, the anchor table of the first chapter 7, the chapters 8 to 10.
+fn with_landmarks() -> Result<Vec<u8>> {
+    written(&sample::with_landmarks()?)
+}
+
+#[test]
+fn the_landmarks_are_written_right_after_the_fixed_resources() -> Result<()> {
+    let reader = open(with_landmarks()?)?;
+    let kinds: Vec<_> = reader.resources().skip(5).map(|r| r.kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            ResourceKind::Landmarks,
+            ResourceKind::Picture,
+            ResourceKind::ChapterAnchors,
+            ResourceKind::Text,
+            ResourceKind::Text,
+            ResourceKind::Text,
+            ResourceKind::Picture,
+        ]
+    );
+    let numbers: Vec<_> = chapter_ids(&reader).iter().map(|id| id.number()).collect();
+    assert_eq!(numbers, [8, 9, 10]);
+    Ok(())
+}
+
+#[test]
+fn landmarks_are_read_in_the_order_they_were_given() -> Result<()> {
+    let mut reader = open(with_landmarks()?)?;
+    let station = reader
+        .anchors(chapter_ids(&reader)[0])
+        .iter()
+        .find(|anchor| anchor.name == "the-station")
+        .map_or(0, |anchor| anchor.offset);
+    let landmarks: Vec<_> = reader
+        .read_landmarks()?
+        .into_iter()
+        .map(|l| {
+            (
+                l.kind,
+                l.title,
+                l.position.chapter.number(),
+                l.position.offset,
+            )
+        })
+        .collect();
+    let landmark = |kind: &str, title: &str, chapter, offset| {
+        (kind.to_owned(), title.to_owned(), chapter, offset)
+    };
+    assert_eq!(
+        landmarks,
+        [
+            landmark("start", "", 8, 0),
+            landmark("preface", "", 8, station),
+            landmark("list-of-figures", "Figures", 8, named_offset("fig-1")),
+            landmark("x-letter", "The letter", 9, 0),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_book_without_landmarks_reads_none() -> Result<()> {
+    let mut reader = open(sample::bytes()?)?;
+    assert_eq!(reader.read_landmarks()?.len(), 0);
+    Ok(())
+}
+
+#[test]
+fn landmarks_survive_being_written_and_read() -> Result<()> {
+    let book = sample::with_landmarks()?;
+    let read = Book::read(written(&book)?.as_slice())?;
+    assert_eq!(read.landmarks(), book.landmarks());
+    let loaded = open(written(&book)?)?.load()?;
+    assert_eq!(loaded.landmarks(), book.landmarks());
+    Ok(())
+}
+
+#[test]
+fn a_loaded_book_with_landmarks_writes_back_to_the_same_bytes() -> Result<()> {
+    let first = with_landmarks()?;
+    let second = written(&Book::read(first.as_slice())?)?;
+    assert!(first == second);
+    Ok(())
+}
+
+#[test]
+fn a_book_whose_landmarks_are_removed_gets_no_landmarks_table() -> Result<()> {
+    let mut book = sample::book()?;
+    book.set_landmarks(vec![Landmark::new("start", "", "ch01.md")])?;
+    book.set_landmarks(Vec::new())?;
+    assert!(written(&book)? == FIXTURE);
+    Ok(())
+}
+
+#[test]
+fn a_book_with_landmarks_and_no_cover_puts_its_chapters_after_them() -> Result<()> {
+    let mut book = Book::new("No cover", "en")?;
+    book.add_chapter("a.md", "# One\n")?;
+    book.set_landmarks(vec![Landmark::new("start", "", "a.md")])?;
+    let mut reader = open(written(&book)?)?;
+    let landmarks = reader.read_landmarks()?;
+    assert_eq!(landmarks[0].position.chapter.number(), 6);
+    assert!(reader.chapter_id(6).is_some());
     Ok(())
 }

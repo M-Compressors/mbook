@@ -31,6 +31,15 @@ pub(crate) struct AnchorRow {
     pub(crate) name: String,
 }
 
+/// One row of the landmarks table.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct LandmarkRow {
+    pub(crate) kind: String,
+    pub(crate) title: String,
+    pub(crate) resource: u32,
+    pub(crate) offset: u32,
+}
+
 /// The rows of resources 1 to 4.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Tables {
@@ -41,14 +50,14 @@ pub(crate) struct Tables {
 }
 
 #[cfg(feature = "read")]
-pub(crate) use decode::{anchors, chapter_anchors, meta, resources, toc};
+pub(crate) use decode::{anchors, chapter_anchors, landmarks, meta, resources, toc};
 #[cfg(feature = "write")]
-pub(crate) use encode::{Column, chapter_anchor_columns};
+pub(crate) use encode::{Column, chapter_anchor_columns, landmark_columns};
 
 /// Rows out of decoded columns.
 #[cfg(feature = "read")]
 mod decode {
-    use super::{AnchorRow, ResourceRow, TocRow};
+    use super::{AnchorRow, LandmarkRow, ResourceRow, TocRow};
     use crate::types::Anchor;
     use mopenzl::{DataType, TypedOutput};
 
@@ -185,6 +194,26 @@ mod decode {
             .collect())
     }
 
+    /// The rows of the landmarks table: kind, title, resource, offset.
+    pub(crate) fn landmarks(outputs: &[TypedOutput]) -> Result<Vec<LandmarkRow>, Reason> {
+        let columns = Columns::new(outputs, 4)?;
+        let kinds = columns.strings(0)?;
+        let titles = columns.strings(1)?;
+        let resources = columns.words(2)?;
+        let offsets = columns.words(3)?;
+        Ok(kinds
+            .into_iter()
+            .zip(titles)
+            .zip(resources.into_iter().zip(offsets))
+            .map(|((kind, title), (resource, offset))| LandmarkRow {
+                kind: kind.to_owned(),
+                title: title.to_owned(),
+                resource,
+                offset,
+            })
+            .collect())
+    }
+
     /// The rows of the anchor table of one chapter: offset, name.
     pub(crate) fn chapter_anchors(outputs: &[TypedOutput]) -> Result<Vec<Anchor>, Reason> {
         let columns = Columns::new(outputs, 2)?;
@@ -204,7 +233,7 @@ mod decode {
 /// Rows into columns ready to be compressed.
 #[cfg(feature = "write")]
 mod encode {
-    use super::{AnchorRow, ResourceRow, Tables, TocRow};
+    use super::{AnchorRow, LandmarkRow, ResourceRow, Tables, TocRow};
     use crate::error::{Error, Result};
     use crate::types::Anchor;
     use bytes::BufMut;
@@ -264,6 +293,16 @@ mod encode {
         Ok(vec![
             Column::words(anchors, |anchor: &Anchor| anchor.offset),
             Column::strings(anchors, |anchor| anchor.name.as_str())?,
+        ])
+    }
+
+    /// The columns of the landmarks table.
+    pub(crate) fn landmark_columns(rows: &[LandmarkRow]) -> Result<Vec<Column>> {
+        Ok(vec![
+            Column::strings(rows, |row: &LandmarkRow| row.kind.as_str())?,
+            Column::strings(rows, |row| row.title.as_str())?,
+            Column::words(rows, |row| row.resource),
+            Column::words(rows, |row| row.offset),
         ])
     }
 

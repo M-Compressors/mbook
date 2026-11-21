@@ -57,9 +57,10 @@ mod tables;
 mod text;
 mod types;
 
-pub use book::{Book, Chapter, Picture, Toc, TocItem};
+pub use book::{Book, Chapter, Landmark, Picture, Toc, TocItem};
 pub use error::{
-    Error, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError, Result, TextError,
+    Error, LandmarkError, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError,
+    Result, TextError,
 };
 pub use id::{ChapterId, PictureId};
 pub use meta::{Meta, Series};
@@ -67,8 +68,8 @@ pub use options::{Limits, ReadOptions, WriteOptions};
 #[cfg(feature = "read")]
 pub use reader::BookReader;
 pub use types::{
-    Anchor, ChapterEntry, Destination, PictureEntry, Position, Resource, ResourceKind, Size,
-    TocEntry, Version,
+    Anchor, ChapterEntry, Destination, LandmarkEntry, PictureEntry, Position, Resource,
+    ResourceKind, Size, TocEntry, Version,
 };
 
 /// Tells whether a file looks like an mbook file from its first bytes.

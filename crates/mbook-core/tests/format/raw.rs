@@ -161,8 +161,35 @@ impl Raw {
         self.contents.insert(before - 5, Content::Table(columns));
     }
 
-    /// The columns of the anchor table that is resource `number`.
-    pub(crate) fn anchor_table_mut(&mut self, number: usize) -> &mut Vec<Column> {
+    /// Puts a landmarks table at position 5, which makes every later
+    /// resource move up by one. The numbers stored in the contents and in
+    /// the anchors of headings follow. A landmark is a kind, a title, the
+    /// number its chapter has AFTER the move, and an offset.
+    pub(crate) fn insert_landmarks(&mut self, landmarks: &[(&str, &str, u32, u32)]) {
+        let table = &mut self.tables[RESOURCES];
+        table[0].bytes_mut().insert(5, 4);
+        table[1].text_mut().insert(5, String::new());
+        table[2].words_mut().insert(5, 0);
+        table[3].words_mut().insert(5, 0);
+        for (table, column) in [(TOC, 2), (ANCHORS, 0)] {
+            for number in self.tables[table][column].words_mut() {
+                *number += 1;
+            }
+        }
+        let kinds: Vec<&str> = landmarks.iter().map(|landmark| landmark.0).collect();
+        let titles: Vec<&str> = landmarks.iter().map(|landmark| landmark.1).collect();
+        let columns = vec![
+            Column::text(&kinds),
+            Column::text(&titles),
+            Column::Words(landmarks.iter().map(|landmark| landmark.2).collect()),
+            Column::Words(landmarks.iter().map(|landmark| landmark.3).collect()),
+        ];
+        self.contents.insert(0, Content::Table(columns));
+    }
+
+    /// The columns of the table that is resource `number`: an anchor table
+    /// or the landmarks.
+    pub(crate) fn table_mut(&mut self, number: usize) -> &mut Vec<Column> {
         match &mut self.contents[number - 5] {
             Content::Table(columns) => columns,
             Content::Serial(_) => panic!("not a table"),

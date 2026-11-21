@@ -94,7 +94,8 @@ resource 1   meta        key, value                          strings
 resource 2   resources   kind, path, width, height           one row per resource
 resource 3   toc         level, title, resource, offset      table of contents
 resource 4   anchors     resource, offset, name              heading anchors
-resource 5…  cover picture, then chapters, then pictures;
+resource 5…  landmarks, when the book has any; the cover picture; then
+             chapters, then pictures;
              a chapter that names other lines follows its own anchor table
 index + footer                                               provided by the container
 ```
@@ -234,6 +235,24 @@ rows of `toc` and `anchors` now say 7 and 8 where they said 6 and 7.
 A reader does not look for anchor definitions, and does not decode these
 tables when it opens a book. It decodes one when a link leads to a name that
 `anchors` does not have for that chapter.
+
+### Landmarks
+
+The contents list the parts of a book by title. *Landmarks* answer another
+question: where is the place of a certain kind? A book that has them carries
+one more small table:
+
+| kind | title | resource | offset |
+| --- | --- | ---: | ---: |
+| `start` | | 8 | 0 |
+| `glossary` | Glossary of terms | 12 | 0 |
+| `index` | | 13 | 420 |
+
+A reading application can then offer "go to the beginning" or "index"
+without guessing from titles, and can open a new book at `start`, where the
+text begins, instead of at its title page. The table is a resource of its
+own, right after the five fixed ones; a book without landmarks does not have
+it, and nothing else in the file changes.
 
 ### How a reader opens a book
 
@@ -380,7 +399,7 @@ A file **MUST** contain at least five resources.
 
 ### Tables
 
-Resources 1 to 4, and every resource of `kind` 3, are *tables*. A table is
+Resources 1 to 4, and every resource of `kind` 3 or 4, are *tables*. A table is
 one frame with several typed inputs; each input is a column and each element
 is a row.
 
@@ -501,11 +520,13 @@ resources in the container directory.
 | 1 | Text | One serial output: a chapter ([Text resources](#text-resources)). |
 | 2 | Picture | One serial output: an AVIF file ([Picture resources](#picture-resources)). |
 | 3 | Chapter anchors | A table that names positions of the next resource ([Chapter anchor tables](#chapter-anchor-tables)). |
+| 4 | Landmarks | A table of notable places of the book ([Landmarks](#landmarks-1)). |
 
 - Rows 0 to 4 **MUST** have `kind` 0. No other row may have `kind` 0 in
   version 1.0.
 - A row of `kind` 3 **MUST** be followed by a row of `kind` 1. A text
   resource therefore has at most one anchor table, the resource before it.
+- At most one row may have `kind` 4.
 - A reader **MUST** skip a resource whose `kind` it does not know: it is not
   decoded, and references to it are treated as unresolved.
 - **Reading order** is the order of rows with `kind` 1.
@@ -513,7 +534,7 @@ resources in the container directory.
 
 Rules for `path`:
 
-- It **MUST** be empty when `kind` is 0 or 3 and non-empty otherwise.
+- It **MUST** be empty when `kind` is 0, 3 or 4 and non-empty otherwise.
 - Non-empty paths **MUST** be unique within the table, compared byte for byte.
 - It is one or more segments joined by `/`. A segment **MUST NOT** be empty,
   `.` or `..`, and **MUST NOT** contain `/`, `\`, or a character below U+0020.
@@ -521,9 +542,9 @@ Rules for `path`:
 - Writers **SHOULD** restrict segments to `[a-z0-9._-]` and **SHOULD** number
   generated names sequentially (`img/0001.avif`), which compresses best.
 
-Writers **SHOULD** place the resource named by `cover` at position 5, then all
-text resources, each directly after its anchor table when it has one, then
-the remaining pictures. Apart from an anchor table and its chapter, readers
+Writers **SHOULD** place the landmarks, when the book has any, at position 5,
+then the resource named by `cover`, then all text resources, each directly
+after its anchor table when it has one, then the remaining pictures. Apart from an anchor table and its chapter, readers
 **MUST NOT** depend on this order.
 
 ### Resource 3: `toc`
@@ -609,6 +630,68 @@ position that has no anchor definition.
 
 Readers **SHOULD NOT** decode a chapter anchor table before it is needed to
 resolve a fragment.
+
+### Landmarks
+
+A resource of `kind` 4 lists notable places of the book. A file has at most
+one.
+
+| # | Column | Type |
+| --- | --- | --- |
+| 0 | `kind` | string |
+| 1 | `title` | string |
+| 2 | `resource` | `u32` |
+| 3 | `offset` | `u32` |
+
+- `kind` **MUST** match `[a-z0-9]+(-[a-z0-9]+)*`. Kinds that begin with `x-`
+  are reserved for private use and will never be defined by this format.
+- `title` is plain text and **MAY** be empty.
+- `resource` **MUST** be the number of a resource with `kind` 1.
+- `offset` **MUST** be a [valid position](#positions) in that chapter. An
+  `offset` that is not 0 **MUST** equal the `offset` of a row of `anchors`
+  for that chapter, or of a row of the chapter's
+  [anchor table](#chapter-anchor-tables): the target of a landmark can then
+  be written as a link destination, a path and an optional fragment.
+- A kind **MAY** repeat, except `start`. The order of rows is the order in
+  which an application lists them.
+- The table **MAY** be empty. Writers **SHOULD NOT** write a table without
+  rows.
+
+| Kind | The place where |
+| --- | --- |
+| `start` | the text of the book begins |
+| `title-page` | the title page is |
+| `dedication` | the dedication is |
+| `epigraph` | the epigraph of the book is |
+| `foreword` | a foreword begins |
+| `preface` | a preface begins |
+| `introduction` | an introduction begins |
+| `prologue` | the prologue begins |
+| `epilogue` | the epilogue begins |
+| `conclusion` | a conclusion begins |
+| `afterword` | an afterword begins |
+| `acknowledgements` | the acknowledgements are |
+| `appendix` | an appendix begins |
+| `notes` | the notes of the book are collected |
+| `glossary` | the glossary begins |
+| `bibliography` | the bibliography begins |
+| `index` | the index begins |
+| `list-of-figures` | the list of figures is |
+| `list-of-tables` | the list of tables is |
+| `about-the-author` | the author is introduced |
+| `copyright` | the copyright page is |
+| `colophon` | the colophon is |
+
+There is no kind for a table of contents that is set in the text: the `toc`
+table is the contents of a book.
+
+- A reader shows a landmark by its `title`, or, when the title is empty, by
+  its own name for the kind. A reader **MUST** skip a row whose kind it does
+  not know and whose title is empty.
+- A reader that opens a book for the first time **SHOULD** show the place of
+  `start` when the book has one.
+- A reader **MAY** decode the table when it opens a file or when the
+  landmarks are first wanted.
 
 ### Positions
 
@@ -785,10 +868,13 @@ A reader **MUST** reject a file when:
 
 A reader **MUST NOT** reject a file because of unknown `meta` keys, unknown
 `kind` values, extra table columns, or errors confined to one text or picture
-resource or to one chapter anchor table; it reports those where they are
-met. A chapter anchor table that is not a table of the defined shape, or
+resource, to one chapter anchor table or to the landmarks; it reports those
+where they are met. A chapter anchor table that is not a table of the defined shape, or
 that breaks a **MUST** rule of its section, is such an error: the chapter it
 belongs to can still be shown, and a link that needs the table is unresolved.
+A landmarks table of another shape, or one that breaks a **MUST** rule of
+its section, is such an error too: the book is read as one without
+landmarks.
 
 One rule of the tables cannot be checked from the tables: whether a position
 is preceded by a line feed needs the text of its chapter. A reader checks the
@@ -859,12 +945,13 @@ trade-off and the consequences.
 | Byte offsets and a stored anchor table | Readers computing GitHub anchors | [ADR-0007](adr/0007-positions-and-anchors.md) |
 | Names of lines that are not headings in a table before their chapter | All names in resource 4; links only to headings | [ADR-0008](adr/0008-chapter-anchor-tables.md) |
 | A line is named by a link reference definition in its chapter | `{#id}` attributes; names given to the writer apart from the text | [ADR-0009](adr/0009-anchor-definitions.md) |
+| Landmarks in an optional table of their own | A sixth fixed resource; keys of `meta` | [ADR-0010](adr/0010-landmarks.md) |
 
 ## Prior art
 
 | Format | Taken from it | Left behind |
 | --- | --- | --- |
-| EPUB | Manifest of resources, reading order, separate navigation document, identification by a fixed first entry | XHTML and CSS, several XML metadata files |
+| EPUB | Manifest of resources, reading order, separate navigation document, landmarks, identification by a fixed first entry | XHTML and CSS, several XML metadata files |
 | FB2 | Metadata vocabulary (authors, translators, series, annotation, genres), one file per book | A single XML document, Base64 pictures |
 | mdBook | Chapters as Markdown files with relative links | A build step that produces HTML |
 | CBZ | Pictures as independent, directly addressable entries | No metadata or text |
@@ -889,6 +976,9 @@ trade-off and the consequences.
 - **Chapter anchor tables.** Their `kind` code, the tie to a chapter by
   position, and the rule that a contents row needs an `anchors` row are
   proposals of [ADR-0008](adr/0008-chapter-anchor-tables.md).
+- **Landmarks.** The limit of one `start`, and what a reader does with a
+  kind it does not know, are proposals of
+  [ADR-0010](adr/0010-landmarks.md).
 - **Anchor definitions.** The rule that tells an anchor definition from any
   other link reference definition, and what happens to a repeated name, are
   proposals of [ADR-0009](adr/0009-anchor-definitions.md).

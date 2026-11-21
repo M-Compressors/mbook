@@ -2,7 +2,7 @@
 #![cfg(feature = "epub")]
 
 use image::{ImageFormat, Rgb, RgbImage};
-use mbook_converter::mbook_core::{Book, Chapter, Toc, TocItem};
+use mbook_converter::mbook_core::{Book, Chapter, Landmark, Toc, TocItem};
 use mbook_converter::{ConvertOptions, Converted, Converter, Error, Format, WarningKind};
 use std::io::{Cursor, Write};
 use zip::write::SimpleFileOptions;
@@ -636,13 +636,10 @@ fn a_link_to_a_heading_leads_to_the_anchor_of_the_heading() -> Outcome {
         "<h2 id=\"sec\">Section</h2><p>Text.</p>",
     ])?;
     let converted = epub_converter().load_slice(&source)?;
-    assert_eq!(texts(&converted.book)[0], "[Go](ch0002.md#sec)\n");
-    let anchors: Vec<_> = converted.book.chapters()[1]
-        .extra_anchors()
-        .iter()
-        .map(|anchor| anchor.name.as_str())
-        .collect();
-    assert_eq!(anchors, ["sec"]);
+    // The heading has an anchor of its own; no extra one is needed.
+    assert_eq!(texts(&converted.book)[0], "[Go](ch0002.md#section)\n");
+    assert_eq!(texts(&converted.book)[1], "## Section\n\nText.\n");
+    assert_eq!(converted.book.chapters()[1].extra_anchors(), []);
     Ok(())
 }
 
@@ -1074,7 +1071,7 @@ fn the_navigation_document_is_converted_like_any_chapter() -> Outcome {
     let converted = epub_converter().load_slice(&source)?;
     let first = texts(&converted.book)[0];
     assert!(
-        first.starts_with("# Contents\n\n1. [First](ch0002.md#one-2)"),
+        first.starts_with("# Contents\n\n1. [First](ch0002.md#one)"),
         "{first}"
     );
     Ok(())
@@ -1569,5 +1566,337 @@ fn a_rich_book_loses_no_markup() -> Outcome {
     let converted = epub_converter().load_slice(&source)?;
     assert_no_markup_dropped(&converted);
     assert_eq!(kinds(&converted), [] as [&WarningKind; 0]);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Landmarks.
+// ---------------------------------------------------------------------------
+
+/// A navigation document with a table of contents and a `landmarks`
+/// navigation whose `ol` holds these entries.
+fn nav_with_landmarks(entries: &str) -> String {
+    page(&format!(
+        "<nav epub:type=\"toc\"><h1>Contents</h1><ol><li><a href=\"text/c1.xhtml\">One</a></li></ol></nav>\
+<nav epub:type=\"landmarks\"><h2>Landmarks</h2><ol>{entries}</ol></nav>"
+    ))
+}
+
+/// The two chapters of the landmark samples: `text/c1.xhtml` with a heading
+/// `sec` and a paragraph `para`, and `text/c2.xhtml`.
+fn landmark_pages() -> [(&'static str, Vec<u8>); 2] {
+    [
+        (
+            "text/c1.xhtml",
+            page("<h1 id=\"sec\">One</h1><p>Text.</p><p id=\"para\">Para.</p>").into_bytes(),
+        ),
+        (
+            "text/c2.xhtml",
+            page("<h1>Two</h1><p>More.</p>").into_bytes(),
+        ),
+    ]
+}
+
+/// An EPUB 3 book with a navigation document that has these landmark
+/// entries (the markup of the `li` elements).
+fn book_with_landmarks(entries: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let manifest = [
+        item("nav", "nav.xhtml", "application/xhtml+xml", "nav"),
+        page_item("c1", "text/c1.xhtml"),
+        page_item("c2", "text/c2.xhtml"),
+    ]
+    .concat();
+    let opf = package3(&manifest, &spine(&["c1", "c2"]));
+    let nav = nav_with_landmarks(entries);
+    let [(n1, c1), (n2, c2)] = landmark_pages();
+    epub(&opf, &[("nav.xhtml", nav.as_bytes()), (n1, &c1), (n2, &c2)])
+}
+
+/// An EPUB 2 book whose package has this `guide` and no navigation
+/// document, or with one that has these landmark entries.
+fn book_with_guide(
+    guide: &str,
+    nav_entries: Option<&str>,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut manifest = vec![
+        page_item("c1", "text/c1.xhtml"),
+        page_item("c2", "text/c2.xhtml"),
+    ];
+    if nav_entries.is_some() {
+        manifest.push(item("nav", "nav.xhtml", "application/xhtml+xml", "nav"));
+    }
+    let version = if nav_entries.is_some() { "3.0" } else { "2.0" };
+    let opf = package(version, BASIC, &manifest.concat(), &spine(&["c1", "c2"]))
+        .replace("</package>", &format!("<guide>{guide}</guide></package>"));
+    let nav = nav_entries.map(nav_with_landmarks);
+    let [(n1, c1), (n2, c2)] = landmark_pages();
+    let mut files: Vec<(&str, &[u8])> = vec![(n1, &c1), (n2, &c2)];
+    if let Some(nav) = &nav {
+        files.push(("nav.xhtml", nav.as_bytes()));
+    }
+    epub(&opf, &files)
+}
+
+/// A landmark with no anchor.
+fn landmark(kind: &str, title: &str, chapter: &str) -> Landmark {
+    Landmark {
+        kind: kind.to_owned(),
+        title: title.to_owned(),
+        chapter: chapter.to_owned(),
+        anchor: None,
+    }
+}
+
+#[test]
+fn the_landmarks_navigation_gives_the_landmarks_of_the_book() -> Outcome {
+    let source = book_with_landmarks(
+        "<li><a epub:type=\"bodymatter\" href=\"text/c1.xhtml#sec\"> Begin </a></li>\
+<li><a epub:type=\"toc\" href=\"text/c1.xhtml\">Contents</a></li>\
+<li><a epub:type=\"glossary\" href=\"text/c2.xhtml\">Terms</a></li>\
+<li><a epub:type=\"index\" href=\"text/c2.xhtml\"></a></li>",
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    let mut start = landmark("start", "Begin", "ch0001.md");
+    start.anchor = Some("one".to_owned());
+    assert_eq!(
+        converted.book.landmarks(),
+        [
+            start,
+            // A table of contents set in the text is not a landmark.
+            landmark("glossary", "Terms", "ch0002.md"),
+            landmark("index", "", "ch0002.md"),
+        ]
+    );
+    assert_eq!(kinds(&converted), [] as [&WarningKind; 0]);
+    Ok(())
+}
+
+#[test]
+fn a_landmark_to_a_paragraph_leads_to_an_extra_anchor_of_the_chapter() -> Outcome {
+    let source = book_with_landmarks(
+        "<li><a epub:type=\"notes\" href=\"text/c1.xhtml#para\">Notes</a></li>",
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    let landmarks = converted.book.landmarks();
+    assert_eq!(landmarks.len(), 1);
+    assert_eq!(landmarks[0].kind, "notes");
+    assert_eq!(landmarks[0].anchor.as_deref(), Some("para"));
+    let chapter = converted
+        .book
+        .chapters()
+        .iter()
+        .find(|chapter| chapter.path() == landmarks[0].chapter)
+        .ok_or("the chapter of the landmark is missing")?;
+    assert!(chapter.extra_anchors().iter().any(|a| a.name == "para"));
+    assert_eq!(kinds(&converted), [] as [&WarningKind; 0]);
+    Ok(())
+}
+
+#[test]
+fn every_semantic_type_maps_to_its_kind() -> Outcome {
+    let table = [
+        ("bodymatter", "start"),
+        ("text", "start"),
+        ("start", "start"),
+        ("introduction", "introduction"),
+        ("prologue", "prologue"),
+        ("epilogue", "epilogue"),
+        ("conclusion", "conclusion"),
+        ("titlepage", "title-page"),
+        ("title-page", "title-page"),
+        ("dedication", "dedication"),
+        ("epigraph", "epigraph"),
+        ("foreword", "foreword"),
+        ("preface", "preface"),
+        ("acknowledgments", "acknowledgements"),
+        ("acknowledgements", "acknowledgements"),
+        ("afterword", "afterword"),
+        ("appendix", "appendix"),
+        ("endnotes", "notes"),
+        ("rearnotes", "notes"),
+        ("footnotes", "notes"),
+        ("notes", "notes"),
+        ("glossary", "glossary"),
+        ("bibliography", "bibliography"),
+        ("index", "index"),
+        ("loi", "list-of-figures"),
+        ("lot", "list-of-tables"),
+        ("copyright-page", "copyright"),
+        ("colophon", "colophon"),
+        ("GLOSSARY", "glossary"),
+    ];
+    for (semantic, kind) in table {
+        let source = book_with_landmarks(&format!(
+            "<li><a epub:type=\"{semantic}\" href=\"text/c1.xhtml\">T</a></li>"
+        ))?;
+        let converted = epub_converter().load_slice(&source)?;
+        assert_eq!(
+            converted.book.landmarks(),
+            [landmark(kind, "T", "ch0001.md")],
+            "{semantic}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn the_cover_and_an_unknown_type_give_no_landmark_and_no_warning() -> Outcome {
+    let source = book_with_landmarks(
+        "<li><a epub:type=\"cover\" href=\"text/c1.xhtml\">Cover</a></li>\
+<li><a epub:type=\"chapter\" href=\"text/c1.xhtml\">Chapter</a></li>\
+<li><a href=\"text/c2.xhtml\">Untyped</a></li>",
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    assert_eq!(converted.book.landmarks(), []);
+    assert_eq!(kinds(&converted), [] as [&WarningKind; 0]);
+    Ok(())
+}
+
+#[test]
+fn the_first_value_of_a_semantic_type_that_maps_is_used() -> Outcome {
+    let source = book_with_landmarks(
+        "<li><a epub:type=\"frontmatter glossary index\" href=\"text/c2.xhtml\">Terms</a></li>",
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    assert_eq!(
+        converted.book.landmarks(),
+        [landmark("glossary", "Terms", "ch0002.md")]
+    );
+    Ok(())
+}
+
+#[test]
+fn an_epub_2_guide_gives_the_landmarks() -> Outcome {
+    let source = book_with_guide(
+        "<reference type=\"cover\" title=\"Cover\" href=\"text/c1.xhtml\"/>\
+<reference type=\"text\" title=\"Start\" href=\"text/c1.xhtml#sec\"/>\
+<reference type=\"toc\" title=\"Contents\" href=\"text/c1.xhtml\"/>\
+<reference type=\"index\" title=\"Index\" href=\"text/c2.xhtml\"/>\
+<reference type=\"copyright-page\" title=\"\" href=\"text/c2.xhtml\"/>",
+        None,
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    let mut start = landmark("start", "Start", "ch0001.md");
+    start.anchor = Some("one".to_owned());
+    assert_eq!(
+        converted.book.landmarks(),
+        [
+            start,
+            landmark("index", "Index", "ch0002.md"),
+            landmark("copyright", "", "ch0002.md"),
+        ]
+    );
+    assert_eq!(kinds(&converted), [] as [&WarningKind; 0]);
+    Ok(())
+}
+
+#[test]
+fn the_landmarks_navigation_wins_over_the_guide() -> Outcome {
+    let source = book_with_guide(
+        "<reference type=\"index\" title=\"Guide index\" href=\"text/c2.xhtml\"/>",
+        Some("<li><a epub:type=\"glossary\" href=\"text/c1.xhtml\">Nav glossary</a></li>"),
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    assert_eq!(
+        converted.book.landmarks(),
+        [landmark("glossary", "Nav glossary", "ch0001.md")]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_book_with_neither_landmarks_nor_guide_has_no_landmarks() -> Outcome {
+    let source = book_with_nav("<li><a href=\"text/c1.xhtml\">One</a></li>")?;
+    let converted = epub_converter().load_slice(&source)?;
+    assert_eq!(converted.book.landmarks(), []);
+    Ok(())
+}
+
+#[test]
+fn a_second_start_is_dropped_with_a_warning() -> Outcome {
+    let source = book_with_landmarks(
+        "<li><a epub:type=\"bodymatter\" href=\"text/c1.xhtml\">First</a></li>\
+<li><a epub:type=\"bodymatter\" href=\"text/c2.xhtml\">Second</a></li>",
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    assert_eq!(
+        converted.book.landmarks(),
+        [landmark("start", "First", "ch0001.md")]
+    );
+    let dropped = kinds(&converted);
+    assert_eq!(dropped.len(), 1, "{dropped:?}");
+    assert!(matches!(dropped[0], WarningKind::LinkDropped(_)));
+    Ok(())
+}
+
+#[test]
+fn a_landmark_to_a_file_outside_the_book_is_dropped_with_a_warning() -> Outcome {
+    let source = book_with_landmarks(
+        "<li><a epub:type=\"glossary\" href=\"text/nowhere.xhtml\">Terms</a></li>\
+<li><a epub:type=\"index\" href=\"text/c2.xhtml\">Index</a></li>",
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    assert_eq!(
+        converted.book.landmarks(),
+        [landmark("index", "Index", "ch0002.md")]
+    );
+    assert_eq!(
+        kinds(&converted),
+        [&WarningKind::LinkDropped(
+            "/OEBPS/text/nowhere.xhtml".to_owned()
+        )]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_landmark_to_the_skipped_cover_page_is_dropped_without_a_warning() -> Outcome {
+    let manifest = [
+        item("nav", "nav.xhtml", "application/xhtml+xml", "nav"),
+        page_item("cover", "cover.xhtml"),
+        page_item("c1", "c1.xhtml"),
+        item("cover-img", "cover.png", "image/png", "cover-image"),
+    ]
+    .concat();
+    let opf = package3(&manifest, &spine(&["cover", "c1"]));
+    let nav = page(
+        "<nav epub:type=\"landmarks\"><ol>\
+<li><a epub:type=\"titlepage\" href=\"cover.xhtml\">Title</a></li>\
+<li><a epub:type=\"bodymatter\" href=\"c1.xhtml\">Text</a></li></ol></nav>",
+    );
+    let source = epub(
+        &opf,
+        &[
+            ("nav.xhtml", nav.as_bytes()),
+            (
+                "cover.xhtml",
+                page("<p><img src=\"cover.png\" alt=\"\"/></p>").as_bytes(),
+            ),
+            ("c1.xhtml", page("<h1>Text</h1>").as_bytes()),
+            ("cover.png", &png(30, 40)?),
+        ],
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    assert_eq!(
+        converted.book.landmarks(),
+        [landmark("start", "Text", "ch0001.md")]
+    );
+    assert_eq!(kinds(&converted), [] as [&WarningKind; 0]);
+    Ok(())
+}
+
+#[test]
+fn the_landmarks_survive_writing_and_reading_the_book() -> Outcome {
+    let source = book_with_landmarks(
+        "<li><a epub:type=\"bodymatter\" href=\"text/c1.xhtml\">Begin</a></li>\
+<li><a epub:type=\"notes\" href=\"text/c1.xhtml#para\">Notes</a></li>\
+<li><a epub:type=\"index\" href=\"text/c2.xhtml\">Index</a></li>",
+    )?;
+    let converted = epub_converter().load_slice(&source)?;
+    let mut bytes = Vec::new();
+    converted.book.write(&mut bytes)?;
+    let read = Book::read(Cursor::new(bytes))?;
+    assert_eq!(read.landmarks().len(), 3);
+    assert_eq!(read.landmarks(), converted.book.landmarks());
     Ok(())
 }

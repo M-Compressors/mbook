@@ -32,6 +32,10 @@
 //! - **Outline.** When the source has a table of contents of its own, one
 //!   [`OutlineEntry`] per item, its target built like the destination of a
 //!   link.
+//! - **Landmarks.** When the source lists notable places of its own (the
+//!   landmarks of EPUB 3, the guide of EPUB 2), one [`DraftLandmark`] per
+//!   place, with a kind of RFC 0001 and a target built like the destination
+//!   of a link.
 //! - **Losses.** Whatever a front end cannot keep is a
 //!   [`Warning`] in the draft, made with `Warning::new(kind, section_name)`.
 
@@ -53,6 +57,9 @@ pub(crate) struct Draft {
     /// The table of contents of the source; empty when it has none.
     #[cfg(outlines)]
     pub(crate) outline: Vec<OutlineEntry>,
+    /// The notable places the source lists; empty when it lists none.
+    #[cfg(feature = "epub")]
+    pub(crate) landmarks: Vec<DraftLandmark>,
     /// What the front end could not keep.
     pub(crate) warnings: Vec<Warning>,
 }
@@ -124,5 +131,17 @@ pub(crate) struct OutlineEntry {
     /// The title, as plain text.
     pub(crate) title: String,
     /// Where the entry leads, written like the destination of a link.
+    pub(crate) target: String,
+}
+
+/// One notable place of a source: the start of its text, its index, …
+#[cfg(feature = "epub")]
+#[derive(Debug)]
+pub(crate) struct DraftLandmark {
+    /// What the place is, as a kind of RFC 0001: `start`, `index`, …
+    pub(crate) kind: String,
+    /// The title the source gives it, as plain text; may be empty.
+    pub(crate) title: String,
+    /// Where it leads, written like the destination of a link.
     pub(crate) target: String,
 }

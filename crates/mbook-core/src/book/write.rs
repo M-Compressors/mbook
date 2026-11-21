@@ -4,16 +4,20 @@ use super::{Book, Chapter, Picture, Slot, Toc, TocItem};
 use crate::analysis::{self, Heading, Reference, ReferenceKind};
 use crate::container::{self, Writer};
 use crate::error::{Error, Problem, ProblemKind, Problems, ResolveError, Result};
-use crate::format::{KIND_ANCHORS, KIND_PICTURE, KIND_SERVICE, KIND_TEXT, SERVICE_COUNT};
+use crate::format::{
+    KIND_ANCHORS, KIND_LANDMARKS, KIND_PICTURE, KIND_SERVICE, KIND_TEXT, SERVICE_COUNT,
+};
 use crate::link::{self, Parsed};
 use crate::options::{Limits, WriteOptions};
-use crate::tables::{self, AnchorRow, ResourceRow, Tables, TocRow};
+use crate::tables::{self, AnchorRow, LandmarkRow, ResourceRow, Tables, TocRow};
 use crate::text;
 use std::io::Write;
 use std::path::Path;
 
 /// One resource after the five fixed ones.
 enum Content<'a> {
+    /// The landmarks of the book, with every target resolved.
+    Landmarks(Vec<LandmarkRow>),
     /// The anchor table of a chapter, which is the next resource.
     Anchors(&'a Chapter),
     Chapter(&'a Chapter),
@@ -67,7 +71,8 @@ impl Book {
     ///
     /// The book is checked first, and nothing is written if the check fails.
     /// Writing the same book twice with the same options gives the same
-    /// bytes. The cover comes first, then the chapters in reading order,
+    /// bytes. The landmarks come first, when the book has any, then the
+    /// cover, then the chapters in reading order,
     /// each after its anchor table when it has extra anchors, then the other
     /// pictures.
     ///
@@ -87,6 +92,7 @@ impl Book {
         out.table(&layout.tables.anchor_columns()?)?;
         for content in &layout.contents {
             match content {
+                Content::Landmarks(rows) => out.table(&tables::landmark_columns(rows)?)?,
                 Content::Anchors(chapter) => {
                     out.table(&tables::chapter_anchor_columns(&chapter.extra_anchors)?)?;
                 }
@@ -137,10 +143,11 @@ impl Book {
             problems.push(whole_book(ProblemKind::MissingCover));
         }
         let cover = cover.flatten();
-        // The cover, when there is one, takes the first number after the
-        // fixed resources; chapters follow in reading order, each after its
-        // anchor table when it has one.
-        let mut next = SERVICE_COUNT + usize::from(cover.is_some());
+        // The landmarks, when there are any, take the first number after the
+        // fixed resources, and the cover the next; chapters follow in
+        // reading order, each after its anchor table when it has one.
+        let has_landmarks = !self.landmarks.is_empty();
+        let mut next = SERVICE_COUNT + usize::from(has_landmarks) + usize::from(cover.is_some());
         let numbers: Vec<u32> = self
             .chapters
             .iter()
@@ -163,12 +170,18 @@ impl Book {
             }
             Toc::Explicit(items) => self.toc_from_items(items, number_of, &mut problems),
         };
+        let landmarks = self.landmark_rows(number_of, &mut problems);
         Problems::none_or(problems)?;
 
         let pictures = || (0..).zip(&self.pictures);
-        let contents: Vec<Content<'_>> = pictures()
-            .filter(|(index, _)| Some(*index) == cover)
-            .map(|(_, picture)| Content::Picture(picture))
+        let contents: Vec<Content<'_>> = has_landmarks
+            .then_some(Content::Landmarks(landmarks))
+            .into_iter()
+            .chain(
+                pictures()
+                    .filter(|(index, _)| Some(*index) == cover)
+                    .map(|(_, picture)| Content::Picture(picture)),
+            )
             .chain(self.chapters.iter().flat_map(|chapter| {
                 let table = (!chapter.extra_anchors.is_empty()).then_some(chapter);
                 table
@@ -352,6 +365,42 @@ impl Book {
         rows
     }
 
+    /// The landmarks with every target resolved to a position. A landmark
+    /// leads to a chapter, or to an anchor of it, of a heading or an extra
+    /// one.
+    fn landmark_rows(
+        &self,
+        number_of: impl Fn(usize) -> u32,
+        problems: &mut Vec<Problem>,
+    ) -> Vec<LandmarkRow> {
+        let mut rows = Vec::with_capacity(self.landmarks.len());
+        for landmark in &self.landmarks {
+            let target = match self.slots.get(&landmark.chapter) {
+                Some(Slot::Chapter(index)) => self.chapters.get(*index).zip(Some(*index)),
+                _ => None,
+            };
+            let position = target.and_then(|(chapter, index)| {
+                let offset = match &landmark.anchor {
+                    None => 0,
+                    Some(name) => chapter.anchor_offset(name)?,
+                };
+                Some((index, offset))
+            });
+            match position {
+                Some((index, offset)) => rows.push(LandmarkRow {
+                    kind: landmark.kind.clone(),
+                    title: landmark.title.clone(),
+                    resource: number_of(index),
+                    offset,
+                }),
+                None => problems.push(whole_book(ProblemKind::DanglingLandmark(
+                    landmark.kind.clone(),
+                ))),
+            }
+        }
+        rows
+    }
+
     /// Where a contents item leads: the index of its chapter and an offset.
     ///
     /// Inside a chapter an item leads to a heading: the format wants a
@@ -376,6 +425,12 @@ impl Content<'_> {
     /// The row of the resource table that describes this resource.
     fn row(&self) -> ResourceRow {
         match self {
+            Self::Landmarks(_) => ResourceRow {
+                kind: KIND_LANDMARKS,
+                path: String::new(),
+                width: 0,
+                height: 0,
+            },
             Self::Anchors(_) => ResourceRow {
                 kind: KIND_ANCHORS,
                 path: String::new(),
@@ -400,6 +455,11 @@ impl Content<'_> {
     /// The decoded size of the resource.
     fn len(&self) -> usize {
         match self {
+            // Two 32-bit numbers and two strings for every row.
+            Self::Landmarks(rows) => rows
+                .iter()
+                .map(|row| row.kind.len() + row.title.len() + 8)
+                .sum(),
             // One 32-bit offset and one name for every row.
             Self::Anchors(chapter) => chapter
                 .extra_anchors
@@ -426,7 +486,7 @@ impl Layout<'_> {
             Ok(())
         } else {
             Err(Error::Limit(
-                "a chapter, its anchor table or a picture exceeds the resource limit",
+                "a chapter, a table or a picture exceeds the resource limit",
             ))
         }
     }

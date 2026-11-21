@@ -480,11 +480,10 @@ fn the_outline_becomes_the_contents_with_an_anchor_for_a_matching_heading() -> O
     let converted = convert(&document)?;
     let texts = texts(&converted);
     assert_eq!(texts.len(), 2);
-    assert!(
-        texts[1].contains("[o3]: #o3\n\n## The Details"),
-        "{}",
-        texts[1]
-    );
+    // The entry leads to the anchor the heading has anyway: the mark the
+    // front end put in front of it is not kept.
+    assert!(texts[1].contains("\n## The Details"), "{}", texts[1]);
+    assert!(!texts[1].contains("]: #"), "{}", texts[1]);
     assert_eq!(
         items(&converted)?,
         [

@@ -98,6 +98,11 @@ fn kind_code_three_is_the_anchor_table_of_a_chapter() {
 }
 
 #[test]
+fn kind_code_four_is_the_landmarks() {
+    assert_eq!(ResourceKind::from(4), ResourceKind::Landmarks);
+}
+
+#[test]
 fn an_undefined_kind_code_is_kept() {
     assert_eq!(ResourceKind::from(7), ResourceKind::Unknown(7));
 }

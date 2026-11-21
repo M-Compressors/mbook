@@ -7,6 +7,8 @@ mod pictures;
 pub(crate) mod rewrite;
 mod split;
 
+#[cfg(feature = "epub")]
+use crate::draft::DraftLandmark;
 #[cfg(outlines)]
 use crate::draft::OutlineEntry;
 use crate::draft::{Draft, Section};
@@ -16,7 +18,9 @@ use crate::options::ConvertOptions;
 use crate::report::Warning;
 #[cfg(any(pictures, outlines))]
 use crate::report::WarningKind;
-use mbook_core::Book;
+#[cfg(feature = "epub")]
+use mbook_core::Landmark;
+use mbook_core::{Anchor, Book};
 #[cfg(outlines)]
 use mbook_core::{Toc, TocItem};
 use percent_encoding::percent_decode_str;
@@ -59,6 +63,9 @@ struct Mark {
     part: usize,
     /// Its name in the book.
     name: String,
+    /// Whether the mark stands directly in front of a heading. The heading
+    /// has an anchor of its own, which is the name: the mark is not kept.
+    at_heading: bool,
 }
 
 /// Where the sections of a draft ended up.
@@ -206,12 +213,14 @@ fn chapters(sections: &[Section]) -> Layout<'_> {
 }
 
 /// Chooses the marks to keep: those that a link, or an entry of the
-/// contents, leads to. Each gets a name that is free in its chapter:
-/// `headings` holds the names `mbook-core` gave to the headings.
+/// contents, leads to. A mark directly in front of a heading stands for the
+/// anchor of that heading. Any other gets a name that is free in its
+/// chapter: `headings` holds, for every chapter, the anchors `mbook-core`
+/// gave to its headings.
 fn choose_marks(
     layout: &Layout<'_>,
     scans: &[Scan],
-    headings: &[HashSet<String>],
+    headings: &[Vec<Anchor>],
     outline_targets: &[&str],
 ) -> HashMap<(usize, String), Mark> {
     let mut used: HashSet<(usize, String)> = HashSet::new();
@@ -236,23 +245,40 @@ fn choose_marks(
     let mut marks = HashMap::new();
     for (index, (part, scan)) in layout.parts.iter().zip(scans).enumerate() {
         let mut taken: HashSet<String> = HashSet::new();
-        for mark in &scan.marks {
+        let anchors = headings.get(index).map(Vec::as_slice).unwrap_or_default();
+        for (mark, &end) in scan.marks.iter().zip(&scan.mark_ends) {
             let key = (part.section, mark.clone());
             if !used.contains(&key) || marks.contains_key(&key) {
                 continue;
             }
+            // The heading the mark stands in front of, with nothing a reader
+            // would see in between.
+            let heading = anchors.iter().find(|anchor| {
+                usize::try_from(anchor.offset).is_ok_and(|start| {
+                    start >= end && part.text.get(end..start).is_some_and(only_marks)
+                })
+            });
             let is_free = |name: &String| {
-                !headings
-                    .get(index)
-                    .is_some_and(|names| names.contains(name))
-                    && !taken.contains(name)
+                !anchors.iter().any(|anchor| anchor.name == *name) && !taken.contains(name)
             };
-            let name = std::iter::once(mark.clone())
-                .chain((2..u32::MAX).map(|number| format!("{mark}-{number}")))
-                .find(is_free)
-                .unwrap_or_else(|| mark.clone());
-            taken.insert(name.clone());
-            marks.insert(key, Mark { part: index, name });
+            let name = match heading {
+                Some(heading) => heading.name.clone(),
+                None => std::iter::once(mark.clone())
+                    .chain((2..u32::MAX).map(|number| format!("{mark}-{number}")))
+                    .find(is_free)
+                    .unwrap_or_else(|| mark.clone()),
+            };
+            if heading.is_none() {
+                taken.insert(name.clone());
+            }
+            marks.insert(
+                key,
+                Mark {
+                    part: index,
+                    name,
+                    at_heading: heading.is_some(),
+                },
+            );
         }
     }
     marks
@@ -274,6 +300,8 @@ pub(crate) fn assemble(
         cover,
         #[cfg(outlines)]
         outline,
+        #[cfg(feature = "epub")]
+        landmarks,
         mut warnings,
     } = draft;
     #[cfg(not(pictures))]
@@ -282,12 +310,11 @@ pub(crate) fn assemble(
     let mut layout = chapters(&sections);
     // The stand-ins are replaced when the metadata is applied.
     let mut book = Book::new(meta::UNTITLED, meta::UNDETERMINED)?;
-    let mut headings: Vec<HashSet<String>> = Vec::with_capacity(layout.parts.len());
+    let mut headings: Vec<Vec<Anchor>> = Vec::with_capacity(layout.parts.len());
     for part in &layout.parts {
         // `mbook-core` names the headings; a mark must not take such a name.
         let chapter = book.add_chapter(part.path.as_str(), part.text.as_str())?;
-        let names = chapter.anchors().iter().map(|anchor| anchor.name.clone());
-        headings.push(names.collect());
+        headings.push(chapter.anchors().to_vec());
     }
     let trees: Vec<_> = layout
         .parts
@@ -298,11 +325,18 @@ pub(crate) fn assemble(
         .iter()
         .map(|tree| tree.as_ref().map(rewrite::scan).unwrap_or_default())
         .collect();
+    // What is not written in any section but leads into one: the entries of
+    // the contents and the landmarks.
+    #[cfg_attr(
+        not(outlines),
+        expect(unused_mut, reason = "plain formats have no contents")
+    )]
+    let mut listed: Vec<&str> = Vec::new();
     #[cfg(outlines)]
-    let outline_targets: Vec<&str> = outline.iter().map(|entry| entry.target.as_str()).collect();
-    #[cfg(not(outlines))]
-    let outline_targets: Vec<&str> = Vec::new();
-    layout.marks = choose_marks(&layout, &scans, &headings, &outline_targets);
+    listed.extend(outline.iter().map(|entry| entry.target.as_str()));
+    #[cfg(feature = "epub")]
+    listed.extend(landmarks.iter().map(|landmark| landmark.target.as_str()));
+    layout.marks = choose_marks(&layout, &scans, &headings, &listed);
 
     #[cfg(pictures)]
     let mut store = pictures::Pictures::new(&pictures, options);
@@ -323,7 +357,7 @@ pub(crate) fn assemble(
             layout
                 .marks
                 .get(&(section, name.to_owned()))
-                .filter(|mark| mark.part == index)
+                .filter(|mark| mark.part == index && !mark.at_heading)
                 .map(|mark| mark.name.clone())
         };
         #[cfg(pictures)]
@@ -352,6 +386,8 @@ pub(crate) fn assemble(
     if let Some(toc) = contents(&book, &layout, &outline, &mut warnings) {
         book.set_toc(toc);
     }
+    #[cfg(feature = "epub")]
+    book.set_landmarks(placed(&layout, landmarks, &mut warnings))?;
 
     if book.chapters().is_empty() && book.pictures().is_empty() {
         return Err(Error::Empty);
@@ -359,6 +395,61 @@ pub(crate) fn assemble(
     // A failure here is a defect of this crate, not of the source.
     book.check().map_err(mbook_core::Error::from)?;
     Ok((book, warnings))
+}
+
+/// The landmarks of the source as those of the book.
+///
+/// A landmark leads to a chapter or to a mark, which is an extra anchor of
+/// its chapter. One that leads nowhere is left out with a warning, and so is
+/// a second `start` or a kind the format has no form for.
+#[cfg(feature = "epub")]
+fn placed(
+    layout: &Layout<'_>,
+    landmarks: Vec<DraftLandmark>,
+    warnings: &mut Vec<Warning>,
+) -> Vec<Landmark> {
+    let mut kept: Vec<Landmark> = Vec::with_capacity(landmarks.len());
+    for landmark in landmarks {
+        let place = match layout.classify(usize::MAX, &landmark.target) {
+            Destination::Internal(target) => match &target.mark {
+                None => layout
+                    .first_part
+                    .get(target.section)
+                    .copied()
+                    .flatten()
+                    .map(|part| (part, None)),
+                Some(name) => layout
+                    .marks
+                    .get(&(target.section, name.clone()))
+                    .map(|mark| (mark.part, Some(mark.name.clone()))),
+            },
+            _ => None,
+        };
+        let chapter = place
+            .as_ref()
+            .and_then(|(part, _)| layout.parts.get(*part))
+            .map(|part| part.path.clone());
+        let again = landmark.kind == "start" && kept.iter().any(|kept| kept.kind == "start");
+        let is_kind = !landmark.kind.is_empty()
+            && landmark.kind.split('-').all(|part| {
+                !part.is_empty()
+                    && part
+                        .bytes()
+                        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+            });
+        match (chapter, place) {
+            (Some(chapter), Some((_, anchor))) if is_kind && !again => kept.push(Landmark {
+                kind: landmark.kind,
+                title: landmark.title.trim().to_owned(),
+                chapter,
+                anchor,
+            }),
+            _ => warnings.push(Warning::whole_book(WarningKind::LinkDropped(
+                landmark.target,
+            ))),
+        }
+    }
+    kept
 }
 
 /// The table of contents of the source as one of the book.
@@ -439,7 +530,6 @@ fn at_chapter_start(book: &Book, layout: &Layout<'_>, target: &Target) -> bool {
 }
 
 /// Tells whether a piece of a chapter holds nothing a reader would see.
-#[cfg(outlines)]
 fn only_marks(text: &str) -> bool {
     text.lines()
         .all(|line| line.trim().is_empty() || (line.starts_with('[') && line.contains("]: #")))
@@ -459,33 +549,30 @@ fn heading_of(
     layout: &Layout<'_>,
     target: &Target,
 ) -> Option<(usize, Option<(u32, String, bool)>)> {
-    if target.mark.is_none() {
+    let Some(name) = &target.mark else {
         return Some(((*layout.first_part.get(target.section)?)?, None));
-    }
-    let (part, offset) = mark_offset(book, layout, target)?;
-    let chapter = book.chapter(&layout.parts.get(part)?.path)?;
-    let text = chapter.text();
-    let between = |heading: u32| {
-        let range = usize::try_from(offset).ok()?..usize::try_from(heading).ok()?;
-        text.get(range)
     };
-    // The heading the mark stands in front of.
-    let marked = chapter
-        .anchors()
-        .iter()
-        .find(|anchor| anchor.offset >= offset)
-        .filter(|anchor| between(anchor.offset).is_some_and(only_marks));
-    let above = || {
-        chapter
+    let mark = layout.marks.get(&(target.section, name.clone()))?;
+    if mark.at_heading {
+        let chapter = book.chapter(&layout.parts.get(mark.part)?.path)?;
+        let heading = chapter
             .anchors()
             .iter()
-            .rev()
-            .find(|anchor| anchor.offset < offset)
-    };
-    let heading = match marked {
-        Some(anchor) => Some((anchor.offset, anchor.name.clone(), true)),
-        None => above().map(|anchor| (anchor.offset, anchor.name.clone(), false)),
-    };
+            .find(|anchor| anchor.name == mark.name)?;
+        return Some((
+            mark.part,
+            Some((heading.offset, heading.name.clone(), true)),
+        ));
+    }
+    // Any other mark names a place below a heading, or above all of them.
+    let (part, offset) = mark_offset(book, layout, target)?;
+    let chapter = book.chapter(&layout.parts.get(part)?.path)?;
+    let above = chapter
+        .anchors()
+        .iter()
+        .rev()
+        .find(|anchor| anchor.offset < offset);
+    let heading = above.map(|anchor| (anchor.offset, anchor.name.clone(), false));
     Some((part, heading))
 }
 

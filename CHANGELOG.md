@@ -6,6 +6,18 @@
 
 - RFC 0001, the mbook file format, version 1.0, with seven decision records.
 - RFC 0002, the API of `mbook-core`.
+- RFC 0001 and ADR-0010: a book can list its notable places as *landmarks*,
+  each with a kind from a fixed vocabulary (`start`, `glossary`, `index`,
+  …), an optional title and a place named like the target of a link. They
+  are stored in an optional table, a resource of the new `kind` 4 placed
+  after the five fixed ones.
+- `mbook-core`: `Book::landmarks` and `Book::set_landmarks` with the new
+  `Landmark`, `BookReader::read_landmarks` with `LandmarkEntry`,
+  `ResourceKind::Landmarks`, `Error::InvalidLandmark` and
+  `ProblemKind::DanglingLandmark`. A book without landmarks is written to
+  the same bytes as before.
+- `mbook-converter`: the landmarks of an EPUB 3 book, and the guide of an
+  EPUB 2 book, become the landmarks of the converted book.
 - RFC 0003, the API of `mbook-converter`.
 - `mbook-converter`, the crate of RFC 0003: `Converter` turns a book given as
   any `Read` or as a byte slice into an mbook file or into a `Book`.

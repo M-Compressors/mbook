@@ -317,6 +317,7 @@ pub struct PictureEntry<'a> {
 }
 
 pub struct TocEntry { pub level: u8, pub title: String, pub position: Position }
+pub struct LandmarkEntry { pub kind: String, pub title: String, pub position: Position }
 pub struct Anchor { pub offset: u32, pub name: String }
 pub enum Destination {
     External,
@@ -326,7 +327,7 @@ pub enum Destination {
 }
 
 // The raw resource table, for tools that list a file.
-pub enum ResourceKind { Service, Text, Picture, ChapterAnchors, Unknown(u8) }   // non-exhaustive
+pub enum ResourceKind { Service, Text, Picture, ChapterAnchors, Landmarks, Unknown(u8) }   // non-exhaustive
 pub struct Resource<'a> {
     pub number: u32,
     pub kind: ResourceKind,
@@ -424,6 +425,7 @@ impl<R: Read + Seek> BookReader<R> {
     // Seek, read and decode one resource.
     pub fn read_chapter(&mut self, id: ChapterId) -> Result<String>;
     pub fn read_extra_anchors(&mut self, chapter: ChapterId) -> Result<Vec<Anchor>>;
+    pub fn read_landmarks(&mut self) -> Result<Vec<LandmarkEntry>>;
     pub fn read_resolve(&mut self, from: ChapterId, destination: &str)
         -> Result<Destination>;
     pub fn read_picture(&mut self, id: PictureId) -> Result<Vec<u8>>;
@@ -440,9 +442,10 @@ impl<R: Read + Seek> BookReader<R> {
 | Table accessors | Nothing | Never; unknown ids give `None` or an empty slice. |
 | `resolve` | Nothing | The destination is unresolved under [Resolving destinations](0001-mbook-format.md#resolving-destinations), as far as resources 2 and 4 can tell. |
 | `read_extra_anchors` | The anchor table of one chapter; nothing when it has none | I/O; a damaged frame; the table is not of the defined shape or breaks a rule of [Chapter anchor tables](0001-mbook-format.md#chapter-anchor-tables); the id came from another book. |
+| `read_landmarks` | The landmarks table; nothing when the book has none | I/O; a damaged frame; the table is not of the defined shape or breaks a rule of [Landmarks](0001-mbook-format.md#landmarks-1). |
 | `read_resolve` | That table, and only when the fragment is not the anchor of a heading | `Error::Unresolved` when the destination is unresolved; otherwise as `read_extra_anchors`. |
 | `read_chapter`, `read_picture` | One record | I/O; a damaged frame; the resource exceeds its limit; the text is not UTF-8, or a stored position in it is not at the start of a line; the id came from another book. |
-| `load` | Every text, picture and anchor table record | As above, for any resource; an extra anchor is not at the start of a line; or the decoded book exceeds the file limit. |
+| `load` | Every text, picture and anchor table record, and the landmarks | As above, for any resource; an extra anchor is not at the start of a line; or the decoded book exceeds the file limit. |
 
 - An error in one resource does not poison the reader; other resources can
   still be read.
@@ -461,6 +464,12 @@ impl<R: Read + Seek> BookReader<R> {
   else; `load` and `Book::read`, which have the text as well, check this too.
 - An anchor table that breaks a rule fails the calls that read it, and
   nothing else: its chapter is still read by `read_chapter`.
+- **Landmarks are read on request**, by `read_landmarks`; opening a book
+  does not decode them. A landmarks table that breaks a rule fails that call
+  and `load`, and nothing else. A landmark inside a chapter needs an anchor
+  at its offset: `read_landmarks` checks that against the anchors of
+  headings and, when the chapter has an anchor table of its own, leaves the
+  rest to `load`, which has that table.
 - A resource of an unknown `kind` is listed by `resources` only. It has no id
   type, so it cannot be decoded, and `load` and `Book::read` leave it behind:
   a file of a later minor version loses such resources when it is edited.
@@ -510,6 +519,9 @@ impl Book {
 
     pub fn toc(&self) -> &Toc;
     pub fn set_toc(&mut self, toc: Toc);
+
+    pub fn landmarks(&self) -> &[Landmark];
+    pub fn set_landmarks(&mut self, landmarks: Vec<Landmark>) -> Result<()>;
 }
 
 impl Chapter {
@@ -574,6 +586,38 @@ A `Book` never stores a byte offset that the caller has to keep correct:
   becomes the chapter's path and the name of the first anchor at that
   position.
 
+#### Landmarks
+
+```rust
+pub struct Landmark {
+    pub kind: String,                   // `start`, `glossary`, `index`, …
+    pub title: String,                  // may be empty
+    pub chapter: String,                // a path
+    pub anchor: Option<String>,         // None is the start of the chapter
+}
+
+impl Landmark {
+    /// `href` is a link destination: `back/index.md` or `ch01.md#fig-1`.
+    pub fn new(kind: impl Into<String>, title: impl Into<String>, href: &str) -> Self;
+}
+```
+
+The [landmarks](0001-mbook-format.md#landmarks-1) of a book are a list, set
+as a whole with `set_landmarks`, like the contents.
+
+- **A landmark names its target the way a link does**, by chapter path and
+  anchor; its offset is looked up when the book is written. Unlike a
+  contents item it may lead to an extra anchor as well as to a heading,
+  because RFC 0001 lets a landmark match a row of either table.
+- `set_landmarks` checks what concerns the list alone: the form of every
+  kind, and that at most one landmark is the `start`. Whether a landmark
+  leads somewhere connects it with the chapters and is checked by `check`
+  and `write`, as `DanglingLandmark`.
+- An empty list removes the landmarks; a book without them is written
+  without the table.
+- A loaded landmark becomes the chapter's path and the name of the first
+  anchor at its position, of a heading before an extra one.
+
 #### Extra anchors
 
 A heading names itself. Any other line is named by an
@@ -611,6 +655,8 @@ without them gets no table.
 | The same rule, for a chapter that was loaded and never replaced | `check`, `write` | `Problems` |
 | The picture is an AVIF file with a primary item | `add_picture` | `Error::InvalidPicture` |
 | `meta` key syntax and counts | `Meta` setters | `Error::InvalidMeta` |
+| The form of a landmark's kind; one `start` at most | `set_landmarks` | `Error::InvalidLandmark`, with a `LandmarkError` as its source |
+| Every landmark leads to a chapter or to an anchor of it | `check`, `write` | `Problems` |
 | No raw HTML, allowed URI schemes | `check`, `write` | `Problems` |
 | Every link and picture reference resolves, a fragment against the anchors of headings and the extra anchors of its chapter | `check`, `write` | `Problems` |
 | `cover` names a picture | `check`, `write` | `Problems` |
@@ -626,9 +672,9 @@ without them gets no table.
 
 #### What `write` produces
 
-Resources 0 to 4, then the cover, then chapters in reading order, each
-directly after its anchor table when it has extra anchors, then the remaining
-pictures, as RFC 0001 recommends. Pictures use the *store* graph.
+Resources 0 to 4, then the landmarks when the book has any, then the cover,
+then chapters in reading order, each directly after its anchor table when it
+has extra anchors, then the remaining pictures, as RFC 0001 recommends. Pictures use the *store* graph.
 The same `Book` written twice with the same options gives identical bytes.
 
 ### Options and limits
@@ -675,7 +721,7 @@ One `Error` enum, non-exhaustive, with `Result<T> = Result<T, Error>`.
 | `Limit` | A configured limit was exceeded. |
 | `NoSuchResource` | A `read_` call was given an id from another book. |
 | `Unresolved` | `read_resolve` was given a destination that leads nowhere. The `ResolveError` is the `source()`. |
-| `InvalidPath`, `DuplicatePath`, `InvalidText`, `InvalidPicture`, `InvalidMeta` | An argument to a `Book` or `Meta` method broke a rule. |
+| `InvalidPath`, `DuplicatePath`, `InvalidText`, `InvalidPicture`, `InvalidMeta`, `InvalidLandmark` | An argument to a `Book` or `Meta` method broke a rule. |
 | `NoSuchPath`, `IndexOutOfRange` | `move_chapter` or `insert_chapter` named a chapter or a position that does not exist. |
 | `Invalid(Problems)` | `write` or `save` refused the book. |
 
@@ -778,6 +824,8 @@ three plain fields.
 | Navigation data | Derived from text at write time | Editable `toc` and `anchors` tables with offsets | An offset that is still a valid position after an edit points at the wrong heading without any error. |
 | Anchors of lines that are not headings | Read from anchor definitions in the text ([ADR-0009](adr/0009-anchor-definitions.md)) | `add_anchor(name, offset)`, dropped by `set_text` | Implemented first and removed: correcting one letter of a chapter deleted all its link targets. |
 | | | The same, with offsets carried across `set_text` by comparing lines | A rewritten line is matched by position, which can name the wrong line without any error. |
+| Landmarks in `Book` | A list replaced as a whole, each target named by path and anchor | `add_landmark` and `remove_landmark` | The contents work the same way; one call keeps the rule about `start` in one place. |
+| Landmarks in `BookReader` | Read on request, by `read_landmarks` | Decoded when a book is opened | RFC 0001 keeps them out of the resources every book has; most books have none. |
 | Resolving a fragment that is not a heading's | `resolve` without I/O returns `ExtraAnchor`; `read_resolve` reads the table | `resolve` reads the table itself | Table lookups take `&self` and do no I/O; a renderer calls `resolve` for every link of a page. |
 | | | The reader keeps every anchor table it has read | Memory would grow with the chapters visited, for a table of a few hundred bytes that sits next to the chapter. |
 | When rules are checked | One-item rules at the call, cross-item rules at `write` | Everything at `write` | The error names the call that caused it. |
@@ -816,6 +864,7 @@ The questions raised by the first draft were settled by the format author on
 | `Limits::default()`? | 1,000,000 resources, 64 MiB per resource, 16 GiB per file. |
 | Can a link lead to a line that is not a heading? | Yes, through the anchor table of its chapter ([ADR-0008](adr/0008-chapter-anchor-tables.md)). |
 | Where do the names of such lines come from? | From anchor definitions in the text of the chapter ([ADR-0009](adr/0009-anchor-definitions.md)). |
+| Can a book list its notable places? | Yes, as landmarks in an optional table ([ADR-0010](adr/0010-landmarks.md)). |
 
 The change required from mopenzl
 ([Required from mopenzl](#required-from-mopenzl)) is a dependency, not an open
@@ -825,6 +874,8 @@ Still *proposed*, and not confirmed by the format author:
 
 - the names `extra_anchors`, `read_extra_anchors`, `read_resolve` and
   `Destination::ExtraAnchor`;
+- the names `Landmark`, `LandmarkEntry`, `landmarks`, `set_landmarks` and
+  `read_landmarks`;
 - that a contents item cannot lead to an extra anchor.
 
 ## Future possibilities

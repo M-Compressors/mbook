@@ -1,7 +1,7 @@
 //! What `Book::check` reports, and that nothing invalid is written.
 
 use crate::sample;
-use mbook_core::{Book, Error, Problem, ProblemKind, Result, Toc, TocItem};
+use mbook_core::{Book, Error, Landmark, Problem, ProblemKind, Result, Toc, TocItem};
 
 /// The problems of a book as (chapter, kind) pairs.
 fn problems(book: &Book) -> Vec<(Option<String>, ProblemKind)> {
@@ -302,5 +302,43 @@ fn a_contents_item_cannot_lead_to_an_extra_anchor() -> Result<()> {
         problems(&book),
         [(None, ProblemKind::DanglingTocItem("The figure".into()))]
     );
+    Ok(())
+}
+
+#[test]
+fn landmarks_that_lead_somewhere_pass_the_check() -> Result<()> {
+    assert!(sample::with_landmarks()?.check().is_ok());
+    Ok(())
+}
+
+#[test]
+fn a_landmark_that_leads_nowhere_is_reported() -> Result<()> {
+    let mut book = sample::annotated()?;
+    book.set_landmarks(vec![
+        Landmark::new("start", "", "ch09.md"),
+        Landmark::new("index", "", "ch01.md#no-such-anchor"),
+        Landmark::new("glossary", "", "img/fig-1.avif"),
+        Landmark::new("preface", "", "ch02.md"),
+    ])?;
+    assert_eq!(
+        problems(&book),
+        [
+            (None, ProblemKind::DanglingLandmark("start".into())),
+            (None, ProblemKind::DanglingLandmark("index".into())),
+            (None, ProblemKind::DanglingLandmark("glossary".into())),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_landmark_follows_an_anchor_definition_that_is_removed() -> Result<()> {
+    let mut book = sample::with_landmarks()?;
+    if let Some(chapter) = book.chapter_mut("ch01.md") {
+        chapter.set_text(crate::texts::CH01)?;
+    }
+    let kinds: Vec<_> = problems(&book).into_iter().map(|(_, kind)| kind).collect();
+    assert!(kinds.contains(&ProblemKind::DanglingLandmark("list-of-figures".into())));
+    assert!(!kinds.contains(&ProblemKind::DanglingLandmark("preface".into())));
     Ok(())
 }

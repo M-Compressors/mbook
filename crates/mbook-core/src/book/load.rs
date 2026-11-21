@@ -1,6 +1,6 @@
 //! Loading a whole book into memory.
 
-use super::{Book, Chapter, Picture, Toc, TocItem};
+use super::{Book, Chapter, Landmark, Picture, Toc, TocItem};
 use crate::container;
 use crate::error::{Error, Result};
 use crate::format::{CONTAINER_MAGIC, FORMAT, SERVICE_COUNT};
@@ -135,6 +135,35 @@ impl Book {
                 .map(|entry| toc_item(index, entry))
                 .collect(),
         );
+        if let Some(table) = index.landmarks_table() {
+            for entry in index.read_landmarks(table, &outputs(table)?)? {
+                let position = entry.position;
+                let chapter = index
+                    .chapter(position.chapter)
+                    .and_then(|chapter| book.chapter(chapter.path));
+                // A landmark inside a chapter is named by the anchor at its
+                // offset, of a heading or of the chapter's own table.
+                let anchor = chapter.and_then(|chapter| {
+                    let anchors = chapter.anchors.iter().chain(&chapter.extra_anchors);
+                    anchors
+                        .clone()
+                        .find(|anchor| anchor.offset == position.offset)
+                        .map(|anchor| anchor.name.clone())
+                });
+                if position.offset != 0 && anchor.is_none() {
+                    return Err(Error::Malformed {
+                        resource: table,
+                        reason: "a row inside a chapter has no anchor",
+                    });
+                }
+                book.landmarks.push(Landmark {
+                    kind: entry.kind,
+                    title: entry.title,
+                    chapter: chapter.map_or_else(String::new, |chapter| chapter.path.clone()),
+                    anchor: anchor.filter(|_| position.offset != 0),
+                });
+            }
+        }
         Ok(book)
     }
 }

@@ -70,19 +70,17 @@ fn links_to_headings_lead_to_the_chapter_that_holds_them() -> Outcome {
     assert!(
         chapters[1]
             .text()
-            .contains("See [the station](ch0002.md#the-station-2).")
+            .contains("See [the station](ch0002.md#the-station).")
     );
     assert!(
         chapters[2]
             .text()
-            .contains("Back to [the start](ch0002.md#arrival-2), or out to <https://example.org>.")
+            .contains("Back to [the start](ch0002.md#arrival), or out to <https://example.org>.")
     );
-    let named: Vec<_> = chapters[1]
-        .extra_anchors()
-        .iter()
-        .map(|anchor| anchor.name.as_str())
-        .collect();
-    assert_eq!(named, ["arrival-2", "the-station-2"]);
+    // The links lead to the anchors the headings have anyway: nothing is
+    // added to the text.
+    assert!(chapters[1].text().starts_with("# Arrival\n"));
+    assert_eq!(chapters[1].extra_anchors(), []);
     assert_eq!(
         warnings(&converted),
         [&WarningKind::MetadataMissing("lang".into())]

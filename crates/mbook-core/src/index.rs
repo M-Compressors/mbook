@@ -12,12 +12,12 @@ use crate::error::{Error, MetaError, ResolveError, Result};
 use crate::format::{ANCHORS, KIND_SERVICE, META, RESOURCES, SERVICE_COUNT, TOC};
 use crate::id::{ChapterId, PictureId};
 use crate::link::{self, Parsed};
-use crate::meta::Meta;
+use crate::meta::{self, Meta};
 use crate::path;
-use crate::tables::{self, AnchorRow, ResourceRow, Tables, TocRow};
+use crate::tables::{self, AnchorRow, LandmarkRow, ResourceRow, Tables, TocRow};
 use crate::types::{
-    Anchor, ChapterEntry, Destination, PictureEntry, Position, Resource, ResourceKind, Size,
-    TocEntry, Version,
+    Anchor, ChapterEntry, Destination, LandmarkEntry, PictureEntry, Position, Resource,
+    ResourceKind, Size, TocEntry, Version,
 };
 use mopenzl::TypedOutput;
 use std::collections::HashSet;
@@ -281,6 +281,62 @@ impl Index {
         (self.row(table)?.kind == ResourceKind::ChapterAnchors).then_some(table)
     }
 
+    /// The number of the resource that holds the landmarks of the book.
+    pub(crate) fn landmarks_table(&self) -> Option<u32> {
+        let at = self
+            .rows
+            .iter()
+            .position(|row| row.kind == ResourceKind::Landmarks)?;
+        u32::try_from(at).ok()
+    }
+
+    /// Reads the landmarks from their decoded columns and checks them.
+    /// `table` is the number of the resource that holds them.
+    pub(crate) fn read_landmarks(
+        &self,
+        table: u32,
+        outputs: &[TypedOutput],
+    ) -> Result<Vec<LandmarkEntry>> {
+        let rows = tables::landmarks(outputs).map_err(|reason| malformed(table, reason))?;
+        self.landmarks(table, rows)
+    }
+
+    /// Checks the rows of the landmarks table.
+    ///
+    /// A row inside a chapter needs an anchor at its offset. Whether the
+    /// chapter's own anchor table has one cannot be seen from here: a row
+    /// that no heading anchor matches is accepted when its chapter has such
+    /// a table, and checked when the book is loaded.
+    fn landmarks(&self, table: u32, rows: Vec<LandmarkRow>) -> Result<Vec<LandmarkEntry>> {
+        let mut has_start = false;
+        let mut landmarks = Vec::with_capacity(rows.len());
+        for row in rows {
+            if !meta::is_key(&row.kind) {
+                return Err(malformed(table, "a kind is not valid"));
+            }
+            if row.kind == "start" && std::mem::replace(&mut has_start, true) {
+                return Err(malformed(table, "more than one start"));
+            }
+            self.check_position(table, row.resource, row.offset)?;
+            let at_heading = self
+                .anchors(row.resource)
+                .iter()
+                .any(|anchor| anchor.offset == row.offset);
+            if row.offset != 0 && !at_heading && self.anchor_table(row.resource).is_none() {
+                return Err(malformed(table, "a row inside a chapter has no anchor"));
+            }
+            landmarks.push(LandmarkEntry {
+                kind: row.kind,
+                title: row.title,
+                position: Position {
+                    chapter: ChapterId::new(row.resource),
+                    offset: row.offset,
+                },
+            });
+        }
+        Ok(landmarks)
+    }
+
     /// A position must name a chapter and lie inside its text. That it is at
     /// the start of a line is checked by [`Self::check_positions`].
     fn check_position(&self, table: u32, resource: u32, offset: u32) -> Result<()> {
@@ -395,12 +451,15 @@ impl Index {
     }
 
     /// The decoded size of everything a loaded book is built from: every
-    /// chapter, picture and anchor table of a chapter.
+    /// chapter, picture and anchor table of a chapter, and the landmarks.
     pub(crate) fn content_len(&self) -> u64 {
         let loaded = |row: &&Row| {
             matches!(
                 row.kind,
-                ResourceKind::Text | ResourceKind::Picture | ResourceKind::ChapterAnchors
+                ResourceKind::Text
+                    | ResourceKind::Picture
+                    | ResourceKind::ChapterAnchors
+                    | ResourceKind::Landmarks
             )
         };
         self.rows
@@ -527,8 +586,10 @@ fn rows(table: Vec<ResourceRow>, decoded_lens: &[u64]) -> Result<Vec<Row>> {
             ));
         }
         let kind = ResourceKind::from(row.kind);
-        // Service resources and anchor tables are found by position.
-        let has_path = !is_service && kind != ResourceKind::ChapterAnchors;
+        // Service resources and anchor tables are found by position, the
+        // landmarks by their kind.
+        let has_path =
+            !is_service && !matches!(kind, ResourceKind::ChapterAnchors | ResourceKind::Landmarks);
         if has_path == row.path.is_empty() {
             return Err(malformed(
                 RESOURCES,
@@ -566,6 +627,12 @@ fn rows(table: Vec<ResourceRow>, decoded_lens: &[u64]) -> Result<Vec<Row>> {
             "an anchor table is not followed by its chapter",
         ));
     }
+    let landmarks = rows
+        .iter()
+        .filter(|row| row.kind == ResourceKind::Landmarks);
+    if landmarks.count() > 1 {
+        return Err(malformed(RESOURCES, "more than one landmarks table"));
+    }
     Ok(rows)
 }
 
@@ -599,7 +666,7 @@ mod tests {
     use crate::error::{Error, ResolveError};
     use crate::format::{ANCHORS, META, RESOURCES, TOC};
     use crate::id::ChapterId;
-    use crate::tables::{AnchorRow, ResourceRow, Tables, TocRow};
+    use crate::tables::{AnchorRow, LandmarkRow, ResourceRow, Tables, TocRow};
     use crate::types::{Anchor, Destination, ResourceKind, Size, Version};
 
     const VERSION: Version = Version { major: 1, minor: 0 };
@@ -1239,6 +1306,160 @@ mod tests {
     fn an_extra_anchor_at_the_end_of_the_text_fails_the_text_check() {
         let anchors = [extra(8, "end")];
         assert!(Index::check_extra_positions(6, &anchors, "one\ntwo\n").is_err());
+    }
+
+    fn landmark(kind: &str, resource: u32, offset: u32) -> LandmarkRow {
+        LandmarkRow {
+            kind: kind.to_owned(),
+            title: String::new(),
+            resource,
+            offset,
+        }
+    }
+
+    /// The rule a landmarks table of the example is rejected for. The table
+    /// is thought to be resource 9; the chapters are 6 and 7.
+    fn landmark_rejection(rows: Vec<LandmarkRow>) -> &'static str {
+        match index().landmarks(9, rows) {
+            Err(Error::Malformed {
+                resource: 9,
+                reason,
+            }) => reason,
+            other => panic!("expected a malformed landmarks table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_landmarks_table_is_found_by_its_kind() {
+        let mut tables = tables();
+        tables.resources.push(resource(4, "", 0, 0));
+        let mut lens = LENS.to_vec();
+        lens.push(30);
+        let index = Index::build(VERSION, tables, &lens).unwrap();
+        assert_eq!(index.landmarks_table(), Some(9));
+        assert_eq!(
+            index.resources().last().map(|r| (r.kind, r.path)),
+            Some((ResourceKind::Landmarks, ""))
+        );
+        assert_eq!(
+            index.content_len(),
+            super::tests::index().content_len() + 30
+        );
+    }
+
+    #[test]
+    fn a_book_without_landmarks_has_no_landmarks_table() {
+        assert_eq!(index().landmarks_table(), None);
+    }
+
+    #[test]
+    fn two_landmarks_tables_are_rejected() {
+        let (table, reason) = rejection(|t| {
+            t.resources[5] = resource(4, "", 0, 0);
+            t.resources[8] = resource(4, "", 0, 0);
+        });
+        assert_eq!(
+            (table, reason),
+            (RESOURCES, "more than one landmarks table")
+        );
+    }
+
+    #[test]
+    fn a_landmarks_table_with_a_path_is_rejected() {
+        let (_, reason) = rejection(|t| t.resources[8] = resource(4, "landmarks", 0, 0));
+        assert_eq!(
+            reason,
+            "a path is missing, or a row that takes none has one"
+        );
+    }
+
+    #[test]
+    fn landmarks_that_follow_the_rules_are_accepted() {
+        let rows = vec![
+            landmark("start", 6, 0),
+            landmark("preface", 6, 130),
+            landmark("appendix", 7, 0),
+            landmark("appendix", 7, 0),
+            landmark("x-maps", 7, 0),
+        ];
+        let landmarks = index().landmarks(9, rows).unwrap();
+        let places: Vec<_> = landmarks
+            .iter()
+            .map(|l| {
+                (
+                    l.kind.as_str(),
+                    l.position.chapter.number(),
+                    l.position.offset,
+                )
+            })
+            .collect();
+        assert_eq!(
+            places,
+            [
+                ("start", 6, 0),
+                ("preface", 6, 130),
+                ("appendix", 7, 0),
+                ("appendix", 7, 0),
+                ("x-maps", 7, 0)
+            ]
+        );
+    }
+
+    #[test]
+    fn an_empty_landmarks_table_is_accepted() {
+        assert_eq!(index().landmarks(9, Vec::new()).unwrap(), []);
+    }
+
+    #[test]
+    fn a_landmark_of_an_invalid_kind_is_rejected() {
+        assert_eq!(
+            landmark_rejection(vec![landmark("The Index", 6, 0)]),
+            "a kind is not valid"
+        );
+        assert_eq!(
+            landmark_rejection(vec![landmark("", 6, 0)]),
+            "a kind is not valid"
+        );
+    }
+
+    #[test]
+    fn a_second_start_is_rejected() {
+        assert_eq!(
+            landmark_rejection(vec![landmark("start", 6, 0), landmark("start", 7, 0)]),
+            "more than one start"
+        );
+    }
+
+    #[test]
+    fn a_landmark_in_a_picture_is_rejected() {
+        assert_eq!(
+            landmark_rejection(vec![landmark("index", 8, 0)]),
+            "a row does not name a chapter"
+        );
+    }
+
+    #[test]
+    fn a_landmark_past_the_end_of_its_chapter_is_rejected() {
+        assert_eq!(
+            landmark_rejection(vec![landmark("index", 6, 279)]),
+            "an offset is past the end of its chapter"
+        );
+    }
+
+    #[test]
+    fn a_landmark_inside_a_chapter_needs_an_anchor() {
+        assert_eq!(
+            landmark_rejection(vec![landmark("index", 6, 22)]),
+            "a row inside a chapter has no anchor"
+        );
+    }
+
+    #[test]
+    fn a_landmark_may_rely_on_the_anchor_table_of_its_chapter() {
+        // The table is resource 6, the chapter 7: only the table can tell
+        // whether offset 22 has a name.
+        let landmarks = with_anchor_table().landmarks(10, vec![landmark("index", 7, 22)]);
+        assert_eq!(landmarks.unwrap().len(), 1);
     }
 
     #[test]

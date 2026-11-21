@@ -55,7 +55,8 @@ resource 1   meta        key, value
 resource 2   resources   kind, path, width, height      one row per resource
 resource 3   toc         level, title, resource, offset
 resource 4   anchors     resource, offset, name         heading anchors
-resource 5…  cover picture, then chapters, then pictures;
+resource 5…  landmarks, when the book has any; the cover picture; then
+             chapters, then pictures;
              a chapter that names other lines follows its own anchor table
 index + footer                                          provided by the container
 ```

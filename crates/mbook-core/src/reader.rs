@@ -10,7 +10,8 @@ use crate::index::Resolved;
 use crate::meta::Meta;
 use crate::options::{Limits, ReadOptions};
 use crate::types::{
-    Anchor, ChapterEntry, Destination, PictureEntry, Position, Resource, TocEntry, Version,
+    Anchor, ChapterEntry, Destination, LandmarkEntry, PictureEntry, Position, Resource, TocEntry,
+    Version,
 };
 use mopenzl::TypedOutput;
 use mopenzl::framing::{FramedDecompressor, FramedIndex};
@@ -344,6 +345,36 @@ impl<R: Read + Seek> BookReader<R> {
         };
         let outputs = read_outputs(&mut self.decoder, &mut self.source, &self.directory, table)?;
         self.index.read_extra_anchors(number, table, &outputs)
+    }
+
+    /// Reads the landmarks of the book: its notable places, such as the
+    /// start of the text or the index, in the order the book lists them.
+    /// Empty for a book without landmarks.
+    ///
+    /// An error here does not affect the rest of the book.
+    ///
+    /// # Errors
+    ///
+    /// The source fails; the record is damaged or larger than the limit; the
+    /// table breaks a rule of the format.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use mbook_core::BookReader;
+    ///
+    /// let mut book = BookReader::open("example.mbook")?;
+    /// for landmark in book.read_landmarks()? {
+    ///     println!("{}: resource {}", landmark.kind, landmark.position.chapter.number());
+    /// }
+    /// # Ok::<(), mbook_core::Error>(())
+    /// ```
+    pub fn read_landmarks(&mut self) -> Result<Vec<LandmarkEntry>> {
+        let Some(table) = self.index.landmarks_table() else {
+            return Ok(Vec::new());
+        };
+        let outputs = read_outputs(&mut self.decoder, &mut self.source, &self.directory, table)?;
+        self.index.read_landmarks(table, &outputs)
     }
 
     /// Reads one picture as the bytes of an AVIF file.

@@ -1,7 +1,7 @@
 //! The example book of RFC 0001, built with the public API.
 
 use crate::texts::{CH01, CH01_NAMED, CH02, CH03, ID, PLAIN, ROTATED};
-use mbook_core::{Book, Result};
+use mbook_core::{Book, Landmark, Result};
 
 /// The example book: a cover, two chapters and one figure.
 pub(crate) fn book() -> Result<Book> {
@@ -23,6 +23,20 @@ pub(crate) fn annotated() -> Result<Book> {
         chapter.set_text(CH01_NAMED)?;
     }
     book.add_chapter("ch03.md", CH03)?;
+    Ok(book)
+}
+
+/// The annotated example with landmarks: a start, a place that is a
+/// heading, a place that only an anchor definition names, and one more with
+/// a title of its own.
+pub(crate) fn with_landmarks() -> Result<Book> {
+    let mut book = annotated()?;
+    book.set_landmarks(vec![
+        Landmark::new("start", "", "ch01.md"),
+        Landmark::new("preface", "", "ch01.md#the-station"),
+        Landmark::new("list-of-figures", "Figures", "ch01.md#fig-1"),
+        Landmark::new("x-letter", "The letter", "ch02.md"),
+    ])?;
     Ok(book)
 }
 

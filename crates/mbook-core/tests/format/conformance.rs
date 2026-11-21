@@ -370,9 +370,9 @@ fn an_anchor_table_with_a_path_is_rejected() -> Result<()> {
 #[test]
 fn an_anchor_table_of_another_shape_fails_alone() -> Result<()> {
     let one_column = with_anchor_table(&[0], &["top"]).with(|raw| {
-        raw.anchor_table_mut(6).pop();
+        raw.table_mut(6).pop();
     });
-    let swapped = with_anchor_table(&[0], &["top"]).with(|raw| raw.anchor_table_mut(6).reverse());
+    let swapped = with_anchor_table(&[0], &["top"]).with(|raw| raw.table_mut(6).reverse());
     let not_a_table = with_anchor_table(&[0], &["top"]).with(|raw| {
         raw.contents[1] = b"top".to_vec().into();
     });
@@ -471,5 +471,190 @@ fn a_refused_anchor_table_fails_the_link_that_needs_it() -> Result<()> {
     ));
     // A link to a heading of the same chapter does not need the table.
     assert!(reader.read_resolve(second, "ch01.md#the-station").is_ok());
+    Ok(())
+}
+
+/// The example with a landmarks table. The table is resource 5; the cover
+/// moves to 6 and the chapters to 7 and 8.
+fn with_landmarks(landmarks: &[(&str, &str, u32, u32)]) -> Raw {
+    changed(|raw| raw.insert_landmarks(landmarks))
+}
+
+/// The rule the landmarks of a file are refused for, and that the rest of
+/// the file can still be read.
+fn refused_landmarks(raw: &Raw) -> Result<&'static str> {
+    let mut reader = open(raw)?;
+    let reason = match reader.read_landmarks() {
+        Err(Error::Malformed {
+            resource: 5,
+            reason,
+        }) => reason,
+        Ok(_) => panic!("the landmarks must be refused"),
+        Err(other) => return Err(other),
+    };
+    // The error is confined to the landmarks: the book is still read.
+    let Some(first) = reader.chapter_id(7) else {
+        panic!("resource 7 is the first chapter");
+    };
+    assert_eq!(reader.read_chapter(first)?, CH01);
+    assert_eq!(reader.toc().len(), 3);
+    Ok(reason)
+}
+
+#[test]
+fn landmarks_built_by_hand_are_read() -> Result<()> {
+    let raw = with_landmarks(&[
+        ("start", "", 7, 0),
+        ("preface", "Inside", 7, station_offset()),
+        ("x-letter", "The letter", 8, 0),
+    ]);
+    let mut reader = open(&raw)?;
+    let landmarks: Vec<_> = reader
+        .read_landmarks()?
+        .into_iter()
+        .map(|l| {
+            (
+                l.kind,
+                l.title,
+                l.position.chapter.number(),
+                l.position.offset,
+            )
+        })
+        .collect();
+    assert_eq!(
+        landmarks,
+        [
+            ("start".to_owned(), String::new(), 7, 0),
+            (
+                "preface".to_owned(),
+                "Inside".to_owned(),
+                7,
+                station_offset()
+            ),
+            ("x-letter".to_owned(), "The letter".to_owned(), 8, 0),
+        ]
+    );
+    let book = Book::read(bytes(&raw)?.as_slice())?;
+    let named: Vec<_> = book
+        .landmarks()
+        .iter()
+        .map(|l| (l.kind.as_str(), l.chapter.as_str(), l.anchor.as_deref()))
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("start", "ch01.md", None),
+            ("preface", "ch01.md", Some("the-station")),
+            ("x-letter", "ch02.md", None),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_second_landmarks_table_is_rejected() -> Result<()> {
+    let table = rejected_table(|raw| {
+        raw.insert_landmarks(&[("start", "", 7, 0)]);
+        raw.push_resource(4, "", b"");
+    })?;
+    assert_eq!(table, 2);
+    Ok(())
+}
+
+#[test]
+fn a_landmarks_table_with_a_path_is_rejected() -> Result<()> {
+    let table = rejected_table(|raw| {
+        raw.insert_landmarks(&[("start", "", 7, 0)]);
+        raw.tables[RESOURCES][1].text_mut()[5] = "landmarks".to_owned();
+    })?;
+    assert_eq!(table, 2);
+    Ok(())
+}
+
+#[test]
+fn landmarks_of_another_shape_fail_alone() -> Result<()> {
+    let three_columns = with_landmarks(&[("start", "", 7, 0)]).with(|raw| {
+        raw.table_mut(5).pop();
+    });
+    let swapped = with_landmarks(&[("start", "", 7, 0)]).with(|raw| raw.table_mut(5).reverse());
+    assert_eq!(refused_landmarks(&three_columns)?, "a column is missing");
+    assert_eq!(
+        refused_landmarks(&swapped)?,
+        "a string column has another type"
+    );
+    Ok(())
+}
+
+#[test]
+fn landmarks_that_break_a_rule_fail_alone() -> Result<()> {
+    let past_the_end = u32::try_from(CH01.len()).unwrap_or(u32::MAX);
+    let cases = [
+        (
+            with_landmarks(&[("The Index", "", 7, 0)]),
+            "a kind is not valid",
+        ),
+        (
+            with_landmarks(&[("start", "", 7, 0), ("start", "", 8, 0)]),
+            "more than one start",
+        ),
+        (
+            with_landmarks(&[("index", "", 6, 0)]),
+            "a row does not name a chapter",
+        ),
+        (
+            with_landmarks(&[("index", "", 7, past_the_end)]),
+            "an offset is past the end of its chapter",
+        ),
+        (
+            with_landmarks(&[("index", "", 7, figure_offset())]),
+            "a row inside a chapter has no anchor",
+        ),
+    ];
+    for (raw, reason) in cases {
+        assert_eq!(refused_landmarks(&raw)?, reason);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_book_with_refused_landmarks_does_not_load() -> Result<()> {
+    let raw = with_landmarks(&[("The Index", "", 7, 0)]);
+    assert!(matches!(
+        Book::read(bytes(&raw)?.as_slice()),
+        Err(Error::Malformed { resource: 5, .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_landmark_may_lead_to_an_extra_anchor() -> Result<()> {
+    // Resource 7 becomes the anchor table of the first chapter, which moves
+    // to 8.
+    let raw = with_landmarks(&[("list-of-figures", "", 8, figure_offset())])
+        .with(|raw| raw.insert_anchor_table(7, &[figure_offset()], &["fig-1"]));
+    let book = Book::read(bytes(&raw)?.as_slice())?;
+    let landmark = &book.landmarks()[0];
+    assert_eq!(
+        (landmark.chapter.as_str(), landmark.anchor.as_deref()),
+        ("ch01.md", Some("fig-1"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_landmark_without_any_anchor_is_found_when_the_book_is_loaded() -> Result<()> {
+    // The chapter has an anchor table, so only loading can tell that no row
+    // of it is at the offset of the landmark.
+    let raw = with_landmarks(&[("index", "", 8, figure_offset())])
+        .with(|raw| raw.insert_anchor_table(7, &[0], &["top"]));
+    let mut reader = open(&raw)?;
+    assert_eq!(reader.read_landmarks()?.len(), 1);
+    assert!(matches!(
+        reader.load(),
+        Err(Error::Malformed {
+            resource: 5,
+            reason: "a row inside a chapter has no anchor"
+        })
+    ));
     Ok(())
 }

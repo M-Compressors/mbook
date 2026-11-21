@@ -73,6 +73,18 @@ pub struct TocEntry {
     pub position: Position,
 }
 
+/// One landmark, as stored in a file: a notable place of the book, such as
+/// the start of its text or its index.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LandmarkEntry {
+    /// What the place is: `start`, `glossary`, `index`, …
+    pub kind: String,
+    /// The title to show, as plain text; empty when the book gives none.
+    pub title: String,
+    /// Where the landmark leads.
+    pub position: Position,
+}
+
 /// A named place inside a chapter, the target of a link fragment.
 ///
 /// A chapter has one anchor for each of its headings, and may have extra
@@ -114,6 +126,8 @@ pub enum ResourceKind {
     Picture,
     /// The anchor table of the chapter that follows it.
     ChapterAnchors,
+    /// The landmarks of the book.
+    Landmarks,
     /// A kind defined by a later minor version of the format.
     Unknown(u8),
 }
@@ -125,6 +139,7 @@ impl From<u8> for ResourceKind {
             1 => Self::Text,
             2 => Self::Picture,
             3 => Self::ChapterAnchors,
+            4 => Self::Landmarks,
             other => Self::Unknown(other),
         }
     }
@@ -139,7 +154,7 @@ pub struct Resource<'a> {
     pub number: u32,
     /// What the resource holds.
     pub kind: ResourceKind,
-    /// The path; empty for service resources and anchor tables.
+    /// The path; empty for service resources, anchor tables and landmarks.
     pub path: &'a str,
     /// The size in pixels; pictures only.
     pub size: Option<Size>,

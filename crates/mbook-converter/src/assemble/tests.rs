@@ -112,6 +112,33 @@ fn a_link_inside_its_own_section_needs_no_section_name() {
 }
 
 #[test]
+fn a_link_to_a_mark_in_front_of_a_heading_leads_to_the_heading() {
+    let (book, warnings) = assembled(draft(&[
+        ("a", "See [the part](b#sec-2) and [the same](b#also).\n"),
+        (
+            "b",
+            "# One\n\n[sec-2]: #sec-2\n\n[also]: #also\n\n## The Second Part\n\nText.\n",
+        ),
+    ]));
+    assert_eq!(
+        book.chapters()[0].text(),
+        "See [the part](ch0002.md#the-second-part) and [the same](ch0002.md#the-second-part).\n"
+    );
+    assert_eq!(
+        book.chapters()[1].text(),
+        "# One\n\n## The Second Part\n\nText.\n"
+    );
+    assert_eq!(book.chapters()[1].extra_anchors(), []);
+    assert_eq!(warnings, []);
+}
+
+#[test]
+fn a_mark_named_like_the_heading_it_stands_before_is_that_heading() {
+    let (texts, _) = chapters(&[("a", "[intro]: #intro\n\n# Intro\n\n[Back](#intro).\n")]);
+    assert_eq!(texts, ["# Intro\n\n[Back](ch0001.md#intro).\n"]);
+}
+
+#[test]
 fn a_mark_named_like_a_heading_gets_another_name() {
     let (texts, _) = chapters(&[(
         "a",
@@ -553,6 +580,108 @@ mod pictures {
     }
 }
 
+#[cfg(feature = "epub")]
+mod landmarks {
+    use super::{assembled, draft};
+    use crate::draft::{Draft, DraftLandmark};
+    use crate::report::WarningKind;
+
+    fn with_landmarks(landmarks: &[(&str, &str, &str)]) -> Draft {
+        let mut draft = draft(&[
+            ("a", "# One\n\nText.\n"),
+            (
+                "b",
+                "# Intro\n\n[intro]: #intro\n\nA paragraph.\n\n[g]: #g\n\nGlossary.\n",
+            ),
+            ("empty", " "),
+        ]);
+        draft.landmarks = landmarks
+            .iter()
+            .map(|(kind, title, target)| DraftLandmark {
+                kind: (*kind).to_owned(),
+                title: (*title).to_owned(),
+                target: (*target).to_owned(),
+            })
+            .collect();
+        draft
+    }
+
+    #[test]
+    fn landmarks_lead_to_chapters_and_to_marked_places() {
+        let (book, warnings) = assembled(with_landmarks(&[
+            ("start", "", "a"),
+            ("glossary", " Glossary of terms ", "b#g"),
+        ]));
+        let placed: Vec<_> = book
+            .landmarks()
+            .iter()
+            .map(|l| {
+                (
+                    l.kind.as_str(),
+                    l.title.as_str(),
+                    l.chapter.as_str(),
+                    l.anchor.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            placed,
+            [
+                ("start", "", "ch0001.md", None),
+                ("glossary", "Glossary of terms", "ch0002.md", Some("g"))
+            ]
+        );
+        assert_eq!(warnings, []);
+        assert!(book.chapters()[1].text().contains("[g]: #g"));
+    }
+
+    #[test]
+    fn a_landmark_follows_a_mark_that_was_renamed() {
+        let (book, _) = assembled(with_landmarks(&[("preface", "", "b#intro")]));
+        assert_eq!(book.landmarks()[0].anchor.as_deref(), Some("intro-2"));
+    }
+
+    #[test]
+    fn landmarks_that_lead_nowhere_are_left_out() {
+        let (book, warnings) = assembled(with_landmarks(&[
+            ("index", "", "missing"),
+            ("index", "", "b#gone"),
+            ("index", "", "empty"),
+            ("index", "", "https://example.org"),
+            ("start", "", "a"),
+        ]));
+        assert_eq!(book.landmarks().len(), 1);
+        assert_eq!(
+            warnings,
+            [
+                WarningKind::LinkDropped("missing".into()),
+                WarningKind::LinkDropped("b#gone".into()),
+                WarningKind::LinkDropped("empty".into()),
+                WarningKind::LinkDropped("https://example.org".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn a_second_start_and_a_kind_without_form_are_left_out() {
+        let (book, warnings) = assembled(with_landmarks(&[
+            ("start", "", "a"),
+            ("start", "", "b"),
+            ("Body Matter", "", "b"),
+            ("", "", "b"),
+        ]));
+        let kinds: Vec<_> = book.landmarks().iter().map(|l| l.kind.as_str()).collect();
+        assert_eq!(kinds, ["start"]);
+        assert_eq!(warnings.len(), 3);
+    }
+
+    #[test]
+    fn a_draft_without_landmarks_gives_a_book_without_them() {
+        let (book, _) = assembled(with_landmarks(&[]));
+        assert_eq!(book.landmarks(), []);
+    }
+}
+
 #[cfg(outlines)]
 mod outlines {
     use super::{assembled, draft};
@@ -689,8 +818,16 @@ mod outlines {
 
     #[test]
     fn marks_used_by_the_contents_alone_are_kept() {
+        let (book, _) = assembled(with_outline(&[(1, "A paragraph", "a#p")]));
+        assert!(book.chapters()[0].text().contains("[p]: #p"));
+    }
+
+    #[test]
+    fn a_mark_in_front_of_a_heading_is_replaced_by_the_anchor_of_the_heading() {
         let (book, _) = assembled(with_outline(&[(1, "Inside", "a#h2")]));
-        assert!(book.chapters()[0].text().contains("[h2]: #h2"));
-        assert!(!book.chapters()[0].text().contains("[p]: #p"));
+        assert_eq!(
+            book.chapters()[0].text(),
+            "# One\n\nText.\n\n## Inside\n\nA paragraph.\n"
+        );
     }
 }

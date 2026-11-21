@@ -31,6 +31,19 @@
 //!   EPUB 2, is the outline. An entry without an address, and an entry that
 //!   leads to a spine item that was left out because it is the cover or has
 //!   no text, is skipped.
+//! - **Landmarks.** The `landmarks` navigation of EPUB 3, otherwise the
+//!   `<guide>` of EPUB 2, gives the landmarks. An entry is a landmark when it
+//!   has an address and its `epub:type` (the first of several values that
+//!   maps) or its guide `type` maps to a kind of RFC 0001: `bodymatter`,
+//!   `text` and `start` to `start`, `toc` to `contents`, `titlepage` to
+//!   `title-page`, `loi` and `lot` to `list-of-figures` and `list-of-tables`,
+//!   `copyright-page` to `copyright`, the notes types to `notes`, and the
+//!   others to the kind of the same name (see `landmarks::kind_of`). The
+//!   cover and a type without a kind give no landmark and no warning. The
+//!   title is the trimmed label, the target is resolved like an entry of the
+//!   contents, and an entry that leads to a left out spine item is skipped.
+//!   The assembler keeps one `start` and drops a target that leads nowhere
+//!   with a warning.
 //! - **Metadata.** `dc:title`, `dc:language`, the unique `dc:identifier`,
 //!   `dc:creator`, `dc:contributor` with the role `trl`, `dc:publisher`, the
 //!   publication `dc:date`, `dc:subject`, `dc:description` as plain text,
@@ -45,6 +58,7 @@
 //! limit of a resource through their declared sizes.
 
 mod archive;
+mod landmarks;
 mod meta;
 mod paths;
 
@@ -209,6 +223,7 @@ pub(crate) fn read(source: &[u8], options: &ConvertOptions) -> Result<Draft> {
     draft.pictures = pictures;
     draft.cover = cover;
     draft.outline = outline(&epub, &targets, &skipped);
+    draft.landmarks = landmarks::read(&epub, &targets, &skipped);
     Ok(draft)
 }
 
@@ -382,6 +397,21 @@ fn utf16(bytes: &[u8], unit: fn([u8; 2]) -> u16) -> String {
         .collect()
 }
 
+/// Where an entry of the contents or of the landmarks with this `href`
+/// leads, written like the destination of a link; `None` when it leads to a
+/// spine item that was left out. An address that leads to no section is
+/// passed on as written, for the assembler to drop with a warning.
+fn destination(targets: &Targets, skipped: &HashSet<String>, href: &str) -> Option<String> {
+    match paths::resolve("", href) {
+        Some(reference) if skipped.contains(&reference.path) => None,
+        Some(reference) => Some(match targets.sections.get(&reference.path) {
+            Some(target) => target.destination(reference.fragment.as_deref()),
+            None => href.to_owned(),
+        }),
+        None => Some(href.to_owned()),
+    }
+}
+
 /// The table of contents of the book as an outline of the draft.
 fn outline(epub: &Epub, targets: &Targets, skipped: &HashSet<String>) -> Vec<OutlineEntry> {
     let Some(contents) = epub.toc().contents() else {
@@ -390,15 +420,7 @@ fn outline(epub: &Epub, targets: &Targets, skipped: &HashSet<String>) -> Vec<Out
     contents
         .flatten()
         .filter_map(|entry| {
-            let href = entry.href()?.as_str();
-            let target = match paths::resolve("", href) {
-                Some(reference) if skipped.contains(&reference.path) => return None,
-                Some(reference) => match targets.sections.get(&reference.path) {
-                    Some(target) => target.destination(reference.fragment.as_deref()),
-                    None => href.to_owned(),
-                },
-                None => href.to_owned(),
-            };
+            let target = destination(targets, skipped, entry.href()?.as_str())?;
             Some(OutlineEntry {
                 level: u8::try_from(entry.depth()).unwrap_or(u8::MAX).max(1),
                 title: entry.label().trim().to_owned(),

@@ -24,6 +24,8 @@ pub(crate) fn parse(text: &str) -> Option<Node> {
 pub(crate) struct Scan {
     /// The names of the marks, in the order they appear.
     pub(crate) marks: Vec<String>,
+    /// Where each of those marks ends in the text.
+    pub(crate) mark_ends: Vec<usize>,
     /// The destinations of every link, as written.
     pub(crate) links: Vec<String>,
     /// The text of the first top-level heading.
@@ -50,6 +52,7 @@ pub(crate) fn scan(tree: &Node) -> Scan {
                     Some(name) => {
                         mark_identifiers.push((definition.identifier.clone(), name.clone()));
                         scan.marks.push(name);
+                        scan.mark_ends.push(end_of(node));
                     }
                     None => scan.links.push(definition.url.clone()),
                 }

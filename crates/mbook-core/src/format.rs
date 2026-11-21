@@ -39,6 +39,8 @@ pub(crate) const KIND_TEXT: u8 = 1;
 pub(crate) const KIND_PICTURE: u8 = 2;
 #[cfg(feature = "write")]
 pub(crate) const KIND_ANCHORS: u8 = 3;
+#[cfg(feature = "write")]
+pub(crate) const KIND_LANDMARKS: u8 = 4;
 
 /// The decoded format header of the version this crate writes.
 #[cfg(feature = "write")]

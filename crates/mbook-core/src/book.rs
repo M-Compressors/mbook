@@ -1,7 +1,7 @@
 //! A whole book in memory.
 
 #[cfg(feature = "write")]
-use crate::error::{Error, Result};
+use crate::error::{Error, LandmarkError, Result};
 use crate::meta::Meta;
 use crate::types::{Anchor, Size};
 #[cfg(feature = "write")]
@@ -70,6 +70,8 @@ pub struct Book {
     chapters: Vec<Chapter>,
     pictures: Vec<Picture>,
     toc: Toc,
+    /// The notable places of the book, in the order they are listed.
+    landmarks: Vec<Landmark>,
     /// Where each path lives; paths are unique across chapters and pictures.
     slots: HashMap<String, Slot>,
 }
@@ -151,17 +153,72 @@ impl TocItem {
     /// ```
     #[must_use]
     pub fn new(level: u8, title: impl Into<String>, href: &str) -> Self {
-        let (chapter, anchor) = match href.split_once('#') {
-            Some((chapter, anchor)) if !anchor.is_empty() => (chapter, Some(anchor.to_owned())),
-            Some((chapter, _)) => (chapter, None),
-            None => (href, None),
-        };
+        let (chapter, anchor) = split_href(href);
         Self {
             level,
             title: title.into(),
-            chapter: chapter.to_owned(),
+            chapter,
             anchor,
         }
+    }
+}
+
+/// One landmark of a [`Book`]: a notable place, such as the start of the
+/// text, the glossary or the index.
+///
+/// A landmark names its target the way a link does: by the path of a chapter
+/// and, for a place inside it, by an anchor. The kinds the format defines
+/// are listed in RFC 0001; a kind that begins with `x-` is private.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Landmark {
+    /// What the place is: `start`, `glossary`, `index`, …
+    pub kind: String,
+    /// The title to show, as plain text. An application names the kind
+    /// itself when it is empty.
+    pub title: String,
+    /// The path of the chapter the landmark leads to.
+    pub chapter: String,
+    /// The anchor inside that chapter, of a heading or an extra one; `None`
+    /// is the start of the chapter.
+    pub anchor: Option<String>,
+}
+
+impl Landmark {
+    /// A landmark that leads where a link with this destination would.
+    ///
+    /// `href` is a chapter path with an optional anchor after `#`. It is
+    /// taken as written: nothing is percent-decoded.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mbook_core::Landmark;
+    ///
+    /// let landmark = Landmark::new("index", "", "back/index.md#index");
+    /// assert_eq!(landmark.chapter, "back/index.md");
+    /// assert_eq!(landmark.anchor.as_deref(), Some("index"));
+    /// ```
+    #[must_use]
+    pub fn new(kind: impl Into<String>, title: impl Into<String>, href: &str) -> Self {
+        let (chapter, anchor) = split_href(href);
+        Self {
+            kind: kind.into(),
+            title: title.into(),
+            chapter,
+            anchor,
+        }
+    }
+}
+
+/// A link destination as a chapter path and an anchor; an empty anchor is
+/// none.
+fn split_href(href: &str) -> (String, Option<String>) {
+    match href.split_once('#') {
+        Some((chapter, anchor)) if !anchor.is_empty() => {
+            (chapter.to_owned(), Some(anchor.to_owned()))
+        }
+        Some((chapter, _)) => (chapter.to_owned(), None),
+        None => (href.to_owned(), None),
     }
 }
 
@@ -255,10 +312,18 @@ impl Chapter {
     /// Tells whether a fragment with this name leads into the chapter.
     #[cfg(feature = "write")]
     fn has_anchor(&self, name: &str) -> bool {
+        self.anchor_offset(name).is_some()
+    }
+
+    /// Where a fragment with this name leads: the offset of the anchor of a
+    /// heading or of an extra one.
+    #[cfg(feature = "write")]
+    fn anchor_offset(&self, name: &str) -> Option<u32> {
         self.anchors
             .iter()
             .chain(&self.extra_anchors)
-            .any(|anchor| anchor.name == name)
+            .find(|anchor| anchor.name == name)
+            .map(|anchor| anchor.offset)
     }
 }
 
@@ -347,6 +412,13 @@ impl Book {
     pub fn toc(&self) -> &Toc {
         &self.toc
     }
+
+    /// The landmarks: the notable places of the book, in the order an
+    /// application lists them. Empty for a book that has none.
+    #[must_use]
+    pub fn landmarks(&self) -> &[Landmark] {
+        &self.landmarks
+    }
 }
 
 /// Bookkeeping shared by loading and editing.
@@ -358,6 +430,7 @@ impl Book {
             chapters: Vec::new(),
             pictures: Vec::new(),
             toc: Toc::default(),
+            landmarks: Vec::new(),
             slots: HashMap::new(),
         }
     }
@@ -548,6 +621,42 @@ impl Book {
         self.toc = toc;
     }
 
+    /// Replaces the landmarks. An empty list removes them.
+    ///
+    /// Whether every landmark leads somewhere is checked when the book is
+    /// written, like the items of the contents. On error the book is
+    /// unchanged.
+    ///
+    /// # Errors
+    ///
+    /// A kind does not match `[a-z0-9]+(-[a-z0-9]+)*`, or more than one
+    /// landmark has the kind `start`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mbook_core::{Book, Landmark};
+    ///
+    /// let mut book = Book::new("The Example", "en")?;
+    /// book.add_chapter("ch01.md", "# Arrival\n")?;
+    /// book.set_landmarks(vec![Landmark::new("start", "", "ch01.md")])?;
+    /// assert_eq!(book.landmarks().len(), 1);
+    /// # Ok::<(), mbook_core::Error>(())
+    /// ```
+    pub fn set_landmarks(&mut self, landmarks: Vec<Landmark>) -> Result<()> {
+        let invalid = landmarks
+            .iter()
+            .find(|landmark| !crate::meta::is_key(&landmark.kind));
+        if let Some(landmark) = invalid {
+            return Err(LandmarkError::InvalidKind(landmark.kind.clone()).into());
+        }
+        if landmarks.iter().filter(|l| l.kind == "start").count() > 1 {
+            return Err(LandmarkError::RepeatedStart.into());
+        }
+        self.landmarks = landmarks;
+        Ok(())
+    }
+
     /// An index into the reading order must not be greater than `max`.
     fn check_position(&self, index: usize, max: usize) -> Result<()> {
         if index > max {
@@ -583,8 +692,8 @@ impl Book {
 #[cfg(test)]
 #[cfg(feature = "write")]
 mod tests {
-    use super::{Book, Chapter, Picture, Toc, TocItem};
-    use crate::error::{Error, PathError};
+    use super::{Book, Chapter, Landmark, Picture, Toc, TocItem};
+    use crate::error::{Error, LandmarkError, PathError};
     use crate::types::Size;
 
     /// A chapter with one heading and two paragraphs, the first of them
@@ -890,6 +999,75 @@ mod tests {
             result,
             Err(Error::IndexOutOfRange { index: 4, len: 3 })
         ));
+    }
+
+    #[test]
+    fn a_landmark_is_built_from_a_link_destination() {
+        let whole = Landmark::new("start", "", "ch01.md");
+        let inside = Landmark::new("index", "The Index", "back.md#index");
+        assert_eq!(
+            (whole.kind.as_str(), whole.chapter.as_str(), whole.anchor),
+            ("start", "ch01.md", None)
+        );
+        assert_eq!(
+            (inside.title.as_str(), inside.anchor.as_deref()),
+            ("The Index", Some("index"))
+        );
+    }
+
+    #[test]
+    fn set_landmarks_replaces_the_landmarks() {
+        let mut book = book();
+        book.set_landmarks(vec![Landmark::new("start", "", "ch01.md")])
+            .unwrap();
+        book.set_landmarks(vec![
+            Landmark::new("appendix", "A", "ch02.md"),
+            Landmark::new("appendix", "B", "ch03.md"),
+            Landmark::new("x-maps", "Maps", "ch03.md"),
+        ])
+        .unwrap();
+        let kinds: Vec<_> = book.landmarks().iter().map(|l| l.kind.as_str()).collect();
+        assert_eq!(kinds, ["appendix", "appendix", "x-maps"]);
+    }
+
+    #[test]
+    fn set_landmarks_rejects_a_kind_that_is_not_a_key() {
+        let mut book = book();
+        let result = book.set_landmarks(vec![Landmark::new("The Index", "", "ch01.md")]);
+        assert!(matches!(
+            result,
+            Err(Error::InvalidLandmark(LandmarkError::InvalidKind(kind))) if kind == "The Index"
+        ));
+    }
+
+    #[test]
+    fn set_landmarks_rejects_a_second_start() {
+        let mut book = book();
+        let result = book.set_landmarks(vec![
+            Landmark::new("start", "", "ch01.md"),
+            Landmark::new("start", "", "ch02.md"),
+        ]);
+        assert!(matches!(
+            result,
+            Err(Error::InvalidLandmark(LandmarkError::RepeatedStart))
+        ));
+    }
+
+    #[test]
+    fn refused_landmarks_leave_the_book_as_it_was() {
+        let mut book = book();
+        book.set_landmarks(vec![Landmark::new("start", "", "ch01.md")])
+            .unwrap();
+        assert!(
+            book.set_landmarks(vec![Landmark::new("", "", "ch01.md")])
+                .is_err()
+        );
+        assert_eq!(book.landmarks().len(), 1);
+    }
+
+    #[test]
+    fn a_new_book_has_no_landmarks() {
+        assert_eq!(Book::new("The Example", "en").unwrap().landmarks(), []);
     }
 
     #[test]

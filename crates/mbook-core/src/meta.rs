@@ -386,15 +386,20 @@ fn checked(key: &str, value: String) -> Result<String, MetaError> {
     Ok(value)
 }
 
-/// A key matches `[a-z0-9]+(-[a-z0-9]+)*`.
-fn check_key(key: &str) -> Result<(), MetaError> {
-    let valid = key.split('-').all(|part| {
+/// Tells whether text matches `[a-z0-9]+(-[a-z0-9]+)*`, the form of a
+/// `meta` key and of the kind of a landmark.
+pub(crate) fn is_key(text: &str) -> bool {
+    text.split('-').all(|part| {
         !part.is_empty()
             && part
                 .bytes()
                 .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
-    });
-    if valid {
+    })
+}
+
+/// A key matches `[a-z0-9]+(-[a-z0-9]+)*`.
+fn check_key(key: &str) -> Result<(), MetaError> {
+    if is_key(key) {
         Ok(())
     } else {
         Err(MetaError::InvalidKey(key.to_owned()))

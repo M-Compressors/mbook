@@ -204,6 +204,7 @@ of this document is *proposed* and listed again under
 | Two kinds of source, `Read` and a slice; no entry point for `Read + Seek` | Confirmed |
 | Pictures are encoded with quality 80 and speed 6 unless the options say otherwise | Confirmed |
 | A contents entry of the source that does not lead to a heading leads to the nearest heading above its target | Confirmed |
+| The landmarks of a source become landmarks of the book ([ADR-0010](adr/0010-landmarks.md)) | Confirmed |
 | Streaming means a `Read` as the source and a `Write` as the sink; the book is held in memory while it is converted ([Sources and memory](#sources-and-memory)) | Confirmed |
 
 ### Public surface
@@ -346,6 +347,7 @@ and nothing else crosses into the assembler:
 | Pictures | For each source name: the picture as the source has it |
 | Cover | The source name of the picture that is the cover |
 | Outline | Optional: level, title and a destination in the source's own terms |
+| Landmarks | Optional: a kind of RFC 0001, a title and a destination in the source's own terms |
 | Warnings | What the front end itself could not keep |
 
 A front end **MUST NOT** build chapters, paths or tables itself.
@@ -488,6 +490,24 @@ A cell is filled only as far as the front-end crate exposes the field.
   warning.
 - Without one, the contents are `Toc::FromHeadings`.
 
+#### Landmarks
+
+A [landmark](0001-mbook-format.md#landmarks-1) of the draft becomes one of
+the book.
+
+- Its destination is re-targeted like a link, to the line: a landmark may
+  lead to an extra anchor, so nothing is moved to a heading.
+- A landmark whose target was not converted is left out with a `LinkDropped`
+  warning, and so is a second `start`.
+
+Only EPUB has landmarks of its own: the landmarks navigation of EPUB 3,
+otherwise the guide of EPUB 2. Their types are mapped to the kinds of
+RFC 0001 (`bodymatter` becomes `start`, `loi` becomes `list-of-figures`,
+`copyright-page` becomes `copyright`, and so on). Three sorts of entry
+produce no landmark: the cover, which is a picture in mbook; a table of
+contents set in the text (`toc`), which the contents of the book replace;
+and types without a counterpart.
+
 #### The final check
 
 The assembled book **MUST** pass `Book::check` before it is returned or
@@ -498,7 +518,7 @@ crate, not of the source.
 
 | Format | Sections | Outline | Notes |
 | --- | --- | --- | --- |
-| EPUB | One per spine item, in spine order | The navigation document, otherwise the NCX | A page that only shows the cover picture is skipped. A picture in the spine is a figure. |
+| EPUB | One per spine item, in spine order | The navigation document, otherwise the NCX | A page that only shows the cover picture is skipped. A picture in the spine is a figure. The landmarks of the book are carried over. |
 | FB2 | One per top-level `section` of the main body; what stands between them gets sections of its own | None; headings are used | See the table below. The main body is the first one not named `notes` or `comments`. |
 | PDF | One per first-level entry of the document outline, rendered from its pages; otherwise cut at top-level headings | The document outline | Markdown is rendered by `unpdf` with Markdown tables, without front matter and page markers. A document without a text layer becomes one section in which every page is a figure, rendered at 150 dpi or less. |
 | CBZ | One per folder of the archive, headed by the name of the folder; one for an archive without folders | None; headings are used | Entries in natural order of their names; every page is a figure, and the first page is the cover. `ComicInfo.xml` fills the metadata. |

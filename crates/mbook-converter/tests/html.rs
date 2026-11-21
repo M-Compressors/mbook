@@ -187,34 +187,25 @@ fn a_link_to_an_element_of_its_own_part_names_the_element() -> Outcome {
 }
 
 #[test]
-fn a_link_to_a_heading_leads_to_the_line_in_front_of_the_heading() -> Outcome {
+fn a_link_to_a_heading_leads_to_the_anchor_of_the_heading() -> Outcome {
     let converted = convert(&page(
         "<h1>One</h1><p><a href=\"#two\">to two</a> and <a href=\"#sub\">to sub</a></p>\
          <h1 id=\"two\">Two</h1><h2 id=\"sub\">Sub</h2>",
     ))?;
     let chapters = converted.book.chapters();
-    // A mark may not take the name of a heading, so it gets another one.
-    let names: Vec<_> = chapters[1]
-        .extra_anchors()
+    // A heading has an anchor of its own, so its mark is not kept.
+    assert_eq!(
+        chapters[0].text(),
+        "# One\n\n[to two](ch0002.md#two) and [to sub](ch0002.md#sub)\n"
+    );
+    assert_eq!(chapters[1].text(), "# Two\n\n## Sub\n");
+    assert_eq!(chapters[1].extra_anchors(), []);
+    let headings: Vec<_> = chapters[1]
+        .anchors()
         .iter()
         .map(|anchor| anchor.name.as_str())
         .collect();
-    assert_eq!(names.len(), 2);
-    assert_eq!(
-        chapters[0].text(),
-        format!(
-            "# One\n\n[to two](ch0002.md#{}) and [to sub](ch0002.md#{})\n",
-            names[0], names[1]
-        )
-    );
-    assert_eq!(
-        chapters[1].text(),
-        format!(
-            "[{0}]: #{0}\n\n# Two\n\n[{1}]: #{1}\n\n## Sub\n",
-            names[0], names[1]
-        )
-    );
-    assert_eq!(converted.report.warnings, []);
+    assert_eq!(headings, ["two", "sub"]);
     Ok(())
 }
 
@@ -563,7 +554,7 @@ fn an_xhtml_document_with_an_xml_declaration_is_detected_and_converted() -> Outc
     assert_eq!(converted.report.format, Format::Html);
     assert_eq!(
         only_text(&converted)?,
-        "[top]: #top\n\n# Début\n\nTexte  \nsuite. [Haut](ch0001.md#top)\n\nFin.\n"
+        "# Début\n\nTexte  \nsuite. [Haut](ch0001.md#d%C3%A9but)\n\nFin.\n"
     );
     assert_eq!(
         (
