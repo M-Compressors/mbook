@@ -4,7 +4,7 @@
 | --- | --- |
 | **Status** | Draft |
 | **Start date** | 2026-11-21 |
-| **Crate** | `mbook-converter` (not implemented) |
+| **Crate** | `mbook-converter` |
 | **Builds on** | [RFC 0001](0001-mbook-format.md), format version 1.0; [RFC 0002](0002-mbook-core-api.md) |
 
 ## Summary
@@ -25,8 +25,9 @@ a piece of text belongs to, what a link or a picture is called after
 conversion, what the Markdown dialect allows, and that every picture becomes
 AVIF.
 
-Nothing of this document is implemented. Signatures are the proposed surface
-of the crate.
+Signatures below are the public surface of the crate as implemented.
+[What is implemented](#what-is-implemented) lists, format by format, what the
+crate does today.
 
 ## Motivation
 
@@ -63,7 +64,8 @@ re-encode pictures, rename every reference, build the contents.
   positions are dropped; [RFC 0001](0001-mbook-format.md#non-goals) excludes
   them from the format.
 - **Removing protection.** A protected source is refused.
-- **Recognising text in pictures.** A scanned PDF has no text to convert.
+- **Recognising text in pictures.** The pages of a scanned PDF are stored as
+  pictures.
 - **Fetching anything.** A picture or a stylesheet named by a network address
   is never downloaded.
 - **Asynchronous I/O**, as in `mbook-core`.
@@ -188,12 +190,20 @@ of this document is *proposed* and listed again under
 
 | Decision | Status |
 | --- | --- |
-| The crate converts EPUB, FB2, PDF, MOBI, CBZ, DOCX, HTML and plain text into mbook | Confirmed |
+| The crate converts EPUB, FB2, PDF, CBZ, DOCX, HTML, Markdown and plain text into mbook | Confirmed |
+| Mobipocket is not converted until a maintained crate reads it | Confirmed |
 | One Cargo feature per format; every feature enabled by default | Confirmed |
 | Conversion from an I/O source and from a byte slice | Confirmed |
 | Formats are read by established crates such as `unpdf` | Confirmed |
 | Pictures are encoded as AVIF by `image` with its `avif` feature, which uses `ravif` and `rav1e`; dependencies under BSD licenses are accepted | Confirmed |
 | A link to an element that is not a heading keeps its target: the converter writes an anchor definition in front of it ([ADR-0008](adr/0008-chapter-anchor-tables.md), [ADR-0009](adr/0009-anchor-definitions.md)) | Confirmed |
+| A source without an identifier gets a UUID version 5 computed from its bytes as `id` | Confirmed |
+| A source without a title or a language gets `Untitled` and `und`, each with a warning | Confirmed |
+| A PDF without a text layer is converted page by page into pictures | Confirmed |
+| A comic archive has one chapter per folder | Confirmed |
+| Two kinds of source, `Read` and a slice; no entry point for `Read + Seek` | Confirmed |
+| Pictures are encoded with quality 80 and speed 6 unless the options say otherwise | Confirmed |
+| A contents entry of the source that does not lead to a heading leads to the nearest heading above its target | Confirmed |
 | Streaming means a `Read` as the source and a `Write` as the sink; the book is held in memory while it is converted ([Sources and memory](#sources-and-memory)) | Confirmed |
 
 ### Public surface
@@ -221,7 +231,7 @@ pub struct Converted { pub book: mbook_core::Book, pub report: Report }
 pub struct Report { pub format: Format, pub warnings: Vec<Warning> }
 
 #[non_exhaustive]
-pub enum Format { Epub, Fb2, Pdf, Mobi, Cbz, Docx, Html, Text }
+pub enum Format { Epub, Fb2, Pdf, Cbz, Docx, Html, Markdown, Text }
 
 impl Format {
     pub const ALL: &'static [Format];
@@ -229,6 +239,8 @@ impl Format {
 }
 impl Display for Format { /* "epub", "fb2", … */ }
 impl FromStr for Format { /* the same names, and common file extensions */ }
+
+// The four structs of options and limits; see "Options and limits".
 
 pub use mbook_core;
 ```
@@ -249,43 +261,45 @@ pub use mbook_core;
 | Feature | Source format | Front-end crate | Status |
 | --- | --- | --- | --- |
 | `epub` | EPUB 2 and 3 | `rbook` | Confirmed format; crate *proposed* |
-| `fb2` | FictionBook 2, plain and inside a ZIP (`.fb2.zip`) | `fb2`, `zip` | Confirmed format; crate *proposed* |
-| `pdf` | PDF with a text layer | `unpdf` | Confirmed |
-| `mobi` | Mobipocket (MOBI 6) | `mobi` | Confirmed format; crate *proposed* |
-| `cbz` | Comic book archive: a ZIP of pictures | `zip` | Confirmed format; crate *proposed* |
+| `fb2` | FictionBook 2, plain and inside a ZIP (`.fb2.zip`) | `quick-xml`, `zip` | Confirmed |
+| `pdf` | PDF | `unpdf` | Confirmed |
+| `cbz` | Comic book archive: a ZIP of pictures | `zip`, `alphanumeric-sort` | Confirmed |
 | `docx` | Word documents | `undoc` | Confirmed format; crate *proposed* |
 | `html` | One HTML document | `htmd` | Confirmed format; crate *proposed* |
+| `md` | One Markdown document | `markdown`, `github-slugger` | Confirmed |
 | `txt` | Plain text | none | Confirmed |
 
 - `default` enables every feature of the table.
 - A build **MUST** enable at least one of them; otherwise compilation fails
   with a message, as in `mbook-core`.
 - A feature enables only the dependencies its format needs. Shared mechanisms
-  have no feature of their own: the HTML-to-Markdown crate comes with `epub`,
-  `mobi` and `html`, the picture codecs with every format that carries
-  pictures.
+  have no feature of their own: the HTML-to-Markdown crate comes with `epub`
+  and `html`, the picture codecs with every format that carries
+  pictures. The build script of the crate tells the compiler which of these
+  groups is in use, so that the list of formats in a group is written once.
+- `zip` and `markdown` are dependencies of every build: the first is needed
+  to tell the formats that are ZIP archives apart, the second reads every
+  chapter.
 - Every single-feature build **MUST** compile without warnings, including its
   documentation.
 - `mbook-core` is used with its `write` feature only.
 
-Not in the first version, for lack of a crate that meets the license and the
-minimum Rust version: KF8/AZW3, DjVu, RTF, CBR
+Not in the first version, for lack of a maintained crate that meets the
+license and the minimum Rust version: Mobipocket, KF8/AZW3, DjVu, RTF, CBR
 ([Future possibilities](#future-possibilities)).
 
 ### Sources and memory
 
-The converter accepts a forward-only `Read` and a slice. What happens to the
-source depends on what the format and its crate need:
+The converter accepts a forward-only `Read` and a slice.
 
-| Format | Source is a `Read` | Source is a slice | Held besides the `Book` |
-| --- | --- | --- | --- |
-| EPUB | Buffered in full: the ZIP directory is at the end of the file | Copied once; `rbook` requires an owned (`'static`) source | The archive; one decoded resource at a time |
-| FB2 | Parsed in one forward pass, without a copy of the raw bytes | Parsed in place | The parsed document, pictures as Base64 text |
-| FB2 in a ZIP, CBZ | Buffered in full | Used in place | One entry at a time |
-| PDF | Passed to `unpdf::parse_reader`, which reads it in full | Passed to `unpdf::parse_bytes` | The parsed document with its pictures |
-| MOBI | Passed to `Mobi::from_read`, which reads it in full | Copied once; the crate takes a `Vec` | The decoded text |
-| DOCX | Buffered in full | Used in place | The parsed document |
-| HTML, text | Read to a string | Used in place when it is UTF-8 | The text |
+- **A `Read` is read to its end into memory** before anything else happens,
+  bounded by `ConvertLimits::max_source_bytes`. Three things need all of it:
+  the format is detected from the content, an `id` may be computed from every
+  byte, and most front-end crates want the whole source.
+- **A slice is used in place.** No copy of the source is made by this crate.
+  A front-end crate may still make one: `rbook` wants an owned source.
+- After that, every front end starts from the same thing, the bytes of the
+  source.
 
 Consequences that hold for every format:
 
@@ -294,28 +308,24 @@ Consequences that hold for every format:
   ([RFC 0002](0002-mbook-core-api.md#drawbacks)). Conversion is streaming at
   its edges, a `Read` in and a `Write` out; it is not a constant-memory
   pipeline.
-- A source picture is released as soon as it is encoded, where the front-end
-  crate hands pictures out one by one.
-- A buffered source is bounded by `ConvertLimits::max_source_bytes` before
-  memory is reserved for it.
+- The pictures of the source are held, as the front end extracted them,
+  until the book is assembled.
 
 ### Detection
 
 When `ConvertOptions::format` is `None`, the format is taken from the
-content. The converter reads a prefix of the source and puts it back in front
-of the rest, so a `Read` is still consumed once.
+content.
 
 | Format | Recognised by |
 | --- | --- |
 | PDF | `%PDF-` within the first 1,024 bytes |
-| MOBI | `BOOKMOBI` at offset 60 |
 | EPUB | A ZIP whose `mimetype` entry is `application/epub+zip`, or that contains `META-INF/container.xml` |
 | DOCX | A ZIP that contains `word/document.xml` |
 | FB2 in a ZIP | A ZIP with exactly one entry whose name ends in `.fb2` |
 | CBZ | Any other ZIP in which every entry is a picture, a folder or `ComicInfo.xml` |
 | FB2 | An XML document whose root element is `FictionBook` |
 | HTML | A document that starts with `<!DOCTYPE html` or `<html`, in any letter case |
-| Text | Never detected; only when named |
+| Markdown, text | Never detected; only when named |
 
 - Rows are tried in this order; the first match wins.
 - A file name is never used: a stream has none.
@@ -325,15 +335,18 @@ of the rest, so a `Read` is still consumed once.
 
 ### The draft
 
-A front end is private code. It produces the same four things for every
-format, and nothing else crosses into the assembler:
+A front end is private code. It produces the same things for every format,
+and nothing else crosses into the assembler:
 
 | Part | Content |
 | --- | --- |
 | Metadata | Values for the keys of [`meta`](0001-mbook-format.md#resource-1-meta), unchecked |
-| Sections | Markdown in reading order; each section has the source's name for it (a file of an EPUB, the id of an FB2 section) and may contain raw HTML and destinations in the source's own terms |
-| Pictures | For each source name: the bytes and a media type, fetched when the assembler asks |
+| Sections | Markdown in reading order; each section has the source's name for it (a file of an EPUB, a section of an FB2 document) and may contain raw HTML and destinations in the source's own terms |
+| Marks | An element of the source that a link may lead to is marked in the Markdown of its section with an [anchor definition](0001-mbook-format.md#anchor-definitions) in front of its block, named by the identifier it has in the source |
+| Pictures | For each source name: the picture as the source has it |
+| Cover | The source name of the picture that is the cover |
 | Outline | Optional: level, title and a destination in the source's own terms |
+| Warnings | What the front end itself could not keep |
 
 A front end **MUST NOT** build chapters, paths or tables itself.
 
@@ -391,14 +404,17 @@ to the line.
 | An element inside a block, such as a word of a paragraph or a row of a table | The block that contains it, named the same way | No |
 | Nothing that was converted | The link becomes its text | `LinkDropped` |
 
-- The assembler writes `[name]: #name` and an empty line in front of the
-  target block. `mbook-core` finds the definition and fills the anchor table
-  of the chapter; the converter handles no byte offsets.
-- A definition is written only for an element that a link of the book leads
-  to, not for every identifier of the source.
-- The name is the identifier of the source. When the chapter already has an
-  anchor with that name, `-2`, `-3`, … is appended; every link is rewritten
-  anyway, so a name need not survive.
+- A front end marks every element that has an identifier. The assembler
+  keeps a mark only when a link of the book, or an entry of the contents,
+  leads to it, and removes the others. `mbook-core` finds the definitions
+  that are kept and fills the anchor table of the chapter; the converter
+  handles no byte offsets.
+- The name is the identifier of the source, with everything but letters,
+  digits, `-`, `_` and `.` replaced by `-`. When the chapter already has an
+  anchor with that name, of a heading for example, `-2`, `-3`, … is
+  appended; every link is rewritten anyway, so a name need not survive.
+- When an identifier is used twice in a section, the first element that
+  carries it is the target.
 - Links are re-targeted after every chapter has its final text: the anchor
   of a heading is known only then.
 - A link that the source marks as a note reference (`epub:type="noteref"` in
@@ -413,7 +429,7 @@ to the line.
 | --- | --- |
 | An AVIF file that `Book::add_picture` accepts | The same bytes |
 | JPEG, PNG, GIF, WebP, BMP | Decoded, turned upright by its orientation tag, encoded as AVIF |
-| An animated GIF or WebP | Its first frame, encoded the same way, with `MarkupDropped` |
+| An animated GIF or WebP | Its first frame, encoded the same way |
 | Anything else (SVG, JPEG 2000, TIFF, WMF) | Not stored; see [Markdown](#markdown) |
 
 - A picture is stored once, however often it is used. Two source names with
@@ -441,20 +457,22 @@ dropped with a `MetadataDropped` warning; it does not fail the conversion.
 
 Where each key comes from:
 
-| Key | EPUB | FB2 | PDF | MOBI |
-| --- | --- | --- | --- | --- |
-| `title` | `dc:title` | `book-title` | `Title` | Title |
-| `lang` | `dc:language` | `lang` | | Language |
-| `id` | The unique `dc:identifier` | `document-info/id` | | |
-| `author` | `dc:creator` | `title-info/author` | `Author` | Author |
-| `translator` | `dc:contributor` with role `trl` | `translator` | | |
-| `series`, `series-index` | `belongs-to-collection`, `group-position` | `sequence` | | |
-| `publisher` | `dc:publisher` | `publish-info/publisher` | | Publisher |
-| `date` | `dc:date` | `publish-info/year` | | Publishing date |
-| `isbn` | An identifier that is an ISBN | `publish-info/isbn` | | ISBN |
-| `genre` | `dc:subject` | `genre` | `Keywords` | |
-| `annotation` | `dc:description` | `annotation` | `Subject` | Description |
-| `cover` | The manifest's cover image | `coverpage` | | The cover record |
+| Key | EPUB | FB2 | PDF | CBZ (`ComicInfo.xml`) | DOCX | HTML |
+| --- | --- | --- | --- | --- | --- | --- |
+| `title` | `dc:title` | `book-title` | `Title` | `Title` | Title | `title` |
+| `lang` | `dc:language` | `lang` | | `LanguageISO` | `dc:language` | `lang` of `html` |
+| `id` | The unique `dc:identifier` | `document-info/id` | | | | |
+| `author` | `dc:creator` | `title-info/author` | `Author` | `Writer` | Creator | `meta` `author` |
+| `translator` | `dc:contributor` with role `trl` | `translator` | | `Translator` | | |
+| `series`, `series-index` | `belongs-to-collection` and `group-position`, or `calibre:series` | `sequence` | | `Series`, `Number` | | |
+| `publisher` | `dc:publisher` | `publish-info/publisher` | | `Publisher` | | |
+| `date` | `dc:date` | `publish-info/year`, otherwise `title-info/date` | | `Year`, `Month`, `Day` | | |
+| `isbn` | An identifier that is an ISBN | `publish-info/isbn` | | | | |
+| `genre` | `dc:subject` | `genre` | `Keywords` | `Genre` | Keywords | `meta` `keywords` |
+| `annotation` | `dc:description` | `annotation` | `Subject` | `Summary` | Subject and description | `meta` `description` |
+| `cover` | The manifest's cover image | `coverpage` | The first page of a scan | The first page | | |
+
+Markdown and plain text carry no metadata that is read.
 
 A cell is filled only as far as the front-end crate exposes the field.
 
@@ -480,17 +498,23 @@ crate, not of the source.
 
 | Format | Sections | Outline | Notes |
 | --- | --- | --- | --- |
-| EPUB | One per spine item, in spine order | The navigation document, otherwise the NCX | XHTML is converted by `htmd`. A page that only shows the cover picture is skipped. |
-| FB2 | One per top-level `section` of the first `body` | None; headings are used | See the table below. |
-| PDF | Cut at the first level of the document outline, otherwise at top-level headings | The document outline | Markdown is rendered by `unpdf` with Markdown tables, without front matter and page markers. |
-| MOBI | Cut at page breaks | None | HTML is converted by `htmd`; pictures are found by record number. |
-| CBZ | One for the whole archive | None | Entries in natural order of their names; every page is a figure. `ComicInfo.xml` fills the metadata. |
-| DOCX | Cut at top-level headings | None | Markdown is rendered by `undoc`. |
-| HTML | Cut at top-level headings | None | Only pictures given as `data:` addresses can be stored. |
-| Text | Cut at 256 KiB | None | The encoding is detected; paragraphs are separated by empty lines; Markdown punctuation is escaped. |
+| EPUB | One per spine item, in spine order | The navigation document, otherwise the NCX | A page that only shows the cover picture is skipped. A picture in the spine is a figure. |
+| FB2 | One per top-level `section` of the main body; what stands between them gets sections of its own | None; headings are used | See the table below. The main body is the first one not named `notes` or `comments`. |
+| PDF | One per first-level entry of the document outline, rendered from its pages; otherwise cut at top-level headings | The document outline | Markdown is rendered by `unpdf` with Markdown tables, without front matter and page markers. A document without a text layer becomes one section in which every page is a figure, rendered at 150 dpi or less. |
+| CBZ | One per folder of the archive, headed by the name of the folder; one for an archive without folders | None; headings are used | Entries in natural order of their names; every page is a figure, and the first page is the cover. `ComicInfo.xml` fills the metadata. |
+| DOCX | Cut at top-level headings | None; headings are used | Markdown is rendered by `undoc`. A footnote is moved into the section that refers to it. |
+| HTML | Cut at top-level headings | None; headings are used | The encoding is taken from a byte order mark, from the document, or guessed. Only pictures given as `data:` addresses can be stored. |
+| Markdown | Cut at top-level headings | None; headings are used | The encoding is detected. Every heading is marked with the name GitHub derives from it, so that `[see](#the-heading)` keeps working across chapters. A metadata block at the start (front matter) is removed with `MarkupDropped`. Pictures cannot be found from a stream and become their alternative text. |
+| Text | One | None | The encoding is detected; paragraphs are separated by empty lines; Markdown punctuation is escaped. |
 
-FB2 is the one format converted element by element by this crate, because
-its front-end crate gives a typed document, not Markdown:
+HTML, and the HTML inside an EPUB, is converted the same way:
+`script`, `style`, forms and embedded objects are dropped; `sub`, `sup` and
+`u` keep their text and are reported once as `MarkupDropped`; a table with
+merged cells is flattened and reported; every element with an `id` is marked;
+a note reference of EPUB (`epub:type="noteref"`) whose note is in the same
+document becomes a footnote.
+
+FictionBook is converted element by element by this crate:
 
 | FB2 | Markdown |
 | --- | --- |
@@ -499,19 +523,39 @@ its front-end crate gives a typed document, not Markdown:
 | `p` | A paragraph |
 | `emphasis`, `strong`, `strikethrough`, `code` | The matching inline markup |
 | `sub`, `sup`, `style` | The text alone, with `MarkupDropped` |
-| `epigraph`, `cite` | A block quote; `text-author` is its last paragraph |
-| `poem` | One paragraph per `stanza`, with a hard line break after every `v` |
+| `epigraph`, `cite`, the `annotation` of a section | A block quote; `text-author` is its last paragraph |
+| `poem` | One paragraph per `stanza`, with a hard line break after every `v`; its title is a bold line |
 | `empty-line` | A paragraph boundary |
 | `table` | A table; merged cells are split, with `MarkupDropped` |
 | `image` | A picture; alone in a paragraph, it is a figure |
-| `a` | A link, or a footnote when its type is `note` |
-| `body` named `notes` | The source of footnote texts; it produces no chapter |
+| `a` | A link, or a footnote when its type is `note` or its target is in the notes body |
+| `body` named `notes` or `comments` | The source of footnote texts; it produces no section |
 | `binary` | A picture |
+| An element the format does not define | Its text |
 
 A source that is protected, with a password or by rights management, fails
 with `Error::Protected` for every format. A source with no text and no
-picture that could be stored fails with `Error::Empty`; this is what a
-scanned PDF gives.
+picture that could be stored fails with `Error::Empty`.
+
+### What is implemented
+
+Every format of [Formats and features](#formats-and-features) is implemented
+and tested against sources built in memory by its tests. What each front end
+does not do:
+
+| Format | Limits of the front end |
+| --- | --- |
+| EPUB | XHTML in an encoding other than UTF-8 and UTF-16 is read as UTF-8. A plain-text description loses its paragraph breaks, because `rbook` joins its lines. A note in another file than its reference stays a link. An archive entry declared larger than the resource limit refuses the book, even an entry the book does not use. |
+| FB2 | A table keeps no alignment. The `style` and `lang` attributes are ignored. The document is decoded as a whole before it is parsed. Elements nested deeper than 256 levels are refused with `Error::Limit`. |
+| PDF | Headings are what `unpdf` finds: per page, by font size, at most four levels. A picture stands at the end of its page, not where it is drawn, and one narrower or lower than 64 pixels is left out. An outline entry with a named destination has no page and joins the entry before it. A scanned document has no contents. Every page of a scan is held as pixels until the book is assembled. Whether `unpdf` escapes a lone `~` was not verified. |
+| CBZ | `ComicInfo.xml` is read in UTF-8 only; of its fields the title, series, number, writer, translator, publisher, date, language, genre and summary are used. |
+| DOCX | A link to a bookmark of the document becomes its text: `undoc` does not read bookmarks. A heading is found only when its style has an outline level. A note is plain text. Underline, superscript and subscript reach the assembler as raw HTML and are removed with `MarkupDropped`. The language is read from the core properties only. `undoc` unpacks entries under its own bound, 100 times their packed size, not under the limits of this crate. |
+| HTML | A `form` and what it contains is dropped. CDATA sections of XHTML are not read. A document nested deeper than 128 levels becomes one paragraph of text, with `MarkupDropped`: `htmd` walks the tree recursively. An element with a name HTML does not define cannot be a link target. |
+| Markdown | Front matter is removed, not read. Pictures are dropped: a stream has no folder to find them in. |
+| Text | No structure is recognised: no headings, no lists. |
+
+The assembler implements every rule of
+[Assembling the book](#assembling-the-book).
 
 ### Options and limits
 
@@ -540,8 +584,8 @@ pub struct ConvertLimits {
 
 | Setting | Default | Reason |
 | --- | ---: | --- |
-| `pictures.quality` | 80 | *Proposed.* |
-| `pictures.speed` | 6 | *Proposed.* |
+| `pictures.quality` | 80 | Decided by the format author; not measured yet. |
+| `pictures.speed` | 6 | Decided by the format author; not measured yet. |
 | `limits.max_source_bytes` | 2 GiB | *Proposed.* Bounds the buffer of a source that cannot seek. |
 | `limits.max_picture_pixels` | 100,000,000 | *Proposed.* A page scanned at 600 dpi is about 35 million pixels. |
 | `limits.book` | `Limits::default()` | The same limits the written file is read with. |
@@ -593,36 +637,96 @@ Warnings are in the order in which the assembler met them.
 
 ### Dependencies
 
-Crates were chosen from their published documentation and metadata on
-2026-11-21. Before a front end is written, the source of its crate **MUST**
-be read against the column "To confirm", as the repository guidelines ask.
+Every dependency was checked on 2026-11-21 against crates.io and its
+repository: the version in use is the latest one, and the column "Last
+release" shows how alive the crate is.
 
-| Need | Crate | License | Minimum Rust | To confirm |
+| Need | Crate | License | Last release | Notes |
 | --- | --- | --- | --- | --- |
-| PDF to Markdown, pictures, outline | `unpdf` 0.55, without default features | MIT | 1.89 | How headings are marked; that no raw HTML is produced with Markdown tables; the picture formats it extracts |
-| EPUB package, spine, navigation, resources | `rbook` 0.7 | Apache-2.0 | 1.88 | Access to series metadata; hrefs with fragments in the contents; whether the `'static` bound on the source can be met without a copy |
-| FB2 document | `fb2` 0.4 | MIT | not stated | Fields of links and pictures; it pins `quick-xml` 0.30, a second copy next to the 0.42 of `rbook` |
-| MOBI text and records | `mobi` 0.8 | MIT | not stated | What the text is (HTML); how a picture record is read; it depends on the unmaintained `encoding` 0.2 |
-| Word to Markdown | `undoc` 0.28 | MIT | 1.88 | Its API; not read yet |
-| HTML to Markdown, with a handler per element | `htmd` 0.6 | Apache-2.0 | not stated | Attribute access in a handler; escaping of Markdown punctuation; that the default mode writes no raw HTML |
-| ZIP archives | `zip` 9 | MIT | 1.89 | |
-| Dialect parsing with byte offsets | `markdown` 1.0.0 | MIT | | Already used by `mbook-core` |
-| Picture decoding and AVIF encoding | `image` 0.25 with `avif`, which encodes through `ravif` 0.13 and `rav1e` | MIT OR Apache-2.0; BSD-3-Clause; BSD-2-Clause | 1.88 | That the build is pure Rust without `nasm`; orientation handling |
-| Writing Markdown with correct escaping (FB2, text) | `comrak` 1.1 or `pulldown-cmark-to-cmark` 23 | BSD-2-Clause; Apache-2.0 | 1.89; 1.71 | Which of the two writes footnotes and tables that `markdown` 1.0.0 reads back unchanged |
-| Unicode NFC | `unicode-normalization` | MIT OR Apache-2.0 | | |
-| Text encodings | `encoding_rs`, `chardetng` | Apache-2.0 OR MIT | 1.88 | |
-| Name-based UUID | `uuid` with `v5` | Apache-2.0 OR MIT | | Already in the workspace |
-| Error types | `thiserror` 2 | MIT OR Apache-2.0 | | Already in the workspace |
+| PDF to Markdown, pictures, outline, pages as pictures | `unpdf` 0.55, without default features, with `raster` | MIT | 2026-11 | Headings are found per page, by font size. Pictures are listed per page, not where they are drawn, and those under 64 pixels are left out. |
+| EPUB package, spine, navigation, resources | `rbook` 0.7, without default features | Apache-2.0 | 2026-11 | Reads EPUB only; Mobipocket and KF8 are announced. |
+| HTML to Markdown (EPUB, HTML) | `htmd` 0.6 | Apache-2.0 | 2026-11 | Writes the Markdown, with its own escaping; see below. |
+| XML events (FictionBook, `ComicInfo.xml`) | `quick-xml` 0.42 with `encoding` | MIT | 2026-08 | |
+| Word to Markdown | `undoc` 0.28, with `docx` only | MIT | 2026-11 | Headings need an outline level in their style. Bookmarks are not read, so links inside a document become text. Notes are plain text. |
+| ZIP archives | `zip` 9 | MIT | 2026-11 | |
+| Dialect parsing with byte offsets | `markdown` 1.0.0 | MIT | 2025-04 | Already used by `mbook-core`. |
+| Picture decoding and AVIF encoding | `image` 0.25 with `avif`, which encodes through `ravif` 0.13 and `rav1e` 0.8 | MIT OR Apache-2.0; BSD-3-Clause; BSD-2-Clause | 2026-03 | |
+| Base64 (pictures of FictionBook and of `data:` addresses) | `base64` 0.23 | MIT OR Apache-2.0 | 2026-08 | |
+| Names of headings by GitHub's rule (Markdown) | `github-slugger` 0.1 | MIT | 2023-06 | One release; a port of a frozen algorithm. Already used by `mbook-core`. |
+| The order of the pages of a comic | `alphanumeric-sort` 1.5 | MIT | 2026-07 | |
+| Unicode NFC | `unicode-normalization` 0.1 | MIT OR Apache-2.0 | 2026-10 | |
+| Text encodings | `encoding_rs` 0.8, `chardetng` 1 | Apache-2.0 OR MIT | 2026-10, 2026-03 | |
+| Name-based UUID | `uuid` 1 with `v5` | Apache-2.0 OR MIT | 2026-11 | Already in the workspace. |
+| Error types | `thiserror` 2 | MIT OR Apache-2.0 | 2026-09 | Already in the workspace. |
 
 The format author accepted dependencies under BSD-2-Clause and BSD-3-Clause
 on 2026-11-21: they ask only that the license text is kept. `image` itself
 contains no AV1 encoder, so its `avif` feature cannot be had without `ravif`
 and `rav1e`.
 
+**One mechanism is written in this crate: escaping text as Markdown**, about
+forty lines in `markdown.rs`, used where a front end writes Markdown itself
+(FictionBook, plain text, comic archives). What must be escaped is a rule of
+the mbook dialect, not of Markdown in general: a single tilde marks
+strikethrough, and the parser that decides is `markdown` 1.0.0. The function
+is tested against that parser. `comrak` and `pulldown-cmark-to-cmark` write
+Markdown for their own parsers and dialects, and would add a second Markdown
+implementation to the dependency tree.
+
+**HTML is written as Markdown by `htmd`**, including its escaping, which was
+checked against the dialect: a lone tilde, emphasis marks, the starts of
+headings, lists and quotes, brackets and literal tags all come back as text.
+`xhtml.rs` adds what Markdown output would otherwise lose, as handlers of
+`htmd` and as edits of the Markdown it wrote:
+
+| Added here | Why `htmd` alone is not enough |
+| --- | --- |
+| `script`, `style`, forms and embedded objects are skipped | Their content would be written as text. |
+| `s`, `strike`, `del` as `~~…~~` | Written as plain text. |
+| Marks for elements with an `id` | Identifiers are dropped. |
+| Footnotes of EPUB | Not recognised. |
+| A caption of a figure as the title of its picture | Written as a separate paragraph. |
+| A table without a header row | Written as paragraphs; here its first row becomes the header. |
+| `pre` without `code`, and pictures inside `svg` | Not handled. |
+| `MarkupDropped` for `sub`, `sup`, `u` and merged cells | Dropped silently. |
+| A line break inside a heading or a cell becomes a space | It would break the heading or the row. |
+
+Two properties of `htmd` shape that code. A handler is registered for a list
+of element names, there is no handler for every element, so the same handler
+is registered for about a hundred names, and an element with a name outside
+that list cannot be marked. And a handler must be `'static`, so it cannot
+call the mappings of links and pictures that a front end supplies: handlers
+leave the addresses as they are, and the mappings are applied afterwards, to
+the Markdown, by the same code that the assembler uses.
+
+**Mobipocket is not converted** (decided by the format author on
+2026-11-21). A front end was written on `mobi` 0.8 and removed again. The
+crate has had no release since 2022 and depends on the unmaintained
+`encoding` 0.2. Writing against it showed more: its record access slices
+without checking and panics on a damaged file, its text accessor drops the
+last text record, and its PalmDOC decompressor shortens a match that is
+longer than its distance, which shifts every byte offset after it. Only its
+header parser could be used; cutting the records and unpacking the text had
+to be written here, which is a parser of a binary format in all but name.
+No other crate with a permissive license reads the format: `boko` is under
+the GPL, and `rbook` has only announced it.
+
+**The structure of FictionBook is read by this crate**, as events of
+`quick-xml` (decided by the format author on 2026-11-21). The `fb2` crate was
+used first and dropped: it has had no release since 2023, pins `quick-xml`
+0.30, fails on a whole document for a series number such as `1.5` or for an
+empty `body`, and loses the order between the text of a section and its
+subsections.
+
 Crates that were looked at and ruled out:
 
 | Crate | Why it does not fit |
 | --- | --- |
+| `fb2` 0.4 | Unmaintained since 2023; the defects above. |
+| `mobi` 0.8 | Unmaintained since 2022; the defects above. |
+| `palmdoc-compression` 0.3 | Would replace one of the three parts `mobi` gets wrong; last release 2024, about 200 recent downloads. Not evaluated. |
+| `natord` 1 | No release since 2015; replaced by `alphanumeric-sort`. |
+| `ebook-rs` 0.19 | Reads FictionBook, Mobipocket and KF8, but is three months old with 66 releases, cannot switch formats off, and always brings `aes`, `regex`, `whatlang`, `serde_json` and `parking_lot`. Its source was not read. |
 | `epub` 2.1 | GPL-3.0-or-later. |
 | `html2md` 0.2 | GPL-3.0-or-later. |
 | `boko` 0.6 | GPL-3.0-or-later, and needs Rust 1.91. |
@@ -679,7 +783,7 @@ Crates that were looked at and ruled out:
 | Result of a conversion | A `Book`, then `Book::write` | A writer that emits resources while the source is read | Decided by the format author: a `Read` in and a `Write` out is enough. The tables are the first resources of a file and describe everything after them; `mbook-core` writes only from a `Book`. |
 | Sources | `Read` and `&[u8]` | Paths | A caller opens a file in one line; a stream has no path. |
 | | | One entry point over a `Source` enum | `&[u8]` is itself a `Read`, so a conversion from both cannot be chosen by a trait. |
-| Sources that could seek | Buffered like any `Read` | A third entry point for `Read + Seek` | Open; see [Unresolved questions](#unresolved-questions). |
+| Sources that could seek | Buffered like any `Read` | A third entry point for `Read + Seek` | Decided by the format author: the API stays at two kinds of source. A caller that minds the copy maps the file into memory and passes the slice. |
 | Finding the format | From the content | From a file extension | Streams have no names, and extensions are wrong often enough. |
 | A disabled format | The variant stays; `Error::FormatDisabled` | Variants behind `cfg` | A `match` on `Format` would change with the feature set, and the error could not say what is missing. |
 | Pictures | Encoded by this crate | An encoder supplied by the caller | Works without setup. A trait for other encoders can be added without breaking the API. |
@@ -700,17 +804,17 @@ Crates that were looked at and ruled out:
 
 ## Unresolved questions
 
-| Question | Proposal of this draft |
+The questions of the first draft were settled by the format author on
+2026-11-21; see [What is settled](#what-is-settled). Two were settled by the
+implementation:
+
+| Question | Outcome |
 | --- | --- |
-| A third entry point for `Read + Seek`, so that a file is not buffered? | Not in the first version; `convert_slice` over a memory-mapped file serves the same purpose. |
-| Default picture quality and speed? | 80 and 6, to be replaced by measured values. |
-| A PDF without a text layer: an error, or one picture per page? | `Error::Empty`. Page pictures need the `raster` feature of `unpdf`. |
-| A contents entry of the source that does not lead to a heading? | The nearest heading above its target. RFC 0001 could instead let a contents row match a row of a chapter's anchor table. |
-| The `id` of a source without an identifier? | UUID version 5 over the source bytes. `Book::new` alone would give a new random `id` for every conversion of the same file. |
-| The title and language of a source without them? | `Untitled` and `und`, each with a warning. |
-| Which crate writes Markdown for FB2 and text? | Decided by reading both candidates when the FB2 front end is written. |
-| How does this crate keep its `markdown` configuration equal to that of `mbook-core`? | A shared test over the conformance chapters of `mbook-core`; no new public item. |
-| One chapter for a whole comic, or one per page? | One for the archive. |
+| Which crate writes Markdown for FB2 and text? | None: escaping is a function of this crate, tested against `markdown` 1.0.0 ([Dependencies](#dependencies)). |
+| How does this crate keep its `markdown` configuration equal to that of `mbook-core`? | Both call `markdown::ParseOptions::gfm()`, and every converted book passes `Book::check`, which parses each chapter with the configuration of `mbook-core`. |
+
+Still *proposed*: the names of the public items, and every front-end crate
+marked so in [Formats and features](#formats-and-features).
 
 ## Future possibilities
 
@@ -719,8 +823,10 @@ Crates that were looked at and ruled out:
   front ends that emit sections as they parse.
 - **Progress and cancellation**, for the minutes a large comic takes.
 - **A caller-supplied picture encoder**, for hardware or C encoders.
-- **Pages of a scanned PDF as pictures.**
-- **More formats** when a suitable crate exists: KF8/AZW3, DjVu, RTF, CBR.
+- **More formats** when a suitable crate exists: Mobipocket and KF8/AZW3
+  (announced for `rbook`, which already reads EPUB here), DjVu, RTF, CBR.
 - **SVG and JPEG 2000 pictures**, rendered or decoded before encoding.
 - **A strict mode** that turns chosen warnings into errors.
+- **Metadata from the front matter of a Markdown document**, and pictures
+  given to a Markdown or HTML document as `data:` addresses or by a caller.
 - **A command-line tool** on top of this crate and `mbook-core`.

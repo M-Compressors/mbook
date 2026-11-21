@@ -6,8 +6,18 @@
 
 - RFC 0001, the mbook file format, version 1.0, with seven decision records.
 - RFC 0002, the API of `mbook-core`.
-- RFC 0003, a draft of the API of `mbook-converter`, a crate that converts
-  EPUB, FB2, PDF and other formats into mbook. The crate is not implemented.
+- RFC 0003, the API of `mbook-converter`.
+- `mbook-converter`, the crate of RFC 0003: `Converter` turns a book given as
+  any `Read` or as a byte slice into an mbook file or into a `Book`.
+  - Source formats, one Cargo feature each and all on by default: EPUB, FB2
+    (plain or inside a ZIP), PDF (a scan becomes one picture per page), comic
+    book archives, Word documents, HTML, Markdown and plain text. The format
+    is detected from the content.
+  - Pictures in JPEG, PNG, GIF, WebP and BMP are encoded as AVIF through the
+    `image` crate; AVIF pictures are kept as they are.
+  - Links inside a book keep their target down to the block, through anchor
+    definitions; the contents of the source become the contents of the book.
+  - Whatever cannot be kept is reported as a `Warning`.
 - `mbook-core`, the library of RFC 0002:
   - `BookReader` opens a file from anything that can seek, checks its tables
     against RFC 0001, and decodes chapters and pictures on demand; it

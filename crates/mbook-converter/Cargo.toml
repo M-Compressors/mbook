@@ -1,0 +1,59 @@
+[package]
+name = "mbook-converter"
+description = "Convert EPUB, FB2, PDF and other book formats into mbook files"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords = ["ebook", "epub", "fb2", "pdf", "converter"]
+categories = ["encoding", "parser-implementations"]
+build = "build.rs"
+
+[features]
+default = ["epub", "fb2", "pdf", "cbz", "docx", "html", "md", "txt"]
+# One feature per source format. A feature brings in the crate that reads the
+# format and, for every format but plain text, the picture codecs.
+epub = ["dep:rbook", "dep:htmd", "dep:image"]
+fb2 = ["dep:quick-xml", "dep:base64", "dep:image"]
+pdf = ["dep:unpdf", "dep:image"]
+cbz = ["dep:quick-xml", "dep:alphanumeric-sort", "dep:image"]
+docx = ["dep:undoc", "dep:image"]
+html = ["dep:htmd", "dep:base64", "dep:encoding_rs", "dep:chardetng", "dep:image"]
+# One Markdown document. `markdown` itself is always a dependency: the
+# assembler reads every chapter with it.
+md = ["dep:github-slugger", "dep:encoding_rs", "dep:chardetng"]
+txt = ["dep:encoding_rs", "dep:chardetng"]
+
+[dependencies]
+mbook-core = { workspace = true, features = ["write"] }
+thiserror.workspace = true
+markdown.workspace = true
+percent-encoding.workspace = true
+unicode-normalization.workspace = true
+uuid = { workspace = true, features = ["v5"] }
+zip.workspace = true
+image = { workspace = true, optional = true }
+encoding_rs = { workspace = true, optional = true }
+github-slugger = { workspace = true, optional = true }
+chardetng = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+htmd = { workspace = true, optional = true }
+rbook = { workspace = true, optional = true }
+quick-xml = { workspace = true, optional = true }
+alphanumeric-sort = { workspace = true, optional = true }
+unpdf = { workspace = true, optional = true }
+undoc = { workspace = true, optional = true }
+
+[dev-dependencies]
+# The tests read back what was converted.
+mbook-core = { workspace = true, features = ["read", "write"] }
+# Test sources are built in memory: pictures with `image`, archives with `zip`.
+image.workspace = true
+zip.workspace = true
+base64.workspace = true
+
+[lints]
+workspace = true

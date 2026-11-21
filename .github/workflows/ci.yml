@@ -28,8 +28,14 @@ jobs:
       - name: clippy for every feature alone
         run: |
           for features in read write; do
-            echo "::group::features '$features'"
+            echo "::group::mbook-core, features '$features'"
             cargo clippy -p mbook-core --all-targets --no-default-features --features "$features" --locked -- -D warnings
+            echo "::endgroup::"
+          done
+          # One feature per source format.
+          for features in epub fb2 pdf cbz docx html md txt; do
+            echo "::group::mbook-converter, features '$features'"
+            cargo clippy -p mbook-converter --all-targets --no-default-features --features "$features" --locked -- -D warnings
             echo "::endgroup::"
           done
       - name: docs for every feature set
@@ -39,6 +45,9 @@ jobs:
           cargo doc --workspace --no-deps --all-features --locked
           for features in read write; do
             cargo doc -p mbook-core --no-deps --no-default-features --features "$features" --locked
+          done
+          for features in epub fb2 pdf cbz docx html md txt; do
+            cargo doc -p mbook-converter --no-deps --no-default-features --features "$features" --locked
           done
       - run: cargo package -p mbook-core --locked
 
@@ -56,6 +65,12 @@ jobs:
       - run: cargo test --workspace --all-features --locked
       - run: cargo test -p mbook-core --no-default-features --features read --locked
       - run: cargo test -p mbook-core --no-default-features --features write --locked
+      - name: mbook-converter, every format alone
+        shell: bash
+        run: |
+          for features in epub fb2 pdf cbz docx html md txt; do
+            cargo test -p mbook-converter --no-default-features --features "$features" --locked
+          done
 
   msrv:
     name: MSRV (1.89)
