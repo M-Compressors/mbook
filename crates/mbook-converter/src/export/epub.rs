@@ -2,11 +2,15 @@
 
 use std::collections::HashMap;
 use std::io::Write;
+use std::rc::Rc;
 
 use epub_builder::{EpubBuilder, EpubContent, EpubVersion, ReferenceType, TocElement, ZipLibrary};
 use mbook::Book;
 
-use super::markup::{CSS, Layout, chapter_file, chapter_html, contents, title_and_language};
+use super::graphic::{Drawings, Graphic};
+use super::markup::{
+    CSS, DENSITY, Embedded, Layout, TEXT, chapter_file, chapter_html, contents, title_and_language,
+};
 use super::{Format, Result, export_error, picture};
 
 pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
@@ -59,9 +63,26 @@ pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
         epub.add_content(EpubContent::new(chapter_file(0), body.as_bytes()).title(meta.title()))
             .map_err(epub_error)?;
     }
+    let mut drawings = Drawings::new(Format::Epub, TEXT, DENSITY);
+    let mut figures = HashMap::new();
+    let mut resources = Vec::new();
     for (index, _) in book.chapters().iter().enumerate() {
-        let body = chapter_html(book, index, &Layout::Epub, |source| {
-            Ok(pictures[source.path()].clone())
+        let body = chapter_html(book, index, &Layout::Epub, |graphic| {
+            if let Graphic::Picture(source) = graphic {
+                return Ok(pictures.get(source.path()).cloned().map(Embedded::Picture));
+            }
+            let Some(drawn) = drawings.draw(graphic)? else {
+                return Ok(None);
+            };
+            let url = figures
+                .entry(graphic.key())
+                .or_insert_with(|| {
+                    let name = format!("figure-{}.png", resources.len() + 1);
+                    resources.push((name.clone(), Rc::clone(&drawn)));
+                    name
+                })
+                .clone();
+            Ok(Some(Embedded::Figure { url, drawn }))
         })?;
         let body = document(&body);
         let entries = contents(book, index, &Layout::Epub);
@@ -75,6 +96,10 @@ pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
             content.toc.add(TocElement::new(href, title).level(level));
         }
         epub.add_content(content).map_err(epub_error)?;
+    }
+    for (name, drawn) in &resources {
+        epub.add_resource(name, drawn.png.bytes.as_slice(), "image/png")
+            .map_err(epub_error)?;
     }
     epub.generate(sink).map_err(|error| match error {
         epub_builder::Error::IoError { cause, .. } => cause.into(),

@@ -25,6 +25,19 @@ impl Converter {
     pub fn export(book: &mbook::Book, format: Format, sink: impl Write) -> Result<()>;
 }
 
+#[cfg(feature = "export")]
+pub mod figure {
+    pub fn diagram(source: &str, palette: Palette) -> Result<Figure, FigureError>;
+    pub fn formula(source: &str, setting: Setting, palette: Palette)
+        -> Result<Figure, FigureError>;
+
+    pub enum Setting { Block, Line }
+    pub struct Palette { pub ink: u32, pub page: u32 }      // also Default
+    pub struct Figure { /* SVG and measures */ }            // svg, into_svg, width, height, baseline, em
+    #[non_exhaustive]
+    pub enum FigureError { Empty, Diagram(String), Formula(String), Renderer }
+}
+
 #[non_exhaustive]
 pub struct Converted { pub book: mbook::Book, pub report: Report }
 
@@ -77,21 +90,64 @@ independently of the Rust 1.89 minimum for the default import build.
 
 | Format | Output |
 | --- | --- |
-| EPUB | EPUB 3 with XHTML chapters in reading order, contents, links, footnotes, metadata and a PNG cover and illustrations. |
-| DOCX | Editable Word paragraphs and headings, basic inline styles, PNG pictures and core metadata. Tables and lists are flattened into paragraphs. |
-| FB2 | FictionBook 2 XML with chapter sections, basic inline styles, metadata and Base64-encoded PNG pictures. |
-| PDF | A paginated document with selectable text, PNG illustrations and embedded Noto Sans. Glyph coverage is limited to the bundled font. |
+| EPUB | EPUB 3 with XHTML chapters in reading order, contents, links, footnotes, metadata, a PNG cover and illustrations, and diagrams and formulas as PNG resources. |
+| DOCX | Editable Word paragraphs and headings, basic inline styles, PNG pictures, diagrams and formulas, and core metadata. Tables and lists are flattened into paragraphs. |
+| FB2 | FictionBook 2 XML with chapter sections, basic inline styles, metadata and Base64-encoded PNG pictures, diagrams and formulas. |
+| PDF | A paginated document with selectable text, PNG illustrations, diagrams and formulas, and embedded Noto Sans. Glyph coverage is limited to the bundled font. A formula inside a line is drawn on a line of its own. |
 | CBZ | The paginated edition rasterized as numbered PNG pages, with a `ComicInfo.xml` metadata entry. |
 | HTML | One self-contained document with contents, local links and PNG data URLs. |
-| Markdown | One document with namespaced anchors and footnotes, and AVIF data URLs. Support for inline HTML anchors and data URLs varies across Markdown viewers. |
-| Plain text | UTF-8 text in reading order with picture alternative text. |
+| Markdown | One document with namespaced anchors and footnotes, AVIF data URLs for pictures, and `img` elements with PNG data URLs for diagrams and formulas. Support for inline HTML and data URLs varies across Markdown viewers. |
+| Plain text | UTF-8 text in reading order with the alternative text of pictures, diagrams and formulas. |
 
 Chapter links and anchors are retained in EPUB, HTML and Markdown. Other
-writers flatten links to their visible text. Diagram and formula references
-become alternative text. When an output needs PNG, the decoder uses the
-coded AVIF pixels. AVIF container crop, rotation and mirror properties are
+writers flatten links to their visible text. When an output needs PNG, the
+decoder uses the coded AVIF pixels. AVIF container crop, rotation and mirror properties are
 not applied by these writers. Markdown embeds the original AVIF. Export does
-not fetch network resources. EPUB, DOCX, PDF and CBZ buffer the output
+not fetch network resources.
+
+Diagrams and formulas are drawn by [`figure`](#diagrams-and-formulas) in
+dark ink on a white page and written as PNG pictures, except in plain text.
+A figure is scaled so that its text has the size of the body text of the
+output: 16 CSS pixels in EPUB, HTML and Markdown, 16 pixels in FictionBook,
+11 points in DOCX and PDF. It is drawn at two pixels per unit of that size,
+three per point in PDF, and one in FictionBook, which has no size for a
+picture; a figure that would take more than 16,777,216 pixels is drawn less
+sharply. A diagram is drawn on the colour of the page, a formula on a
+transparent background. A formula alone in its paragraph is a display
+formula, and any other formula is set in its line (RFC 0001,
+"Rendering"). EPUB, HTML and Markdown write a figure as an `img` element:
+one alone in its paragraph is centred at its width, and one inside a line
+takes the height of its drawing and is lowered to the baseline of the line.
+A diagram or a formula that cannot be drawn is written as its alternative
+text and does not fail the export. The labels of a diagram use the fonts
+of the system, with the bundled Noto Sans for any family the system lacks.
+
+## Diagrams and formulas
+
+`figure::diagram` draws a diagram in Mermaid notation with `merman`, and
+`figure::formula` sets a formula in the notation of KaTeX with RaTeX. Each
+gives a `Figure`: an SVG document, its width and height, the baseline of a
+formula (the height for a diagram), and `em`, the size of text it was drawn
+for (16 for a diagram, 20 for a formula). A page scales a figure by the
+ratio of its own text size to `em`. The colours are a `Palette` of ink and
+page; the default is `#1b1b1b` on white. `Setting::Block` sets a display
+formula and `Setting::Line` one in the style of running text; a diagram is
+the same in both.
+
+- Leading and trailing white space of a source is not part of it; an empty
+  source is `FigureError::Empty`.
+- A source that is not a diagram or a formula is `FigureError::Diagram` or
+  `FigureError::Formula`, with the message of the renderer as text, so the
+  error can be cloned and kept with a cache entry.
+- A panic of a renderer is caught and reported as `FigureError::Renderer`.
+- Mermaid runs in strict mode, so a `click` does nothing, and labels are
+  written as SVG text without `foreignObject`. A remote image in a diagram
+  and the target of `\href` in a formula are not part of the drawing.
+- The glyphs of a formula are outlines. A letter that the KaTeX fonts lack,
+  such as a Cyrillic one, is drawn with a system font and given the room of
+  its real glyph.
+
+`mbook-ui` draws the figures of its pages with the same calls. EPUB, DOCX, PDF and CBZ buffer the output
 document in memory before writing it to the sink.
 
 ## Formats and features

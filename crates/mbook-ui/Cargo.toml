@@ -81,24 +81,6 @@ futures = "0.3"
 self_update = { version = "1.3", default-features = false, features = ["ureq", "rustls", "github", "archive-tar", "compression-tar-gz", "signatures"], optional = true }
 # Native file pickers with extension filters.
 rfd = "0.18"
-# Diagrams and formulas of a book are drawn as SVG (mbook-ui docs, "Diagrams and
-# formulas"). `merman` reads Mermaid notation; without ELK, whose layout is
-# EPL-2.0, and without math in labels.
-merman = { version = "0.11", default-features = false, features = ["all-diagrams", "svg", "layout-cytoscape"] }
-# KaTeX notation: parsed, laid out and written as SVG with the glyphs as
-# outlines, so that no font has to be installed.
-ratex-parser = "0.1"
-ratex-layout = "0.1"
-ratex-types = "0.1"
-ratex-svg = { version = "0.1", features = ["embed-fonts"] }
-# The metrics of letters the KaTeX fonts do not have (Cyrillic): `ratex`
-# draws them with a system font and guesses their room, so the real sizes
-# are read from that font (`entities/figure/glyphs.rs`).
-ratex-font = "0.1"
-ratex-unicode-font = "0.1"
-ab_glyph = "0.2"
-# The configuration of `merman` and the generic walk over a parsed formula.
-serde_json = "1"
 
 [dev-dependencies]
 gpui-kit = { version = "0.10", features = ["gpui-fast", "test-support"] }

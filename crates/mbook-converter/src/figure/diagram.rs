@@ -7,11 +7,13 @@ use merman::{
 };
 use serde_json::json;
 
-use super::{Figure, FigureError, Palette, hex, svg};
+use resvg::usvg;
 
-/// The size of the labels a diagram is drawn with, in pixels. The view
-/// scales the drawing to the size of the text around it.
-pub(super) const EM: f32 = 16.0;
+use super::{Figure, FigureError, Palette, hex};
+
+/// The size of the labels a diagram is drawn with, in pixels. A page scales
+/// the drawing to the size of the text around it.
+const EM: f32 = 16.0;
 
 /// Colours that tell the parts of a pie, a timeline or a journey apart on a
 /// light page and on a dark one.
@@ -28,8 +30,7 @@ const SERIES: [u32; 8] = [
 
 /// The configuration that draws a diagram in the colours of a page.
 ///
-/// Strict mode disables Mermaid callbacks. GPUI draws the SVG as pixels, so
-/// anchors in the drawing cannot be followed.
+/// Strict mode disables Mermaid callbacks, so a `click` runs nothing.
 fn configuration(palette: Palette) -> serde_json::Value {
     let tone = |part: f32| hex(palette.mix(part));
     let (ink, page) = (hex(palette.ink), hex(palette.page));
@@ -102,8 +103,8 @@ pub(super) fn draw(source: &str, palette: Palette) -> Result<Figure, FigureError
     let renderer = Renderer::new()
         .with_presentation_engine(engine)
         .with_parse_options(ParseOptions::strict());
-    // The pipeline turns HTML labels into SVG text: the rasteriser of GPUI
-    // draws no `foreignObject`.
+    // The pipeline turns HTML labels into SVG text: rasterisers such as
+    // `resvg` draw no `foreignObject`.
     let request = SvgRequest {
         pipeline: Some(SvgPipeline::resvg_safe()),
         ..SvgRequest::default()
@@ -117,9 +118,16 @@ pub(super) fn draw(source: &str, palette: Palette) -> Result<Figure, FigureError
         ));
     };
     let document = drawn.svg().to_owned();
-    let size = svg::size(&document)
-        .ok_or_else(|| FigureError::Diagram("the drawing has no size".to_owned()))?;
-    Ok(Figure::new(document, size, size.1, EM))
+    let size = usvg::Tree::from_str(&document, &usvg::Options::default())
+        .map_err(|error| refused(&error))?
+        .size();
+    Ok(Figure {
+        svg: document,
+        width: size.width(),
+        height: size.height(),
+        baseline: size.height(),
+        em: EM,
+    })
 }
 
 #[cfg(test)]
@@ -131,31 +139,35 @@ mod tests {
 
     #[test]
     fn a_flowchart_is_drawn_with_a_size() {
-        let diagram = draw(FLOW, Palette::PAPER).unwrap();
+        let diagram = draw(FLOW, Palette::default()).unwrap();
         assert!(diagram.width > 50.0 && diagram.height > 50.0);
         assert!((diagram.baseline - diagram.height).abs() < f32::EPSILON);
         assert!((diagram.em - EM).abs() < f32::EPSILON);
-        assert!(diagram.svg().contains("<svg"));
+        assert!(diagram.svg.contains("<svg"));
     }
 
     #[test]
     fn a_drawing_has_nothing_the_rasteriser_cannot_draw() {
-        let diagram = draw(FLOW, Palette::PAPER).unwrap();
-        assert!(!diagram.svg().contains("<foreignObject"));
-        assert!(diagram.svg().contains("Start"));
+        let diagram = draw(FLOW, Palette::default()).unwrap();
+        assert!(!diagram.svg.contains("<foreignObject"));
+        assert!(diagram.svg.contains("Start"));
     }
 
     #[test]
     fn a_remote_image_is_removed_from_the_diagram() {
         let source = "flowchart LR\n  A@{ img: \"https://example.com/image.png\", label: \"Start\" }\n  A --> B";
-        let diagram = draw(source, Palette::PAPER).unwrap();
-        assert!(!diagram.svg().contains("https://example.com/image.png"));
+        let diagram = draw(source, Palette::default()).unwrap();
+        assert!(!diagram.svg.contains("https://example.com/image.png"));
     }
 
     #[test]
     fn labels_outside_ascii_are_drawn() {
-        let diagram = draw("flowchart LR\n  A[Вокзал] --> B[Письмо]", Palette::PAPER).unwrap();
-        assert!(diagram.svg().contains("Вокзал"));
+        let diagram = draw(
+            "flowchart LR\n  A[Вокзал] --> B[Письмо]",
+            Palette::default(),
+        )
+        .unwrap();
+        assert!(diagram.svg.contains("Вокзал"));
     }
 
     #[test]
@@ -166,7 +178,7 @@ mod tests {
             "stateDiagram-v2\n  [*] --> Still\n  Still --> Moving\n  Moving --> [*]",
             "classDiagram\n  Animal <|-- Duck\n  Animal : +int age",
         ] {
-            let diagram = draw(source, Palette::PAPER);
+            let diagram = draw(source, Palette::default());
             assert!(diagram.is_ok(), "{source}: {diagram:?}");
         }
     }
@@ -178,14 +190,14 @@ mod tests {
             page: 0,
         };
         let diagram = draw(FLOW, night).unwrap();
-        assert!(diagram.svg().to_ascii_lowercase().contains("#b8b8b8"));
-        assert_ne!(diagram.svg(), draw(FLOW, Palette::PAPER).unwrap().svg());
+        assert!(diagram.svg.to_ascii_lowercase().contains("#b8b8b8"));
+        assert_ne!(diagram.svg, draw(FLOW, Palette::default()).unwrap().svg);
     }
 
     #[test]
     fn a_source_that_is_no_diagram_says_why() {
         for source in ["flowch", "just words", "flowchart TD\n  A --"] {
-            let refused = draw(source, Palette::PAPER);
+            let refused = draw(source, Palette::default());
             assert!(
                 matches!(&refused, Err(FigureError::Diagram(why)) if !why.is_empty()),
                 "{source}: {refused:?}"
@@ -195,7 +207,7 @@ mod tests {
 
     #[test]
     fn the_configuration_names_the_colours_of_the_page() {
-        let configuration = configuration(Palette::PAPER);
+        let configuration = configuration(Palette::default());
         let variables = &configuration["themeVariables"];
         assert_eq!(variables["textColor"], "#1b1b1b");
         assert_eq!(variables["background"], "#ffffff");

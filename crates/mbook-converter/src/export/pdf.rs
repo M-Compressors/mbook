@@ -9,16 +9,21 @@ use krilla::text::{Font, TextDirection};
 use mbook::Book;
 
 use super::blocks::{self, Inline};
-use super::{Format, Result, picture, writer_error};
+use super::graphic::{Drawings, Drawn, Graphic};
+use super::{FONT, Format, Result, writer_error};
 
 const PAGE_WIDTH: f32 = 595.0;
 const PAGE_HEIGHT: f32 = 842.0;
 const MARGIN: f32 = 48.0;
 const WIDTH: f32 = PAGE_WIDTH - 2.0 * MARGIN;
 const HEIGHT: f32 = PAGE_HEIGHT - 2.0 * MARGIN;
-const FONT: &[u8] = include_bytes!("../../assets/NotoSans-Regular.ttf");
+/// The size of the body text, in points.
+const TEXT: f32 = 11.0;
+/// The pixels of a figure for each point it takes on the page.
+const DENSITY: f32 = 3.0;
 
 pub(super) fn render(book: &Book, format: Format) -> Result<Vec<u8>> {
+    let mut drawings = Drawings::new(format, TEXT, DENSITY);
     let page = PageSettings::from_wh(PAGE_WIDTH, PAGE_HEIGHT)
         .ok_or_else(|| writer_error(format, "invalid page size"))?;
     let font = Font::new(FONT.into(), 0)
@@ -42,8 +47,10 @@ pub(super) fn render(book: &Book, format: Format) -> Result<Vec<u8>> {
     layout.text(meta.title(), 22.0, 30);
     let authors = meta.authors().collect::<Vec<_>>().join(", ");
     layout.text(&authors, 12.0, 56);
-    if let Some(cover) = meta.cover().and_then(|path| book.picture(path)) {
-        layout.picture(cover)?;
+    if let Some(cover) = meta.cover().and_then(|path| book.picture(path))
+        && let Some(drawn) = drawings.draw(Graphic::Picture(cover))?
+    {
+        layout.picture(&drawn)?;
         layout.finish_page();
     }
     for chapter in book.chapters() {
@@ -57,11 +64,14 @@ pub(super) fn render(book: &Book, format: Format) -> Result<Vec<u8>> {
             for inline in block.content {
                 match inline {
                     Inline::Text(span, _) => text.push_str(&span),
-                    Inline::Picture(source, _) => {
-                        layout.text(&text, size, columns);
-                        text.clear();
-                        layout.picture(source)?;
-                    }
+                    Inline::Graphic(graphic, alt) => match drawings.draw(graphic)? {
+                        Some(drawn) => {
+                            layout.text(&text, size, columns);
+                            text.clear();
+                            layout.picture(&drawn)?;
+                        }
+                        None => text.push_str(&alt),
+                    },
                 }
             }
             layout.text(&text, size, columns);
@@ -108,14 +118,10 @@ impl Layout {
         }
     }
 
-    fn picture(&mut self, source: &mbook::Picture) -> Result<()> {
-        let png = picture::png(source, self.format)?;
-        let image = Image::from_png(png.bytes.into(), true)
+    fn picture(&mut self, drawn: &Drawn) -> Result<()> {
+        let image = Image::from_png(drawn.png.bytes.clone().into(), true)
             .map_err(|error| writer_error(self.format, error))?;
-        // The codec limit keeps decoded dimensions well below f32's exact
-        // integer range for normal book illustrations.
-        let width = f32::from(u16::try_from(png.width).unwrap_or(u16::MAX));
-        let height = f32::from(u16::try_from(png.height).unwrap_or(u16::MAX));
+        let (width, height) = (drawn.width, drawn.height);
         let scale = (WIDTH / width).min((HEIGHT - 8.0) / height).min(1.0);
         let size = Size::from_wh(width * scale, height * scale)
             .ok_or_else(|| writer_error(self.format, "invalid picture size"))?;

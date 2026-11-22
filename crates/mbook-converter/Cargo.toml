@@ -25,9 +25,11 @@ html = ["dep:htmd", "dep:base64", "dep:encoding_rs", "dep:chardetng", "dep:image
 # assembler reads every chapter with it.
 md = ["dep:github-slugger", "dep:encoding_rs", "dep:chardetng"]
 txt = ["dep:encoding_rs", "dep:chardetng"]
-# All writers and their AVIF decoder. This feature currently needs Rust 1.98.
+# All writers, their AVIF decoder, and the drawing of diagrams and formulas
+# (`figure`). This feature currently needs Rust 1.98.
 export = [
     "mbook/read",
+    "dep:ab_glyph",
     "dep:avif-decode",
     "dep:avif-parse",
     "dep:base64",
@@ -36,9 +38,18 @@ export = [
     "dep:html-escape",
     "dep:image",
     "dep:krilla",
+    "dep:merman",
     "dep:pulldown-cmark",
     "dep:pulldown-cmark-to-cmark",
     "dep:quick-xml",
+    "dep:ratex-font",
+    "dep:ratex-layout",
+    "dep:ratex-parser",
+    "dep:ratex-svg",
+    "dep:ratex-types",
+    "dep:ratex-unicode-font",
+    "dep:resvg",
+    "dep:serde_json",
     "dep:textwrap",
     "dep:unpdf",
     "dep:xmlwriter",
@@ -78,6 +89,27 @@ krilla = { version = "0.8", optional = true }
 textwrap = { version = "0.16", optional = true }
 avif-decode = { workspace = true, optional = true }
 avif-parse = { version = "2.1", optional = true }
+# Diagrams in Mermaid notation, drawn as SVG; without ELK, whose layout is
+# EPL-2.0, and without math in labels.
+merman = { version = "0.11", default-features = false, features = ["all-diagrams", "svg", "layout-cytoscape"], optional = true }
+# Formulas in the notation of KaTeX: parsed, laid out and written as SVG with
+# the glyphs as outlines, so that no font has to be installed.
+ratex-parser = { version = "0.1", optional = true }
+ratex-layout = { version = "0.1", optional = true }
+ratex-types = { version = "0.1", optional = true }
+ratex-svg = { version = "0.1", features = ["embed-fonts"], optional = true }
+# The metrics of letters the KaTeX fonts do not have (Cyrillic): `ratex`
+# draws them with a system font and guesses their room, so the real sizes
+# are read from that font (`figure/glyphs.rs`).
+ratex-font = { version = "0.1", optional = true }
+ratex-unicode-font = { version = "0.1", optional = true }
+ab_glyph = { version = "0.2", optional = true }
+# The configuration of `merman` and the generic walk over a parsed formula.
+serde_json = { version = "1", optional = true }
+# Rasterises a drawn diagram or formula for the writers, with the system
+# fonts for the labels of a diagram. Without `raster-images`: a figure holds
+# no pictures of its own.
+resvg = { version = "0.46", default-features = false, features = ["text", "system-fonts", "memmap-fonts"], optional = true }
 
 [dev-dependencies]
 # Tests read the converted books back.

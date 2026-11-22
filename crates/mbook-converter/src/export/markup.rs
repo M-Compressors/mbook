@@ -1,11 +1,118 @@
 //! Reflowable documents and their rewritten links.
 
-use mbook::{Book, Chapter, Picture};
-use percent_encoding::percent_decode_str;
-use pulldown_cmark::{Event, LinkType, Tag, TagEnd};
+use std::collections::HashMap;
+use std::rc::Rc;
 
-use super::{destination, linked_picture, parser};
-use crate::Result;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use mbook::{Book, Chapter};
+use percent_encoding::percent_decode_str;
+use pulldown_cmark::{CowStr, Event, LinkType, Tag, TagEnd};
+
+use super::graphic::{Drawings, Drawn, Graphic};
+use super::{alone, destination, linked_graphic, parser, setting};
+use crate::figure::Setting;
+use crate::{Format, Result};
+
+/// The size of the body text of a page, in CSS pixels.
+pub(super) const TEXT: f32 = 16.0;
+/// The pixels of a figure for each CSS pixel: sharp on a dense screen.
+pub(super) const DENSITY: f32 = 2.0;
+
+/// How a writer embeds a graphic.
+pub(super) enum Embedded {
+    /// A picture at its own size, written as a Markdown picture.
+    Picture(String),
+    /// A diagram or a formula drawn as PNG, written as an `img` element with
+    /// the size it takes in the text.
+    Figure { url: String, drawn: Rc<Drawn> },
+}
+
+/// A figure whose alternative text is being read.
+struct Pending<'a> {
+    url: String,
+    drawn: Rc<Drawn>,
+    title: CowStr<'a>,
+    alt: String,
+    /// The pictures open inside the alternative text, this one included.
+    depth: usize,
+}
+
+impl Pending<'_> {
+    /// Reads an event of the alternative text; `true` once the picture
+    /// closes.
+    fn read(&mut self, event: &Event<'_>) -> bool {
+        match event {
+            Event::Start(Tag::Image { .. }) => self.depth += 1,
+            Event::End(TagEnd::Image) => self.depth -= 1,
+            Event::Text(text) | Event::Code(text) => self.alt.push_str(text),
+            Event::SoftBreak | Event::HardBreak => self.alt.push(' '),
+            _ => {}
+        }
+        self.depth == 0
+    }
+
+    /// The `img` element. A figure alone in its paragraph is centred at its
+    /// width, and the page may make it narrower; one inside a line takes the
+    /// height of its drawing and sits on the baseline of the line.
+    fn element(&self) -> String {
+        let drawn = &self.drawn;
+        let style = match drawn.figure {
+            Some(Setting::Line) => format!(
+                "height: {}px; vertical-align: -{}px",
+                number(drawn.height),
+                number(drawn.height - drawn.baseline)
+            ),
+            _ => format!(
+                "display: block; margin: 0 auto; width: {}px",
+                number(drawn.width)
+            ),
+        };
+        let title = if self.title.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " title=\"{}\"",
+                html_escape::encode_double_quoted_attribute(&self.title)
+            )
+        };
+        format!(
+            "<img src=\"{}\" alt=\"{}\"{title} style=\"{style}\" />",
+            html_escape::encode_double_quoted_attribute(&self.url),
+            html_escape::encode_double_quoted_attribute(&self.alt)
+        )
+    }
+}
+
+/// A length for CSS, to a hundredth.
+fn number(length: f32) -> String {
+    let written = format!("{:.2}", length.max(0.0));
+    written
+        .trim_end_matches('0')
+        .trim_end_matches('.')
+        .to_owned()
+}
+
+/// A diagram or a formula as a PNG data address, each encoded once. `None`
+/// for a figure that cannot be drawn.
+pub(super) fn figure_data_url<'a>(
+    drawings: &mut Drawings<'a>,
+    urls: &mut HashMap<(&'a str, Option<Setting>), String>,
+    figure: Graphic<'a>,
+) -> Result<Option<Embedded>> {
+    let Some(drawn) = drawings.draw(figure)? else {
+        return Ok(None);
+    };
+    let url = urls
+        .entry(figure.key())
+        .or_insert_with(|| {
+            format!(
+                "data:image/png;base64,{}",
+                STANDARD.encode(&drawn.png.bytes)
+            )
+        })
+        .clone();
+    Ok(Some(Embedded::Figure { url, drawn }))
+}
 
 pub(super) enum Layout {
     Epub,
@@ -75,7 +182,7 @@ fn events<'a>(
     book: &'a Book,
     index: usize,
     layout: &Layout,
-    mut image_url: impl FnMut(&'a Picture) -> Result<String>,
+    mut embed: impl FnMut(Graphic<'a>) -> Result<Option<Embedded>>,
 ) -> Result<Vec<Event<'a>>> {
     let chapter = &book.chapters()[index];
     let mut result = vec![anchor_event(Place {
@@ -90,6 +197,8 @@ fn events<'a>(
     let mut offsets = offsets.into_iter().peekable();
     let mut links = Vec::new();
     let mut images = Vec::new();
+    let mut figure: Option<Pending<'a>> = None;
+    let alone = alone(chapter);
     let footnote = |name| format!("chapter-{}-note-{name}", index + 1).into();
 
     for (event, range) in parser(chapter).into_offset_iter() {
@@ -99,6 +208,13 @@ fn events<'a>(
                 anchor: Some(anchor),
             }));
             offsets.next();
+        }
+        if let Some(pending) = &mut figure {
+            if pending.read(&event) {
+                result.push(Event::InlineHtml(pending.element().into()));
+                figure = None;
+            }
+            continue;
         }
         let event = match event {
             Event::Html(_) | Event::InlineHtml(_) => continue,
@@ -118,15 +234,37 @@ fn events<'a>(
             Event::Start(Tag::Image {
                 dest_url, title, ..
             }) => {
-                let picture = linked_picture(book, chapter, &dest_url);
-                images.push(picture.is_some());
-                let Some(picture) = picture else { continue };
-                Event::Start(Tag::Image {
-                    link_type: LinkType::Inline,
-                    dest_url: image_url(picture)?.into(),
-                    title,
-                    id: "".into(),
-                })
+                let setting = setting(&alone, range.start);
+                let embedded = match linked_graphic(book, chapter, &dest_url, setting) {
+                    Some(graphic) => embed(graphic)?,
+                    None => None,
+                };
+                match embedded {
+                    Some(Embedded::Picture(url)) => {
+                        images.push(true);
+                        Event::Start(Tag::Image {
+                            link_type: LinkType::Inline,
+                            dest_url: url.into(),
+                            title,
+                            id: "".into(),
+                        })
+                    }
+                    Some(Embedded::Figure { url, drawn }) => {
+                        figure = Some(Pending {
+                            url,
+                            drawn,
+                            title,
+                            alt: String::new(),
+                            depth: 1,
+                        });
+                        continue;
+                    }
+                    // The alternative text stands in its place.
+                    None => {
+                        images.push(false);
+                        continue;
+                    }
+                }
             }
             Event::End(TagEnd::Link) if links.pop() == Some(false) => continue,
             Event::End(TagEnd::Image) if images.pop() == Some(false) => continue,
@@ -155,13 +293,10 @@ pub(super) fn chapter_html<'a>(
     book: &'a Book,
     index: usize,
     layout: &Layout,
-    image_url: impl FnMut(&'a Picture) -> Result<String>,
+    embed: impl FnMut(Graphic<'a>) -> Result<Option<Embedded>>,
 ) -> Result<String> {
     let mut output = String::new();
-    pulldown_cmark::html::push_html(
-        &mut output,
-        events(book, index, layout, image_url)?.into_iter(),
-    );
+    pulldown_cmark::html::push_html(&mut output, events(book, index, layout, embed)?.into_iter());
     Ok(output)
 }
 
@@ -224,8 +359,6 @@ pub(super) fn contents(book: &Book, index: usize, layout: &Layout) -> Vec<(usize
 }
 
 pub(super) fn write_html(book: &Book, sink: &mut impl std::io::Write) -> Result<()> {
-    use std::collections::HashMap;
-
     let (title, language) = title_and_language(book);
     writeln!(
         sink,
@@ -236,15 +369,20 @@ pub(super) fn write_html(book: &Book, sink: &mut impl std::io::Write) -> Result<
         writeln!(sink, "<meta name=\"author\" content=\"{author}\">")?;
     }
     writeln!(sink, "</head><body>")?;
+    let mut drawings = Drawings::new(Format::Html, TEXT, DENSITY);
     let mut pictures = HashMap::new();
-    let mut image_url =
-        |picture: &Picture| png_data_url(pictures.entry(picture.path().to_owned()), picture);
-    if let Some(cover) = book.meta().cover().and_then(|path| book.picture(path)) {
-        writeln!(
-            sink,
-            "<p><img src=\"{}\" alt=\"Cover\"></p>",
-            image_url(cover)?
-        )?;
+    let mut figures = HashMap::new();
+    let mut embed = |graphic| match graphic {
+        Graphic::Picture(picture) => {
+            png_data_url(pictures.entry(picture.path().to_owned()), picture)
+                .map(|url| Some(Embedded::Picture(url)))
+        }
+        figure => figure_data_url(&mut drawings, &mut figures, figure),
+    };
+    if let Some(cover) = book.meta().cover().and_then(|path| book.picture(path))
+        && let Some(Embedded::Picture(url)) = embed(Graphic::Picture(cover))?
+    {
+        writeln!(sink, "<p><img src=\"{url}\" alt=\"Cover\"></p>")?;
     }
     writeln!(sink, "<h1>{title}</h1>")?;
     if !book.chapters().is_empty() {
@@ -273,7 +411,7 @@ pub(super) fn write_html(book: &Book, sink: &mut impl std::io::Write) -> Result<
         writeln!(
             sink,
             "<article>{}</article>",
-            chapter_html(book, index, &Layout::SingleFile, &mut image_url)?
+            chapter_html(book, index, &Layout::SingleFile, &mut embed)?
         )?;
     }
     writeln!(sink, "</body></html>")?;
@@ -282,9 +420,8 @@ pub(super) fn write_html(book: &Book, sink: &mut impl std::io::Write) -> Result<
 
 fn png_data_url(
     entry: std::collections::hash_map::Entry<'_, String, String>,
-    picture: &Picture,
+    picture: &mbook::Picture,
 ) -> Result<String> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
     use std::collections::hash_map::Entry;
 
     Ok(match entry {
@@ -302,23 +439,25 @@ fn png_data_url(
 }
 
 pub(super) fn write_markdown(book: &Book, sink: &mut impl std::io::Write) -> Result<()> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
     use pulldown_cmark_to_cmark::cmark;
 
     writeln!(sink, "# {}", crate::markdown::escape(book.meta().title()))?;
-    let image_url = |picture: &Picture| {
-        Ok(format!(
-            "data:image/avif;base64,{}",
-            STANDARD.encode(picture.data())
-        ))
+    let avif_data_url = |picture: &mbook::Picture| {
+        format!("data:image/avif;base64,{}", STANDARD.encode(picture.data()))
     };
     if let Some(cover) = book.meta().cover().and_then(|path| book.picture(path)) {
-        writeln!(sink, "\n![Cover]({})", image_url(cover)?)?;
+        writeln!(sink, "\n![Cover]({})", avif_data_url(cover))?;
     }
+    let mut drawings = Drawings::new(Format::Markdown, TEXT, DENSITY);
+    let mut figures = HashMap::new();
     for index in 0..book.chapters().len() {
+        let embed = |graphic| match graphic {
+            Graphic::Picture(picture) => Ok(Some(Embedded::Picture(avif_data_url(picture)))),
+            figure => figure_data_url(&mut drawings, &mut figures, figure),
+        };
         let mut body = String::new();
         cmark(
-            events(book, index, &Layout::SingleFile, image_url)?,
+            events(book, index, &Layout::SingleFile, embed)?,
             &mut body,
             super::parser_options(),
         )

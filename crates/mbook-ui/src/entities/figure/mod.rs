@@ -1,7 +1,8 @@
 //! Diagrams and formulas of a book, drawn as SVG.
 //!
 //! A book stores a diagram as Mermaid notation and a formula as the notation
-//! of `KaTeX` (RFC 0001, "Diagram and formula resources"). Everything here is
+//! of `KaTeX` (RFC 0001, "Diagram and formula resources"). The drawing is
+//! that of `mbook_converter::figure`, the one export uses. Everything here is
 //! synchronous and meant to run on a background task: [`render`] turns a
 //! source into a [`Figure`], an SVG document with its size, in the colours of
 //! the page it will stand on. What was drawn is kept in a bounded cache, so
@@ -11,20 +12,17 @@
 //! document at the density of the screen.
 
 mod cache;
-mod diagram;
-mod error;
-mod formula;
-mod glyphs;
 mod svg;
 mod table;
 
 use std::sync::{Arc, Mutex};
 
 use gpui_kit::{Hsla, Image, Rgba};
+use mbook_converter::figure;
 
 use crate::shared::theme::PageTone;
 
-pub(crate) use error::FigureError;
+pub(crate) use figure::{FigureError, Setting};
 pub(crate) use table::{FigureSource, FigureSources, Figures, ImageReference};
 
 /// What a figure is drawn from.
@@ -52,15 +50,6 @@ impl FigureKind {
             Self::Formula => ("math", "tex"),
         }
     }
-}
-
-/// How a figure stands in the text.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Setting {
-    /// Alone in a paragraph: a formula is set as a display formula.
-    Block,
-    /// Inside a line: a formula is set in the style of running text.
-    Line,
 }
 
 /// The colours a figure is drawn in, as `0xRRGGBB`.
@@ -111,35 +100,16 @@ impl Palette {
         ink: 0x001b_1b1b,
         page: 0x00ff_ffff,
     };
-
-    /// A colour between the page and the ink: `part` of 0 is the page and
-    /// 1 the ink.
-    fn mix(self, part: f32) -> u32 {
-        let channel = |shift: u32| {
-            let page = f32::from(u8::try_from((self.page >> shift) & 0xff).unwrap_or(0));
-            let ink = f32::from(u8::try_from((self.ink >> shift) & 0xff).unwrap_or(0));
-            let mixed = (page + (ink - page) * part).round().clamp(0.0, 255.0);
-            #[expect(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "the value was clamped to the range of a byte"
-            )]
-            let byte = mixed as u32;
-            byte << shift
-        };
-        channel(16) | channel(8) | channel(0)
-    }
-
-    /// Whether the page is darker than its text.
-    fn is_dark(self) -> bool {
-        let light = |colour: u32| (colour >> 16 & 0xff) + (colour >> 8 & 0xff) + (colour & 0xff);
-        light(self.page) < light(self.ink)
-    }
 }
 
-/// `#rrggbb` for a colour.
-fn hex(colour: u32) -> String {
-    format!("#{:06x}", colour & 0x00ff_ffff)
+impl From<Palette> for figure::Palette {
+    /// The colours the renderer is given.
+    fn from(palette: Palette) -> Self {
+        Self {
+            ink: palette.ink,
+            page: palette.page,
+        }
+    }
 }
 
 /// A diagram or a formula that was drawn: an SVG document and its measures.
@@ -161,10 +131,13 @@ pub(crate) struct Figure {
     sized: Mutex<Option<(u32, Arc<Image>)>>,
 }
 
-impl Figure {
-    fn new(svg: String, (width, height): (f32, f32), baseline: f32, em: f32) -> Self {
+impl From<figure::Figure> for Figure {
+    /// A drawing of the renderer, ready to be shown.
+    fn from(drawn: figure::Figure) -> Self {
+        let (width, height, baseline, em) =
+            (drawn.width(), drawn.height(), drawn.baseline(), drawn.em());
         Self {
-            svg,
+            svg: drawn.into_svg(),
             width,
             height,
             baseline,
@@ -172,7 +145,9 @@ impl Figure {
             sized: Mutex::new(None),
         }
     }
+}
 
+impl Figure {
     /// The document as it was drawn.
     #[cfg(test)]
     pub(crate) fn svg(&self) -> &str {
@@ -239,16 +214,12 @@ pub(crate) fn render(
         FigureKind::Formula => setting,
     };
     cache::get_or_draw((kind, setting, palette), source, || {
-        if source.is_empty() {
-            return Err(FigureError::Empty);
-        }
-        // The renderers are given whatever a book holds; a panic in one of
-        // them must not take the application down.
-        let drawn = std::panic::catch_unwind(|| match kind {
-            FigureKind::Diagram => diagram::draw(source, palette),
-            FigureKind::Formula => formula::draw(source, setting, palette),
-        });
-        drawn.unwrap_or(Err(FigureError::Renderer))
+        // The renderer refuses an empty source and catches its own panics.
+        let drawn = match kind {
+            FigureKind::Diagram => figure::diagram(source, palette.into()),
+            FigureKind::Formula => figure::formula(source, setting, palette.into()),
+        };
+        drawn.map(Figure::from)
     })
 }
 
@@ -262,23 +233,6 @@ mod tests {
     };
 
     #[test]
-    fn a_colour_between_page_and_ink_is_mixed_by_channel() {
-        let palette = Palette {
-            ink: 0x0000_0000,
-            page: 0x00ff_8040,
-        };
-        assert_eq!(palette.mix(0.0), 0x00ff_8040);
-        assert_eq!(palette.mix(1.0), 0);
-        assert_eq!(palette.mix(0.5), 0x0080_4020);
-    }
-
-    #[test]
-    fn a_page_darker_than_its_text_is_dark() {
-        assert!(!Palette::PAPER.is_dark());
-        assert!(NIGHT.is_dark());
-    }
-
-    #[test]
     fn a_palette_is_made_of_a_page_tone_and_of_gpui_colours() {
         for tone in PageTone::ALL {
             let (page, ink) = crate::shared::ui::page_colors(tone);
@@ -287,8 +241,9 @@ mod tests {
     }
 
     #[test]
-    fn a_colour_is_written_as_six_hex_digits() {
-        assert_eq!(hex(0x0000_0a0b), "#000a0b");
+    fn the_renderer_is_given_the_colours_of_the_palette() {
+        let colours = figure::Palette::from(NIGHT);
+        assert_eq!((colours.ink, colours.page), (NIGHT.ink, NIGHT.page));
     }
 
     #[test]

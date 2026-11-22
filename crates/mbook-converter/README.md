@@ -140,6 +140,15 @@ let sink = BufWriter::new(File::create("example.epub")?);
 Converter::export(&book, Format::Epub, sink)?;
 ```
 
+### Draw a diagram or a formula
+
+```rust
+use mbook_converter::figure::{self, Palette, Setting};
+
+let formula = figure::formula(r"v = \frac{s}{t}", Setting::Block, Palette::default())?;
+std::fs::write("speed.svg", formula.svg())?;
+```
+
 ## Formats
 
 Each import format has a Cargo feature enabled by default. The optional
@@ -155,6 +164,10 @@ Each import format has a Cargo feature enabled by default. The optional
 | `html` | One HTML document | `htmd` | One self-contained document |
 | `md` | One Markdown document | `markdown` | One document with AVIF data URLs |
 | `txt` | Plain text | | UTF-8 text in reading order |
+
+Every output but plain text shows the Mermaid diagrams and KaTeX formulas
+of a book as PNG pictures, drawn by the `figure` module, which the `export`
+feature enables as well; plain text keeps their alternative text.
 
 ```toml
 # Only EPUB and FB2

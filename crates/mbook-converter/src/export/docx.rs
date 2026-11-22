@@ -3,13 +3,26 @@
 use std::io::{Cursor, Write};
 
 use docx_rs::{BreakType, Docx, Paragraph, Pic, Run, RunFonts, Style, StyleType};
-use mbook::{Book, Meta, Picture};
+use mbook::{Book, Meta};
 use xmlwriter::{Options, XmlWriter};
 
 use super::blocks::{self, Inline};
-use super::{Format, Result, export_error, picture};
+use super::graphic::{Drawings, Drawn, Graphic};
+use super::{Format, Result, export_error};
+
+/// The size of the body text of Word, 11 points, in the pixels of 1/96 inch
+/// that `docx-rs` measures pictures in.
+const TEXT: f32 = 11.0 * 96.0 / 72.0;
+/// The pixels of a figure for each pixel it takes on the page.
+const DENSITY: f32 = 2.0;
+/// The English Metric Units of a pixel of 1/96 inch.
+const EMU_PER_PIXEL: f32 = 9525.0;
+/// The longest edge of a picture: about the width of a page between its
+/// margins.
+const LONGEST_EDGE: u32 = 5_650_000;
 
 pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
+    let mut drawings = Drawings::new(Format::Docx, TEXT, DENSITY);
     let mut document = Docx::new().add_paragraph(
         Paragraph::new().add_run(Run::new().add_text(book.meta().title()).size(44).bold()),
     );
@@ -23,8 +36,10 @@ pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
                 .bold(),
         );
     }
-    if let Some(cover) = book.meta().cover().and_then(|path| book.picture(path)) {
-        document = document.add_paragraph(Paragraph::new().add_run(picture_run(cover)?));
+    if let Some(cover) = book.meta().cover().and_then(|path| book.picture(path))
+        && let Some(drawn) = drawings.draw(Graphic::Picture(cover))?
+    {
+        document = document.add_paragraph(Paragraph::new().add_run(picture_run(&drawn)));
     }
     for chapter in book.chapters() {
         for block in blocks::chapter(book, chapter) {
@@ -35,7 +50,10 @@ pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
             for span in block.content {
                 let run = match span {
                     Inline::Text(text, style) => text_run(&text, style),
-                    Inline::Picture(picture, _) => picture_run(picture)?,
+                    Inline::Graphic(graphic, alt) => match drawings.draw(graphic)? {
+                        Some(drawn) => picture_run(&drawn),
+                        None => text_run(&alt, blocks::Style::default()),
+                    },
                 };
                 paragraph = paragraph.add_run(run);
             }
@@ -75,22 +93,33 @@ fn text_run(text: &str, style: blocks::Style) -> Run {
     run
 }
 
-fn picture_run(picture: &Picture) -> Result<Run> {
-    let png = picture::png(picture, Format::Docx)?;
-    let picture = Pic::new_with_dimensions(png.bytes, png.width, png.height);
-    let (width, height) = picture.size;
-    let limit = 5_650_000;
-    let pic = if width.max(height) > limit {
-        let scale = |edge| {
-            u32::try_from(u64::from(edge) * u64::from(limit) / u64::from(width.max(height)))
-                .unwrap_or(limit)
+fn picture_run(drawn: &Drawn) -> Run {
+    let picture =
+        Pic::new_with_dimensions(drawn.png.bytes.clone(), drawn.png.width, drawn.png.height);
+    let (width, height) = (emu(drawn.width), emu(drawn.height));
+    let longest = width.max(height).max(1);
+    let scale = |edge: u32| {
+        if longest > LONGEST_EDGE {
+            u32::try_from(u64::from(edge) * u64::from(LONGEST_EDGE) / u64::from(longest))
+                .unwrap_or(LONGEST_EDGE)
                 .max(1)
-        };
-        picture.size(scale(width), scale(height))
-    } else {
-        picture
+        } else {
+            edge.max(1)
+        }
     };
-    Ok(Run::new().add_image(pic))
+    Run::new().add_image(picture.size(scale(width), scale(height)))
+}
+
+/// A length in pixels as English Metric Units.
+fn emu(pixels: f32) -> u32 {
+    let emu = (pixels * EMU_PER_PIXEL).round().clamp(0.0, 4_294_967_040.0);
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the value was clamped to the range of `u32`"
+    )]
+    let emu = emu as u32;
+    emu
 }
 
 fn metadata(meta: &Meta) -> Vec<u8> {

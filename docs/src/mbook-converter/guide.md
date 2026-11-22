@@ -68,6 +68,26 @@ Converter::export(&book, Format::Epub, sink)?;
 Enable the converter’s `export` feature to use this call. An application can
 pass a book already in memory and use `Format::extension()` for the suggested
 file name. `Format::is_enabled()` reports which import formats are enabled.
+Diagrams and formulas are written as pictures; one that cannot be drawn
+becomes its alternative text.
+
+## Drawing a diagram or a formula
+
+```rust
+use mbook_converter::figure::{self, Palette, Setting};
+
+let night = Palette { ink: 0xb8b8b8, page: 0x000000 };
+let diagram = figure::diagram("flowchart LR\n  A --> B", night)?;
+let formula = figure::formula(r"v = \frac{s}{t}", Setting::Line, night)?;
+
+// Scale both to text of 18 pixels.
+let width = formula.width() * 18.0 / formula.em();
+std::fs::write("flow.svg", diagram.svg())?;
+```
+
+The same `export` feature enables `figure`. A reader gives the colours of
+its page and scales the figure to its text; a formula inside a line is set
+with `Setting::Line` and placed on the line at `baseline()`.
 
 ## Choosing formats and settings
 

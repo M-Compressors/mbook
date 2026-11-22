@@ -53,10 +53,7 @@ several packages share.
 | `avif-decode` | 3.0.0, 2026-09-20 | BSD-3-Clause | Decoding pictures; Rust 1.98 |
 | `image` | The version and features of the workspace; GPUI brings the same crate | MIT OR Apache-2.0 | Decoding and AVIF encoding of pictures added in the editor; scaling |
 | `futures` | already in the tree of GPUI | MIT OR Apache-2.0 | The channel of the editing task |
-| `merman` | 0.11.0 | MIT OR Apache-2.0 | Draws Mermaid as SVG |
 | `tree-sitter-mermaid`, `codebook-tree-sitter-latex` | 0.3.5 and 0.6.1 | MIT | Syntax highlighting in the Mermaid and KaTeX source dialogs |
-| `ratex-parser`, `ratex-layout`, `ratex-types`, `ratex-svg`, `ratex-font`, `ratex-unicode-font` | 0.1.16 | MIT | Parses and sets KaTeX as SVG with embedded glyph outlines |
-| `ab_glyph`, `serde_json` | 0.2 and 1 | Apache-2.0 and MIT OR Apache-2.0, respectively | System glyph metrics, Mermaid configuration and traversing the formula tree |
 | `uuid`, `tempfile`, `thiserror`, `markdown` | The versions of the workspace | | Keys; files of imports; errors; block offsets |
 
 `avif-decode` brings `rav1d` (BSD-2-Clause, a port of dav1d to Rust; last
@@ -138,7 +135,7 @@ Ruled out:
 | Minimum Rust version | 1.100 for this package | The 1.89 of the workspace | Decided by the format author. `avif-decode` needs 1.98 and `redb` 1.90; an application is built by its maintainers, not by users of a library. |
 | Typeface of books | Bundled Literata and Noto Sans, plus System and installed choices | Only installed families | Rendering is available offline on a fresh installation. |
 | Building a release | A workflow started by hand for a tag | Building on every tag | Decided by the format author. The workflow publishes the libraries for the tag before building the application. |
-| Drawing diagrams and formulas | Render source with merman and RaTeX, then give SVG to GPUI | Convert sources to AVIF; render with a web view | SVG lets the reader choose its own page colours and sizes. The source remains editable and rendering stays local. |
+| Drawing diagrams and formulas | Render source with the `figure` module of `mbook-converter` (merman and RaTeX), then give SVG to GPUI | Convert sources to AVIF; render with a web view | SVG lets the reader choose its own page colours and sizes. The source remains editable and rendering stays local. |
 | Pictures added in the editor | Encoded here, with `image` | A public encoder in `mbook-converter` | Decided by the format author. The API of `mbook-converter` stays as it is; the price is that quality and speed are written in two crates. |
 | Size class under a scaled interface | Width divided by the scale | Width in pixels | At 200% a desktop window has room for the compact layout only; clipping or a horizontal scroll bar fails WCAG 1.4.10. |
 | Reordering chapters | A drag, and "Move up" and "Move down" | A drag alone | WCAG 2.5.7: a drag needs an alternative. |

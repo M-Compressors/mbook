@@ -44,7 +44,12 @@
 //! refused with [`Error::FormatDisabled`].
 //!
 //! The opt-in `export` feature enables writing all eight formats, including
-//! their picture codecs. It currently requires Rust 1.98 or later.
+//! their picture codecs, and [`figure`], which draws the diagrams and
+//! formulas of a book. It currently requires Rust 1.98 or later.
+//!
+// Without `export`, the link to `figure` leads to the table above instead.
+// The empty doc line above is what lets the definition start a new block.
+#![cfg_attr(not(feature = "export"), doc = "[`figure`]: #features")]
 
 #[cfg(not(any(
     feature = "epub",
@@ -68,6 +73,8 @@ mod encoding;
 mod error;
 #[cfg(feature = "export")]
 mod export;
+#[cfg(feature = "export")]
+pub mod figure;
 mod format;
 mod formats;
 mod markdown;

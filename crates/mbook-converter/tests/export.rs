@@ -274,3 +274,233 @@ fn a_pdf_creates_more_pages_when_the_text_exceeds_one_page() -> Outcome {
     assert!(unpdf::PdfParser::from_bytes(&bytes)?.page_count() > 1);
     Ok(())
 }
+
+/// A book with a diagram and a formula alone in their paragraphs, a formula
+/// inside a line, and a formula that cannot be set.
+fn figures() -> Result<Book, Box<dyn std::error::Error>> {
+    let mut book = Book::new("Figures", "en")?;
+    book.add_diagram(
+        "dia/route.mmd",
+        "flowchart LR\n  A[Station] --> B[Letter]\n",
+    )?;
+    book.add_formula("math/speed.tex", r"v = \frac{s}{t}")?;
+    book.add_formula("math/broken.tex", r"\frac{")?;
+    book.add_chapter(
+        "one.md",
+        "# Figures\n\n![The route](dia/route.mmd \"The way\")\n\n![speed is distance over time](math/speed.tex)\n\nThe train kept ![v = s / t](math/speed.tex) all the way.\n\n![an unfinished fraction](math/broken.tex)\n",
+    )?;
+    Ok(book)
+}
+
+fn zip_entries(bytes: Vec<u8>) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let zip = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let names = zip
+        .file_names()
+        .map(|name| name.map(std::borrow::Cow::into_owned))
+        .collect::<Result<_, _>>()?;
+    Ok(names)
+}
+
+fn is_png(name: &str) -> bool {
+    std::path::Path::new(name)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
+}
+
+fn zip_text(bytes: &[u8], name: &str) -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::Read as _;
+
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+    let mut text = String::new();
+    zip.by_name(name)?.read_to_string(&mut text)?;
+    Ok(text)
+}
+
+#[test]
+fn an_html_document_shows_diagrams_and_formulas_as_pictures() -> Outcome {
+    let data = export(&figures()?, Format::Html)?;
+    let html = std::str::from_utf8(&data)?;
+    let figures = html.matches("<img src=\"data:image/png;base64,").count();
+    assert_eq!(figures, 3, "{html}");
+    assert!(html.contains("alt=\"The route\""), "{html}");
+    assert!(html.contains("title=\"The way\""), "{html}");
+    assert!(html.contains("alt=\"v = s / t\""), "{html}");
+    Ok(())
+}
+
+#[test]
+fn a_formula_alone_in_a_paragraph_is_set_apart_and_one_in_a_line_on_its_baseline() -> Outcome {
+    let data = export(&figures()?, Format::Html)?;
+    let html = std::str::from_utf8(&data)?;
+    let tag = |alt: &str| -> Result<String, Box<dyn std::error::Error>> {
+        let at = html.find(&format!("alt=\"{alt}\"")).ok_or(alt.to_owned())?;
+        let start = html[..at].rfind("<img").ok_or("no tag")?;
+        let end = at + html[at..].find("/>").ok_or("no end")?;
+        Ok(html[start..end].to_owned())
+    };
+    let display = tag("speed is distance over time")?;
+    let inline = tag("v = s / t")?;
+    assert!(display.contains("display: block"), "{display}");
+    assert!(inline.contains("vertical-align: -"), "{inline}");
+    assert_ne!(display, inline);
+    Ok(())
+}
+
+#[test]
+fn a_formula_that_cannot_be_set_is_exported_as_its_alternative_text() -> Outcome {
+    let data = export(&figures()?, Format::Html)?;
+    let html = std::str::from_utf8(&data)?;
+    assert!(html.contains("<p>an unfinished fraction</p>"), "{html}");
+    Ok(())
+}
+
+#[test]
+fn an_epub_carries_diagrams_and_formulas_as_png_resources() -> Outcome {
+    let bytes = export(&figures()?, Format::Epub)?;
+    let names = zip_entries(bytes.clone())?;
+    let figures: Vec<_> = names
+        .iter()
+        .filter(|name| name.starts_with("OEBPS/figure-") && is_png(name))
+        .collect();
+    // The diagram, the display formula and the inline formula.
+    assert_eq!(figures.len(), 3, "{names:?}");
+    let chapter = zip_text(&bytes, "OEBPS/chapter-1.xhtml")?;
+    assert!(chapter.contains("<img src=\"figure-1.png\""), "{chapter}");
+    let package = zip_text(&bytes, "OEBPS/content.opf")?;
+    assert!(package.contains("figure-1.png"), "{package}");
+    Ok(())
+}
+
+#[test]
+fn a_fictionbook_document_carries_diagrams_and_formulas_as_binaries() -> Outcome {
+    let data = export(&figures()?, Format::Fb2)?;
+    let xml = std::str::from_utf8(&data)?;
+    assert_eq!(xml.matches("<binary ").count(), 3, "{xml}");
+    assert!(xml.contains("<image xlink:href=\"#figure-1.png\" alt=\"The route\"/>"));
+    assert!(xml.contains("an unfinished fraction"));
+    Ok(())
+}
+
+#[test]
+fn a_word_document_embeds_diagrams_and_formulas() -> Outcome {
+    let bytes = export(&figures()?, Format::Docx)?;
+    let media: Vec<_> = zip_entries(bytes)?
+        .into_iter()
+        .filter(|name| name.starts_with("word/media/") && is_png(name))
+        .collect();
+    assert_eq!(media.len(), 3, "{media:?}");
+    Ok(())
+}
+
+#[test]
+fn a_pdf_draws_diagrams_and_formulas() -> Outcome {
+    use unpdf::{ParseOptions, PdfParser};
+
+    let bytes = export(&figures()?, Format::Pdf)?;
+    let options = ParseOptions::new()
+        .with_resources(true)
+        .with_min_image_dimension(0);
+    let document = PdfParser::from_bytes_with_options(&bytes, options)?.parse()?;
+    let images = document
+        .resources()
+        .filter(|(_, resource)| resource.is_image())
+        .count();
+    assert_eq!(images, 3);
+    Ok(())
+}
+
+#[test]
+fn a_markdown_document_shows_diagrams_and_formulas_as_png_pictures() -> Outcome {
+    let data = export(&figures()?, Format::Markdown)?;
+    let source = std::str::from_utf8(&data)?;
+    assert_eq!(
+        source.matches("<img src=\"data:image/png;base64,").count(),
+        3,
+        "{source}"
+    );
+    assert!(source.contains("an unfinished fraction"));
+    Ok(())
+}
+
+#[test]
+fn a_text_document_keeps_the_alternative_text_of_figures() -> Outcome {
+    let data = export(&figures()?, Format::Text)?;
+    let text = std::str::from_utf8(&data)?;
+    assert!(text.contains("The route\n"));
+    assert!(text.contains("The train kept v = s / t all the way."));
+    Ok(())
+}
+
+fn repeated_formula() -> Result<Book, Box<dyn std::error::Error>> {
+    let mut book = Book::new("Repeated", "en")?;
+    book.add_formula("math/speed.tex", r"v = \frac{s}{t}")?;
+    book.add_chapter(
+        "one.md",
+        "First ![v](math/speed.tex) and again ![v](math/speed.tex).\n",
+    )?;
+    Ok(book)
+}
+
+#[test]
+fn an_epub_stores_a_figure_shown_twice_once() -> Outcome {
+    let bytes = export(&repeated_formula()?, Format::Epub)?;
+    let figures = zip_entries(bytes.clone())?
+        .into_iter()
+        .filter(|name| name.starts_with("OEBPS/figure-") && is_png(name))
+        .count();
+    assert_eq!(figures, 1);
+    let chapter = zip_text(&bytes, "OEBPS/chapter-1.xhtml")?;
+    assert_eq!(chapter.matches("src=\"figure-1.png\"").count(), 2);
+    Ok(())
+}
+
+#[test]
+fn a_fictionbook_document_stores_a_figure_shown_twice_once() -> Outcome {
+    let data = export(&repeated_formula()?, Format::Fb2)?;
+    let xml = std::str::from_utf8(&data)?;
+    assert_eq!(xml.matches("<binary ").count(), 1);
+    assert_eq!(xml.matches("xlink:href=\"#figure-1.png\"").count(), 2);
+    Ok(())
+}
+
+#[test]
+fn the_alternative_text_of_a_figure_is_its_words_on_one_line() -> Outcome {
+    let mut book = Book::new("Alternative text", "en")?;
+    book.add_formula("math/speed.tex", r"v = \frac{s}{t}")?;
+    book.add_chapter(
+        "one.md",
+        "See ![speed is\ndistance over `time` ![v](math/speed.tex)](math/speed.tex) here.\n",
+    )?;
+    let data = export(&book, Format::Html)?;
+    let html = std::str::from_utf8(&data)?;
+    assert!(
+        html.contains("alt=\"speed is distance over time v\""),
+        "{html}"
+    );
+    assert_eq!(html.matches("<img ").count(), 1, "{html}");
+    assert!(html.contains("\" /> here."), "{html}");
+    Ok(())
+}
+
+#[test]
+fn a_word_document_fits_a_wide_diagram_to_the_page() -> Outcome {
+    let mut book = Book::new("Wide", "en")?;
+    let chain: Vec<_> = (0..16)
+        .map(|step| format!("S{step}[Step number {step}]"))
+        .collect();
+    book.add_diagram(
+        "dia/wide.mmd",
+        format!("flowchart LR\n  {}\n", chain.join(" --> ")),
+    )?;
+    book.add_chapter("one.md", "![A long chain](dia/wide.mmd)\n")?;
+    let bytes = export(&book, Format::Docx)?;
+    let document = zip_text(&bytes, "word/document.xml")?;
+    let width: u64 = document
+        .split("cx=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .ok_or("no picture extent")?
+        .parse()?;
+    assert_eq!(width, 5_650_000, "{document}");
+    Ok(())
+}

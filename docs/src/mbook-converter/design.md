@@ -32,8 +32,9 @@ open.
 ## Dependencies
 
 Every dependency was checked on 2026-11-21 against crates.io and its
-repository: the version in use is the latest one, and the column "Last
-release" shows how alive the crate is.
+repository, and those of figures on 2026-11-22: the version in use is the
+latest one unless the notes say otherwise, and the column "Last release"
+shows how alive the crate is.
 
 | Need | Crate | License | Last release | Notes |
 | --- | --- | --- | --- | --- |
@@ -52,6 +53,10 @@ release" shows how alive the crate is.
 | Text encodings | `encoding_rs` 0.8, `chardetng` 1 | Apache-2.0 OR MIT | 2026-10, 2026-03 | |
 | Name-based UUID | `uuid` 1 with `v5` | Apache-2.0 OR MIT | 2026-11 | Already in the workspace. |
 | Error types | `thiserror` 2 | MIT OR Apache-2.0 | 2026-09 | Already in the workspace. |
+| Mermaid diagrams as SVG (`export`) | `merman` 0.11, without default features, with `all-diagrams`, `svg` and `layout-cytoscape` | MIT OR Apache-2.0 | 2026-11 | Without ELK, whose layout is EPL-2.0, and without math in labels. Moved from `mbook-ui` on 2026-11-22. |
+| KaTeX formulas as SVG (`export`) | `ratex-parser`, `ratex-layout`, `ratex-types`, `ratex-svg` with `embed-fonts`, `ratex-font`, `ratex-unicode-font` 0.1 | MIT | 2026-11 | Glyphs as outlines. Moved from `mbook-ui`. |
+| Glyph metrics of system fonts; the configuration of `merman` and the walk over a parsed formula (`export`) | `ab_glyph` 0.2, `serde_json` 1 | Apache-2.0; MIT OR Apache-2.0 | 2025-09, 2026-10 | Moved from `mbook-ui`. |
+| Rasterising a drawn figure for the writers (`export`) | `resvg` 0.46 with `text`, `system-fonts` and `memmap-fonts` | Apache-2.0 OR MIT | 2026-11 | 0.50 is the latest release; 0.46 is the version GPUI depends on, so the application keeps one copy of `resvg`, `usvg` and `fontdb`. Without `raster-images`: a drawn figure holds no pictures. |
 
 The format author accepted dependencies under BSD-2-Clause and BSD-3-Clause
 on 2026-11-21: they ask only that the license text is kept. `image` itself
@@ -174,6 +179,10 @@ Crates that were looked at and ruled out:
 | CBZ pages | Rasterize the paginated edition with `unpdf` | Export only embedded pictures | A text-only book also produces readable pages. |
 | Export feature | One opt-in feature for all writers | An export switch for each format or writing enabled by default | One dependency setting enables every output while the import-only build keeps its dependency set and minimum Rust version. |
 | Export picture decoding | `avif-decode` 3 on rav1d | `image` with `avif-native` or `avif-decode` 1 with libaom | The feature shares the decoder with the application. `avif-native` links to system dav1d, and the older decoder builds libaom with CMake. |
+| Diagrams and formulas in an export | Drawn as SVG and written as PNG pictures | Their alternative text, the earlier behaviour; SVG pictures; Mermaid fences and `$…$` in Markdown | Decided by the format author on 2026-11-22: figures go out as pictures. FictionBook and many Word and EPUB readers show no SVG, and an SVG diagram depends on the fonts of the reader for its labels; PNG looks the same everywhere. |
+| Where figures are drawn | The public `figure` module of this crate, used by export and by `mbook-ui` | A private copy for export beside the one of `mbook-ui`; a crate of its own | Decided by the format author on 2026-11-22. One renderer, so an export looks like the reader; the cost is four public items under `export`. A crate of its own would be published and versioned for two users. |
+| A figure that cannot be drawn | Its alternative text, and the export goes on | An export error | RFC 0001 lets a reader show the alternative text; a book with one broken formula is still worth exporting. A picture that cannot be decoded still fails the export, as before. |
+| The size of a figure in an export | Scaled to the body text of the output, drawn at two pixels per unit | The pixels of the drawing as they are | A formula drawn for 20-pixel text would stand out of a 16-pixel line, and a single pixel per unit blurs on a dense screen. |
 
 ## Prior art
 

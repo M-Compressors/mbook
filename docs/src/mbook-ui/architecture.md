@@ -314,8 +314,9 @@ References to diagrams and formulas use the
 [Markdown image syntax of RFC 0001](../rfcs/0001-mbook-format.md#diagram-and-formula-resources).
 The source dialogs use GPUI Kit's code editor with Tree-sitter grammars for
 Mermaid and LaTeX. The highlighting is independent of rendering.
-The application uses `merman` for Mermaid and RaTeX for KaTeX. It renders
-the source on a background task and passes SVG to GPUI. A bounded cache
+The application draws with the `figure` module of `mbook-converter`, the
+one export uses: `merman` for Mermaid and RaTeX for KaTeX. It renders the
+source on a background task and passes SVG to GPUI. A bounded cache
 is keyed by source, page colours and formula style.
 
 The Markdown view centres a block figure, fits its drawing to the column

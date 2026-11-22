@@ -1,9 +1,10 @@
 //! The reading order and common inline content used by non-HTML writers.
 
-use mbook::{Book, Chapter, Picture};
+use mbook::{Book, Chapter};
 use pulldown_cmark::{Event, Tag, TagEnd};
 
-use super::{linked_picture, parser};
+use super::graphic::Graphic;
+use super::{alone, linked_graphic, parser, setting};
 
 #[derive(Default)]
 pub(super) struct Block<'a> {
@@ -28,7 +29,8 @@ pub(super) enum Code {
 
 pub(super) enum Inline<'a> {
     Text(String, Style),
-    Picture(&'a Picture, String),
+    /// A picture, a diagram or a formula, and its alternative text.
+    Graphic(Graphic<'a>, String),
 }
 
 impl Block<'_> {
@@ -44,15 +46,16 @@ pub(super) fn chapter<'a>(book: &'a Book, chapter: &'a Chapter) -> Vec<Block<'a>
     let mut block = Block::default();
     let mut style = Style::default();
     let mut lists = Vec::new();
-    let mut image: Option<(Option<&Picture>, String)> = None;
+    let mut image: Option<(Option<Graphic<'a>>, String)> = None;
     let mut table_cell = false;
-    for event in parser(chapter) {
-        if let Some((picture, alt)) = &mut image {
+    let alone = alone(chapter);
+    for (event, range) in parser(chapter).into_offset_iter() {
+        if let Some((graphic, alt)) = &mut image {
             match event {
                 Event::End(TagEnd::Image) => {
                     let alt = std::mem::take(alt);
-                    if let Some(picture) = *picture {
-                        block.content.push(Inline::Picture(picture, alt));
+                    if let Some(graphic) = *graphic {
+                        block.content.push(Inline::Graphic(graphic, alt));
                     } else {
                         block.text(alt, style);
                     }
@@ -67,7 +70,11 @@ pub(super) fn chapter<'a>(book: &'a Book, chapter: &'a Chapter) -> Vec<Block<'a>
         match event {
             Event::Start(Tag::Heading { level, .. }) => block.heading = Some(level as usize),
             Event::Start(Tag::Image { dest_url, .. }) => {
-                image = Some((linked_picture(book, chapter, &dest_url), String::new()));
+                let setting = setting(&alone, range.start);
+                image = Some((
+                    linked_graphic(book, chapter, &dest_url, setting),
+                    String::new(),
+                ));
             }
             Event::Start(Tag::List(number)) => lists.push(number),
             Event::End(TagEnd::List(_)) => {
@@ -151,7 +158,7 @@ pub(super) fn write_text(book: &Book, sink: &mut impl std::io::Write) -> crate::
             writeln!(sink)?;
             for inline in block.content {
                 let text = match inline {
-                    Inline::Text(text, _) | Inline::Picture(_, text) => text,
+                    Inline::Text(text, _) | Inline::Graphic(_, text) => text,
                 };
                 sink.write_all(text.as_bytes())?;
             }
