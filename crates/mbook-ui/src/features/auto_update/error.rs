@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::io;
+#[cfg(any(target_os = "macos", test))]
 use std::path::PathBuf;
 
 /// The error of a dependency, kept as the `source()` of an [`UpdateError`] so
@@ -20,16 +21,20 @@ pub(crate) enum UpdateError {
     #[error("the releases of the repository could not be asked")]
     Releases(#[source] Source),
     /// The archive of the release could not be downloaded.
+    #[cfg(any(target_os = "macos", target_os = "windows", test))]
     #[error("the update could not be downloaded")]
     Download(#[source] Source),
     /// The archive is not signed with the key of the application. Nothing was
     /// installed and the downloaded file is deleted.
+    #[cfg(any(target_os = "macos", target_os = "windows", test))]
     #[error("the signature of the update is not valid")]
     Signature(#[source] Source),
     /// The verified archive could not be unpacked.
+    #[cfg(any(target_os = "macos", target_os = "windows", test))]
     #[error("the update could not be unpacked")]
     Unpack(#[source] Source),
     /// The verified archive does not hold the file the platform installs.
+    #[cfg(any(target_os = "macos", target_os = "windows", test))]
     #[error("the update holds no {0}")]
     MissingInArchive(&'static str),
     /// A file or folder of the update could not be read, written or moved.
@@ -37,6 +42,7 @@ pub(crate) enum UpdateError {
     Io(#[from] io::Error),
     /// The running executable is not inside an application bundle, as it is
     /// when started by `cargo run`. A bare binary is never replaced.
+    #[cfg(any(target_os = "macos", test))]
     #[error("the running program is not inside an application bundle: {}", .path.display())]
     NotInBundle {
         /// The path of the running executable.

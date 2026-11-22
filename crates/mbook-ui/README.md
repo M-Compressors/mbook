@@ -11,7 +11,8 @@ says what exists.
 cargo run -p mbook-ui
 ```
 
-Requires **Rust 1.100 or later**.
+Requires **Rust 1.100 or later**. The AVIF decoder requires NASM at build
+time on x86 and x86-64.
 
 ## License
 

@@ -33,6 +33,12 @@
 
 ### Fixed
 
+- Install NASM for the x86 AVIF decoder in Linux CI and in the macOS and
+  Windows x64 release builds.
+- Compile the update installer only on platforms that use it, with its unit
+  tests still available on Linux.
+- Keep GPUI Kit's window buttons outside the headless accessibility
+  assertions for application controls.
 - Fit tall pictures within a reader page while keeping their proportions.
 - Command+S is available through File > Save on macOS. Save includes
   pending edits in the Details form.

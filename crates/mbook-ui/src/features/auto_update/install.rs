@@ -2,13 +2,17 @@
 
 #[cfg(any(target_os = "macos", test))]
 use std::fs;
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 use std::path::{Path, PathBuf};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::time::Duration;
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use self_update::Download;
 
 use super::check::Update;
 use super::error::UpdateError;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use super::verify;
 use crate::shared::roots::Roots;
 
@@ -19,8 +23,10 @@ const APP: &str = "mbook.app";
 #[cfg(target_os = "windows")]
 const MSI: &str = "mbook.msi";
 /// More than any archive of a release: a server cannot fill the disk.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 /// How long a download may take.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const DOWNLOAD_TIME: Duration = Duration::from_mins(15);
 
 /// What the application does after an update was installed.
@@ -42,8 +48,10 @@ pub(crate) enum Installed {
 
 /// A downloaded file that is deleted when it goes out of scope, whether the
 /// update was installed, refused or failed half way.
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 struct Downloaded(PathBuf);
 
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 impl Drop for Downloaded {
     fn drop(&mut self) {
         // The file may not exist (the download did not start) or is already
@@ -64,11 +72,11 @@ impl Drop for Downloaded {
 ///
 /// # Errors
 ///
-/// [`UpdateError::NotInBundle`] when the executable is not inside an
-/// application bundle (macOS); [`UpdateError::Download`] when the archive
-/// cannot be downloaded; [`UpdateError::Signature`] when it is not signed with
-/// the key of the application; [`UpdateError::Unpack`],
-/// [`UpdateError::MissingInArchive`] and [`UpdateError::Io`] when it cannot be
+/// `UpdateError::NotInBundle` when the executable is not inside an
+/// application bundle (macOS); `UpdateError::Download` when the archive
+/// cannot be downloaded; `UpdateError::Signature` when it is not signed with
+/// the key of the application; `UpdateError::Unpack`,
+/// `UpdateError::MissingInArchive` and [`UpdateError::Io`] when it cannot be
 /// installed; [`UpdateError::Unsupported`] on a system without an installer.
 pub(crate) fn install(update: &Update, roots: &Roots) -> Result<Installed, UpdateError> {
     install_here(update, roots)

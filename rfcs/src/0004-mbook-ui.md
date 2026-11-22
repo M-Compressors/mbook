@@ -895,8 +895,9 @@ several packages share.
 | `uuid`, `tempfile`, `thiserror`, `markdown` | The versions of the workspace | | Keys; files of imports; errors; block offsets |
 
 `avif-decode` brings `rav1d` (BSD-2-Clause, a port of dav1d to Rust; last
-release 1.1.0 of 2025-05-07) and `avif-parse` (MPL-2.0). Literata is not a
-crate: its font files are added to the repository under the SIL Open Font
+release 1.1.0 of 2025-05-07) and `avif-parse` (MPL-2.0). The assembly
+enabled by `avif-decode` for x86 and x86-64 requires NASM at build time.
+Literata's font files are added to the repository under the SIL Open Font
 License 1.1.
 
 Ruled out:
@@ -927,7 +928,8 @@ Ruled out:
   - a unit test computes the contrast of every pair of tokens that
     [Accessibility](#accessibility) puts together;
   - for each screen a test reads the accessibility tree of a headless
-    window and checks that every control has a role and a name;
+    window and checks that every application control has a role and a
+    name. The window buttons drawn by GPUI Kit are outside this check;
   - for each screen a test completes its main task with keys alone: add a
     book, open it, move to another chapter, edit and save.
 
@@ -949,8 +951,8 @@ can break in its middle.
 | Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures scale to fit a page. Other tall blocks can be clipped through a line. |
 | Editor | Editing opens the first chapter in Visual. Visual supports tables, nested and task lists, quotes, code blocks, chapter link selection, and a picture preview. The picture gallery shows thumbnails and picture import offers encoding settings. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
-| Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. No real release exists, so neither has met the network; the Windows part has never been compiled. |
-| Release workflow | Written; never run. A local `cargo bundle` on macOS produces the application with its icon. |
+| Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. The installer is compiled on macOS and Windows. No real release exists, so neither has met the network. |
+| Release workflow | Written; never run. The macOS and Windows x64 jobs make NASM available before building. A local `cargo bundle` on macOS produces the application with its icon. |
 | Typeface | Literata is available when installed locally. The fallback chain supplies another installed serif family when possible. Bundled fonts are unimplemented. |
 | Transitions | Page turns within a chapter slide and fade, and the reading controls fade. Screen navigation and chapter changes are immediate. Reduced motion uses immediate transitions. |
 
@@ -966,6 +968,9 @@ asks:
 - A few parts of Kit controls are reported without a role: the frame of a
   text field, the search field inside a select, the track of a slider. The
   controls they belong to have roles and names.
+- The Kit's minimize, maximize, restore and close buttons lack roles in
+  the headless tree. On Windows, GPUI handles their hit testing in the
+  window's non-client area.
 
 ### Security considerations
 

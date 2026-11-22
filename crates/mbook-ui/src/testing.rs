@@ -129,6 +129,8 @@ impl Render for Blank {
 /// track, the stack notifications appear in, the backdrop of a sheet. GPUI
 /// tells assistive technology only about elements with a role, so these
 /// reach nobody; the controls they belong to have their roles and names.
+/// The Kit's window buttons also lack roles in the headless tree. On
+/// Windows, GPUI handles them as part of the non-client area of the window.
 pub(crate) fn is_kit_decoration(path: &str) -> bool {
     const PARTS: [&str; 8] = [
         "gpui_component::input",
@@ -149,4 +151,31 @@ pub(crate) fn is_kit_decoration(path: &str) -> bool {
             ]
             .iter()
             .any(|part| path.ends_with(part)))
+        || path
+            .rsplit_once(r#"Name("gpui_component::title_bar::ControlIcon"), "#)
+            .is_some_and(|(_, control)| {
+                matches!(
+                    control,
+                    r#"Name("minimize")]"#
+                        | r#"Name("maximize")]"#
+                        | r#"Name("restore")]"#
+                        | r#"Name("close")]"#
+                )
+            })
+}
+
+#[test]
+fn kit_window_controls_are_outside_the_page_accessibility_checks() {
+    for control in ["minimize", "maximize", "restore", "close"] {
+        let path = format!(
+            r#"[Name("gpui_component::title_bar::TitleBar"), Name("title-bar"), Name("gpui_component::title_bar::WindowControls"), Name("window-controls"), Name("gpui_component::title_bar::ControlIcon"), Name("{control}")]"#
+        );
+        assert!(is_kit_decoration(&path), "{path}");
+    }
+}
+
+#[test]
+fn a_page_control_named_close_stays_in_the_accessibility_checks() {
+    let path = r#"[Name("gpui_component::title_bar::TitleBar"), Name("title-bar"), Name("bar"), Name("close")]"#;
+    assert!(!is_kit_decoration(path), "{path}");
 }

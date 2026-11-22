@@ -105,6 +105,30 @@ jobs:
           rustup default stable
           rustup target add ${{ matrix.target }}
 
+      # rav1d uses NASM for x86 targets, including a cross-build on ARM.
+      - name: Install NASM for macOS x64
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: |
+          command -v nasm >/dev/null || brew install nasm
+          nasm -v
+
+      - name: Install NASM for Windows x64
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          if (Get-Command nasm -ErrorAction SilentlyContinue) {
+            nasm -v
+            exit $LASTEXITCODE
+          }
+
+          choco install nasm --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $nasmDir = Join-Path $env:ProgramFiles 'NASM'
+          & (Join-Path $nasmDir 'nasm.exe') -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $nasmDir >> $env:GITHUB_PATH
+
       - name: Install cargo-bundle and zipsign
         run: |
           cargo bundle --version 2>/dev/null | grep -q "$CARGO_BUNDLE_VERSION" \
