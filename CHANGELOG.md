@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [v0.3.1](https://github.com/M-Compressors/mbook/releases/tag/v0.3.1) - 2026-11-23
+
 ### Added
 
 - The reader opens a picture, a diagram or a formula that stands alone in

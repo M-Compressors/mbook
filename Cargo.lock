@@ -4981,7 +4981,7 @@ dependencies = [
 
 [[package]]
 name = "mbook"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "github-slugger",
@@ -4995,7 +4995,7 @@ dependencies = [
 
 [[package]]
 name = "mbook-converter"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ab_glyph",
  "alphanumeric-sort",
@@ -5039,7 +5039,7 @@ dependencies = [
 
 [[package]]
 name = "mbook-ui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "avif-decode",
  "codebook-tree-sitter-latex",
