@@ -197,6 +197,7 @@ impl Draft {
                     cursor,
                     offset,
                     excerpt,
+                    ..
                 } = search_text::rendered(text, pattern, from, backward)?;
                 Some(ChapterMatch {
                     cursor,

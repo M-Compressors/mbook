@@ -5,14 +5,15 @@ use std::ops::RangeInclusive;
 use futures::StreamExt as _;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use gpui_kit::base::{ReduceMotionPreference, set_reduce_motion_preference};
-use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{
     App, AppContext as _, AsyncApp, Context, Entity, Global, Pixels, SharedString, Task,
     WeakEntity, Window, WindowAppearance, px,
 };
 
 use super::theme;
-use crate::entities::catalogue::{CatalogueError, Settings, Store};
+use crate::entities::catalogue::{
+    CatalogueError, LINE_HEIGHT, READING_FACES, Settings, Store, TEXT_SIZE,
+};
 use crate::shared::layout::SizeClass;
 use crate::shared::theme::{Chrome, PageTone};
 
@@ -20,20 +21,6 @@ use crate::shared::theme::{Chrome, PageTone};
 /// when nothing says otherwise.
 const BASE_REM: f32 = 16.0;
 
-/// Installed serif families, in the order used when the requested font is missing.
-const READING_FONTS: [&str; 5] = [
-    "Literata",
-    "Charter",
-    "Iowan Old Style",
-    "Georgia",
-    "Times New Roman",
-];
-
-/// The sizes of the text of a book, in pixels. The same bounds as the
-/// catalogue applies when it reads a setting.
-const TEXT_SIZE: RangeInclusive<f32> = 12.0..=32.0;
-/// The line heights a book may be set at.
-const LINE_HEIGHT: RangeInclusive<f32> = 1.2..=2.0;
 /// The scales of the interface.
 const INTERFACE_SCALE: RangeInclusive<f32> = 1.0..=2.0;
 
@@ -182,6 +169,9 @@ impl Appearance {
         let mut settings = before.clone();
         change(&mut settings);
         clamp(&mut settings, &before);
+        if (settings.text_size - before.text_size).abs() > f32::EPSILON {
+            settings.reading.size_set = true;
+        }
         if settings == before {
             return;
         }
@@ -249,20 +239,58 @@ impl Appearance {
         }
     }
 
-    /// The typeface for the text of books: the stored one when the device has
-    /// it, then the first available serif fallback, then the interface font.
-    /// The stored name is kept so the typeface applies again when it returns.
-    ///
-    /// Until the device's families are read, the font of the interface.
-    pub(crate) fn reading_font(&self, cx: &App) -> SharedString {
-        let installed = self.families();
-        std::iter::once(self.settings.typeface.as_str())
-            .chain(READING_FONTS)
-            .find(|wanted| installed.iter().any(|family| family == wanted))
-            .map_or_else(
-                || cx.theme().font_family.clone(),
-                |font| font.to_owned().into(),
-            )
+    /// The interface uses the platform's system font alias. Reading faces
+    /// fall back to it when the platform cannot resolve the requested family.
+    pub(crate) fn reading_font(&self, _: &App) -> SharedString {
+        let system = gpui_kit::Font::default().family;
+        let requested = self.settings.typeface.as_str();
+        if requested == READING_FACES[2] {
+            return system;
+        }
+        std::iter::once(requested)
+            .chain(READING_FACES[..2].iter().copied())
+            .find(|wanted| {
+                self.families.as_ref().map_or_else(
+                    || READING_FACES[..2].contains(wanted),
+                    |families| families.iter().any(|family| family == wanted),
+                )
+            })
+            .map_or(system, |font| font.to_owned().into())
+    }
+
+    /// Uses the first reader viewport for the initial size on this installation.
+    /// Older catalogues keep their saved size.
+    pub(crate) fn initialize_reader(&mut self, window: &Window, cx: &mut Context<'_, Self>) {
+        if self.settings.reading.size_set {
+            return;
+        }
+        let size = reader_default_size(window);
+        self.update(
+            |settings| {
+                settings.text_size = size;
+                settings.reading.size_set = true;
+            },
+            cx,
+        );
+    }
+
+    /// Resets page appearance and reader controls while retaining application settings.
+    pub(crate) fn reset_reader(&mut self, window: &Window, cx: &mut Context<'_, Self>) {
+        let size = reader_default_size(window);
+        let defaults = Settings::default();
+        self.update(
+            |settings| {
+                settings.typeface = defaults.typeface;
+                settings.text_size = size;
+                settings.line_height = defaults.line_height;
+                settings.page_tone = defaults.page_tone;
+                settings.reading = defaults.reading;
+                settings.reading.size_set = true;
+                settings.keep_controls = defaults.keep_controls;
+                settings.reduce_motion = defaults.reduce_motion;
+            },
+            cx,
+        );
     }
 
     /// The families of fonts the device has, sorted; empty until they are
@@ -305,6 +333,13 @@ impl Appearance {
     }
 }
 
+fn reader_default_size(window: &Window) -> f32 {
+    match SizeClass::of(window.viewport_size().width.as_f32(), 1.0) {
+        SizeClass::Compact => 20.0,
+        SizeClass::Medium | SizeClass::Expanded => 22.0,
+    }
+}
+
 /// The page tone for a choice and the appearance of the window.
 fn resolve(chosen: Option<PageTone>, system: WindowAppearance) -> PageTone {
     chosen.unwrap_or(match system {
@@ -316,12 +351,30 @@ fn resolve(chosen: Option<PageTone>, system: WindowAppearance) -> PageTone {
 /// Brings every setting into its range. A value that is no number, or a
 /// typeface that is blank, keeps what it was.
 fn clamp(settings: &mut Settings, before: &Settings) {
-    settings.text_size = within(settings.text_size, &TEXT_SIZE, before.text_size);
-    settings.line_height = within(settings.line_height, &LINE_HEIGHT, before.line_height);
+    settings.text_size = within(
+        settings.text_size,
+        &(TEXT_SIZE.0..=TEXT_SIZE.1),
+        before.text_size,
+    );
+    settings.line_height = within(
+        settings.line_height,
+        &(LINE_HEIGHT.0..=LINE_HEIGHT.1),
+        before.line_height,
+    );
     settings.interface_scale = within(
         settings.interface_scale,
         &INTERFACE_SCALE,
         before.interface_scale,
+    );
+    settings.reading.column = within(
+        settings.reading.column,
+        &(45.0..=80.0),
+        before.reading.column,
+    );
+    settings.reading.paragraph_gap = within(
+        settings.reading.paragraph_gap,
+        &(0.0..=2.0),
+        before.reading.paragraph_gap,
     );
     if settings.typeface.trim().is_empty() {
         settings.typeface.clone_from(&before.typeface);

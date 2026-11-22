@@ -150,6 +150,7 @@ impl BookSource {
             text,
             blocks: analysis.blocks,
             links,
+            footnotes: analysis.footnotes,
             pictures,
             figures,
         })

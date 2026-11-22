@@ -66,10 +66,11 @@ pub(crate) fn bind(cx: &mut App) {
         ("secondary-[", Box::new(PreviousChapter)),
         ("secondary-]", Box::new(NextChapter)),
     ];
-    let context =
-        KeyBindingContextPredicate::parse(&format!("{CONTEXT} && !{SCRUBBER} && !{FIND_BAR}"))
-            .ok()
-            .map(Rc::new);
+    let context = KeyBindingContextPredicate::parse(&format!(
+        "{CONTEXT} && !{SCRUBBER} && !{FIND_BAR} && !ReaderAppearance"
+    ))
+    .ok()
+    .map(Rc::new);
     // A key the platform cannot parse is left out; the controls still reach
     // every action.
     let bindings: Vec<KeyBinding> = keys

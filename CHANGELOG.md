@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The reader defaults to scrolling, with optional pagination, five page tones,
+  bundled Literata and Noto Sans, and locally saved controls for enlarged text,
+  column width, paragraph spacing, motion and reading progress. It keeps the
+  saved chapter and source position when appearance changes or is reset.
+- Find highlights the current match when the Markdown renderer can map its
+  source span. Closing Find returns to the passage where it opened. Footnote
+  references open their definitions and offer a return to the prior passage.
+
 - The reader searches all chapters of the book, and the editor searches the
   current chapter including unsaved edits. Open search with the magnifying
   glass, Command+F on macOS or Control+F on Windows and Linux.

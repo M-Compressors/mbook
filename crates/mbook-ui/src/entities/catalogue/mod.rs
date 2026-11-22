@@ -14,5 +14,5 @@ mod store;
 pub(crate) use error::CatalogueError;
 pub(crate) use model::{Library, LibraryError, ShelfBook, Store};
 pub(crate) use rows::{BookRow, ReadingState};
-pub(crate) use settings::Settings;
+pub(crate) use settings::{LINE_HEIGHT, READING_FACES, ReadingFlow, Settings, TEXT_SIZE};
 pub(crate) use store::Catalogue;

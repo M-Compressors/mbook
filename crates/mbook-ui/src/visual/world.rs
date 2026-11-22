@@ -104,6 +104,25 @@ const BOOKS: [Spec; 9] = [
     },
 ];
 
+pub(super) const READING_SAMPLE: &str = "# Утро в саду
+
+Мы пришли в сад ранним утром, когда трава ещё была мокрой от росы. У ворот стоял фонарь, а на старой яблоне висела табличка с выцветшими буквами. Анна достала из кармана ключ и тихо подняла защёлку.
+
+— Ты слышишь? — спросила она. За стеной шуршали листья. По дорожке бежал *ёжик*, и огонёк фонаря дрожал на воде. Мы прошли дальше, стараясь **не разбудить** сторожа.
+
+В журнале лежала закладка с надписью: «Ёжик, Йорк, Дд, Лл, Жж, Щщ, Ъъ, Ыы, Ьь, 0123456789, ₽, —, „текст“, API». Рядом карандашом было подписано: за́мок и замо́к.
+
+> Сад просыпается раньше деревни, особенно когда ночью шёл дождь.
+
+На краю стола остались [записи общества](https://example.org/orchard) и список:
+
+- Абрикосы для пирога
+- Антоновка и груши на зиму
+- Ручка, чтобы подписать ящики
+
+В эту минуту солнце показалось над стеной, и мокрые ветки засветились. Анна убрала ключ обратно в карман, и мы пошли к дому.
+";
+
 /// The text of the first chapter of the book that is read.
 const CHAPTER_ONE: &str = "# The gate\n\nThe orchard lay behind a low stone wall, and nobody remembered who had built it. \
 The gate was never locked; it only stuck, and every visitor learned the trick of lifting it by its latch.\n\n\
@@ -233,6 +252,16 @@ impl World {
         Self::build(&BOOKS)
     }
 
+    pub(super) fn reading() -> Result<Self> {
+        Self::build(&[Spec {
+            title: "Утро в саду",
+            authors: &[],
+            language: "ru",
+            cover: None,
+            progress: Progress::Unopened,
+        }])
+    }
+
     fn build(specs: &[Spec]) -> Result<Self> {
         let dir = tempfile::tempdir()?;
         let roots = Roots::new(dir.path().join("data"), dir.path().join("cache"));
@@ -281,7 +310,9 @@ fn write_one(roots: &Roots, catalogue: &Catalogue, spec: &Spec, at: usize) -> Re
         }
         None => None,
     };
-    if at == 0 {
+    if spec.title == "Утро в саду" {
+        book.add_chapter("ch01.md", READING_SAMPLE)?;
+    } else if at == 0 {
         book.add_picture("img/orchard.avif", avif(320, 200, 195.0)?)?;
         book.add_chapter("ch01.md", CHAPTER_ONE)?;
         book.add_chapter("ch02.md", CHAPTER_TWO)?;

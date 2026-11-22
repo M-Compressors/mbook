@@ -119,7 +119,7 @@ impl SettingsPage {
             SelectState::new(SearchableVec::new(items), selected, window, cx).searchable(true)
         });
         let text_size = slider(&TEXT_SIZE, 1.0, settings.text_size, cx);
-        let line_height = slider(&LINE_HEIGHT, 0.1, settings.line_height, cx);
+        let line_height = slider(&LINE_HEIGHT, 0.05, settings.line_height, cx);
         let interface = slider(
             &INTERFACE_PERCENT,
             INTERFACE_STEP,

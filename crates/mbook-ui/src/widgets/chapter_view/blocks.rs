@@ -107,8 +107,7 @@ pub(super) fn place_of_offset(
 }
 
 /// The byte offset of the place `part` (from 0 to 1) into the list item
-/// `item`, the inverse of [`place_of_offset`]. It is rounded up, so that the
-/// place found again is not before the one that was kept.
+/// `item`, the inverse of [`place_of_offset`] to the nearest byte.
 pub(super) fn offset_of_place(
     blocks: &[u32],
     len: usize,
@@ -124,7 +123,7 @@ pub(super) fn offset_of_place(
     if end <= start {
         return start;
     }
-    let inside = (f64::from(end - start) * f64::from(part.min(1.0))).ceil();
+    let inside = (f64::from(end - start) * f64::from(part.min(1.0))).round();
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -219,7 +218,7 @@ mod tests {
             let offset = offset_of_place(&blocks, 50, 3, item, part);
             let (found, back) = place_of_offset(&blocks, 50, 3, offset);
             assert_eq!(found, item, "{item} {part}");
-            assert!(back + 0.06 >= part, "{part} came back as {back}");
+            assert!((back - part).abs() <= 0.06, "{part} came back as {back}");
         }
     }
 

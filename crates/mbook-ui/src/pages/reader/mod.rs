@@ -77,9 +77,9 @@ struct Spot {
 }
 
 /// Where a chapter is opened.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Arrival {
     Offset(u32),
+    Resume(u32, Arc<PreparedChapter>),
     Start,
     End,
 }
@@ -143,6 +143,7 @@ struct Handles {
     appearance: FocusHandle,
     edit: FocusHandle,
     previous: FocusHandle,
+    return_to_passage: FocusHandle,
     next: FocusHandle,
     scrubber: FocusHandle,
 }
@@ -156,6 +157,7 @@ impl Handles {
             appearance: cx.focus_handle(),
             edit: cx.focus_handle(),
             previous: cx.focus_handle(),
+            return_to_passage: cx.focus_handle(),
             next: cx.focus_handle(),
             scrubber: cx.focus_handle(),
         }
@@ -170,6 +172,7 @@ impl Handles {
             &self.appearance,
             &self.edit,
             &self.previous,
+            &self.return_to_passage,
             &self.next,
         ]
         .into_iter()
@@ -190,6 +193,7 @@ pub(crate) struct ReaderPage {
     keeper: Entity<PositionKeeper>,
     contents: Entity<ContentsPanel>,
     search: SearchBar<BookMatch>,
+    search_origin: Option<Spot>,
     typography: Entity<TypographyPanel>,
     pictures: Arc<Pictures>,
     /// The size class the cache of pictures was sized for.
@@ -230,14 +234,13 @@ impl ReaderPage {
             .map_or_else(|| "Book".to_owned(), |book| book.row.title.clone())
             .into();
         let appearance = Appearance::global(cx);
-        let class = appearance.read(cx).size_class(window);
+        let (class, view) = chapter_view(&appearance, window, cx);
         let page = cx.entity().downgrade();
-
-        let view = cx.new(|cx| ChapterView::paged(window, cx));
         let (wake, mut wakes) = unbounded::<()>();
         let pictures = Arc::new(Pictures::new(pictures::budget(class), wake));
         let table = Arc::clone(&pictures);
         let for_links = page.clone();
+        let for_notes = page.clone();
         view.update(cx, |view, cx| {
             view.set_pictures(
                 Arc::new(move |destination, column, page, _, _| {
@@ -250,13 +253,22 @@ impl ReaderPage {
                     .update(cx, |page, cx| page.follow(destination, cx))
                     .ok();
             });
+            view.on_note(move |offset, window, cx| {
+                for_notes
+                    .update(cx, |page, cx| page.follow_note(offset, window, cx))
+                    .ok();
+            });
         });
         let handles = Handles::new(cx);
         let scrubber = Scrubber::new(cx);
         let search = SearchBar::new("Find in book", window, cx);
         let subscriptions = vec![
             cx.subscribe(&search.input, Self::on_search_input),
-            cx.observe(&appearance, |_, _, cx| cx.notify()),
+            cx.observe(&appearance, |this, appearance, cx| {
+                let paged = appearance.read(cx).settings().reading.flow.is_paged();
+                this.view.update(cx, |view, cx| view.set_paged(paged, cx));
+                cx.notify();
+            }),
             cx.subscribe(&scrubber.slider, |this, _, event, cx| {
                 this.on_scrub(event, cx);
             }),
@@ -283,6 +295,7 @@ impl ReaderPage {
             keeper: PositionKeeper::entity(key, cx),
             contents: cx.new(|_| ContentsPanel::new(page)),
             search,
+            search_origin: None,
             typography: TypographyPanel::entity(cx),
             pictures,
             class,
@@ -329,6 +342,7 @@ impl ReaderPage {
         // that have hold the file only for the length of one read.
         self.picture_tasks.clear();
         self.search.hide();
+        self.search_origin = None;
         drop(self.opening.take());
         drop(self.chapter_task.take());
         drop(self.follow_task.take());
@@ -389,6 +403,10 @@ impl ReaderPage {
         if !snapshot.title.trim().is_empty() {
             self.title = snapshot.title.clone().into();
         }
+        let before = match &self.phase {
+            Phase::Ready(reading) if self.resume_at.is_some() => reading.prepared.clone(),
+            _ => None,
+        };
         let stored = self.resume_at.take().or_else(|| {
             Library::global(cx)
                 .read(cx)
@@ -423,7 +441,10 @@ impl ReaderPage {
             loading: true,
             error: None,
         });
-        self.load_chapter(chapter, Arrival::Offset(offset), cx);
+        let arrival = before.map_or(Arrival::Offset(offset), |before| {
+            Arrival::Resume(offset, before)
+        });
+        self.load_chapter(chapter, arrival, cx);
     }
 
     /// Reads a chapter on the background and shows it.
@@ -439,8 +460,8 @@ impl ReaderPage {
         reading.error = None;
         self.spot = Spot {
             chapter: index,
-            offset: match arrival {
-                Arrival::Offset(offset) => offset,
+            offset: match &arrival {
+                Arrival::Offset(offset) | Arrival::Resume(offset, _) => *offset,
                 Arrival::Start | Arrival::End => 0,
             },
         };
@@ -491,13 +512,24 @@ impl ReaderPage {
         self.pictures.reset(&prepared.pictures);
         reading.prepared = Some(Arc::clone(&prepared));
         let title = controls::chapter_title(&reading.snapshot, reading.chapter, self.spot.offset);
+        let search = self
+            .search
+            .current
+            .as_ref()
+            .filter(|hit| hit.chapter == reading.chapter)
+            .map(|hit| hit.found.source.clone());
         self.view.update(cx, |view, cx| {
             view.set_label(title, cx);
             // Before the text: a text is shown when its figures are drawn.
             view.set_figures(prepared.figures.clone(), cx);
+            view.set_notes(prepared.footnotes.clone());
             view.set_chapter(&prepared.text, prepared.blocks.clone(), cx);
+            view.set_search(search, cx);
             match arrival {
                 Arrival::Offset(offset) => view.reveal(offset, cx),
+                Arrival::Resume(offset, before) => {
+                    view.reveal(prepared.after_edit(&before, offset), cx);
+                }
                 Arrival::Start => view.reveal_start(cx),
                 Arrival::End => view.reveal_end(cx),
             }
@@ -551,6 +583,15 @@ impl ReaderPage {
             self.view.update(cx, ChapterView::pictures_changed);
         }
         self.pump(cx);
+    }
+
+    fn follow_note(&mut self, offset: u32, window: &mut Window, cx: &mut Context<'_, Self>) {
+        if let Phase::Ready(reading) = &self.phase {
+            let chapter = reading.chapter;
+            self.touch(cx);
+            self.focus_handle.focus(window, cx);
+            self.jump(chapter, offset, cx);
+        }
     }
 
     /// Follows a link of the text, with its destination as written.
@@ -852,6 +893,23 @@ impl ReaderPage {
 }
 
 /// The key of a picture job in the tasks that run.
+fn chapter_view(
+    appearance: &Entity<Appearance>,
+    window: &mut Window,
+    cx: &mut Context<'_, ReaderPage>,
+) -> (SizeClass, Entity<ChapterView>) {
+    appearance.update(cx, |appearance, cx| {
+        appearance.initialize_reader(window, cx);
+    });
+    let class = appearance.read(cx).size_class(window);
+    let build = if appearance.read(cx).settings().reading.flow.is_paged() {
+        ChapterView::paged
+    } else {
+        ChapterView::new
+    };
+    (class, cx.new(|cx| build(window, cx)))
+}
+
 fn task_key(job: &Job) -> String {
     let (width, height) = job.size;
     format!("{}@{width}x{height}", job.destination)

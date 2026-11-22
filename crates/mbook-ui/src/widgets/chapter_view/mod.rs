@@ -7,12 +7,12 @@
 //!
 //! The text is moved through in one of two ways:
 //!
-//! * **scrolled**, as the preview of the editor shows it ([`ChapterView::new`]);
-//! * **a page at a time**, as the reader shows it ([`ChapterView::paged`]).
+//! * **scrolled**, by default in the reader and in the editor preview;
+//! * **a page at a time**, when the reader enables pagination.
 //!   The Kit lays the chapter out as one column and tells the height of every
 //!   block; [`pages`] divides that column into pages that end between two
 //!   lines. The view puts the start of a page at the top of the window and
-//!   covers what follows its end. A turn of the page is drawn with the motion
+//!   covers what follows its end. Optional page-turn motion uses the motion
 //!   of the Kit: the page slides out towards where it came from and the next
 //!   one slides in.
 //!
@@ -47,42 +47,46 @@ mod alt;
 mod blocks;
 mod figures;
 mod layout;
+mod notes;
 mod pages;
 #[cfg(test)]
 mod tests;
 mod wheel;
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::base::animation::ease_in_cubic;
 use gpui_kit::base::motion::{MotionTransform, Sequence, Transition};
-use gpui_kit::component::text::{MarkdownExtensions, TextView, TextViewState};
+use gpui_kit::base::text::{
+    MarkdownExtensions, RangeHighlight, TextView, TextViewState, TextViewStyle,
+};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, DispatchPhase, ElementId, Entity,
-    EventEmitter, HitboxBehavior, Hsla, ImageCacheError, ImageSource, InteractiveElement as _,
-    IntoElement, ListOffset, ListState, MouseButton, ParentElement as _, Pixels, Render,
-    RenderImage, Role, ScrollDelta, ScrollEvent, SharedString, SharedUri,
+    EventEmitter, FontWeight, HitboxBehavior, Hsla, ImageCacheError, ImageSource,
+    InteractiveElement as _, IntoElement, ListOffset, ListState, MouseButton, ParentElement as _,
+    Pixels, Render, RenderImage, Role, ScrollDelta, ScrollEvent, SharedString, SharedUri,
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _,
-    TouchPhase, WeakEntity, Window, canvas, div, point, px, relative,
+    TouchPhase, WeakEntity, Window, canvas, div, point, px, relative, rems,
 };
 
 use self::figures::{BlockFigures, LineFigures, Stage, Table};
 use self::pages::{Block, BlockKind, Measures, Page};
 use self::wheel::{Travel, Wheel};
+use crate::entities::catalogue::{ReadingFlow, Settings};
 use crate::entities::figure::{FigureSources, Figures, Palette};
 use crate::entities::picture::Bitmap;
 use crate::features::appearance::Appearance;
 use crate::shared::ui::page_colors;
 
-pub(crate) use layout::{column_width, picture_size};
+pub(crate) use layout::picture_size;
 
-/// The gap the Kit leaves under a paragraph, in rems: the `paragraph_gap` of
-/// its text style, which the view does not change. A test measures it.
-const PARAGRAPH_GAP_REMS: f32 = 0.75;
 /// How far a page slides while it is turned, in pixels.
 const SLIDE: f32 = 28.0;
 /// How long a page takes to leave.
@@ -213,6 +217,8 @@ pub(crate) struct ChapterView {
     held: bool,
     figure_task: Option<Task<()>>,
     on_link: Option<LinkHandler>,
+    note_definitions: Arc<HashMap<String, u32>>,
+    on_note: Option<notes::FollowNote>,
     placeholders: Placeholders,
     failures: Failures,
     landing: Option<Landing>,
@@ -224,9 +230,24 @@ pub(crate) struct ChapterView {
     generation: u64,
     /// `Some` when the text is shown a page at a time.
     paging: Option<Paging>,
+    /// Only a geometry change invalidates measured text.
+    geometry: Option<Geometry>,
+    search: Option<Range<usize>>,
+    applied_search: Option<Hsla>,
+    observed_scroll: Rc<Cell<Option<ListOffset>>>,
     blocks_task: Option<Task<()>>,
     alt_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
+}
+
+#[derive(PartialEq)]
+struct Geometry {
+    column: f32,
+    size: f32,
+    line: f32,
+    gap: f32,
+    weight: FontWeight,
+    font: SharedString,
 }
 
 impl Paging {
@@ -301,7 +322,7 @@ impl ChapterView {
         let state = cx.new(|cx| TextViewState::markdown("", cx));
         let mut subscriptions = vec![cx.observe(&state, |_, _, cx| cx.notify())];
         if let Some(appearance) = Appearance::try_global(cx) {
-            subscriptions.push(cx.observe(&appearance, |this, _, cx| this.restyled(cx)));
+            subscriptions.push(cx.observe(&appearance, |_, _, cx| cx.notify()));
         }
         Self {
             state,
@@ -319,6 +340,8 @@ impl ChapterView {
             held: false,
             figure_task: None,
             on_link: None,
+            note_definitions: Arc::default(),
+            on_note: None,
             placeholders: Arc::default(),
             failures: Arc::default(),
             landing: None,
@@ -326,10 +349,31 @@ impl ChapterView {
             laid_out: false,
             generation: 0,
             paging,
+            geometry: None,
+            search: None,
+            applied_search: None,
+            observed_scroll: Rc::default(),
             blocks_task: None,
             alt_task: None,
             _subscriptions: subscriptions,
         }
+    }
+
+    /// Changes the reader layout around the current source position.
+    pub(crate) fn set_paged(&mut self, paged: bool, cx: &mut Context<'_, Self>) {
+        if paged == self.paging.is_some() {
+            return;
+        }
+        let offset = self.top_offset(cx);
+        self.paging = paged.then(Paging::default);
+        self.picture_height = None;
+        self.state.read(cx).list_state().remeasure();
+        self.land(Landing::Offset(offset), cx);
+    }
+
+    /// Whether the text is shown a page at a time.
+    pub(crate) fn is_paged(&self) -> bool {
+        self.paging.is_some()
     }
 
     /// Shows `markdown`. The blocks are found on the background; until they
@@ -356,6 +400,50 @@ impl ChapterView {
             self.label = label;
             cx.notify();
         }
+    }
+
+    /// Highlights a search match in the current chapter's source.
+    pub(crate) fn set_search(&mut self, range: Option<Range<usize>>, cx: &mut Context<'_, Self>) {
+        self.search = range;
+        self.applied_search = None;
+        self.state.update(cx, TextViewState::clear_range_highlights);
+        cx.notify();
+    }
+
+    fn sync_search(&mut self, color: Hsla, cx: &mut Context<'_, Self>) {
+        let Some(source) = self.search.clone() else {
+            return;
+        };
+        if self.applied_search == Some(color) || self.landing.is_some() || !self.parsed(cx) {
+            return;
+        }
+        let first = self.applied_search.is_none();
+        let scroll = self.paging.is_none() && first;
+        self.applied_search = Some(color);
+        self.state.update(cx, |state, cx| {
+            let document = state.rendered_text();
+            if let Some(range) = document.range_for_source(source) {
+                if scroll {
+                    state.reveal_range(range.clone(), cx).ok();
+                }
+                state
+                    .set_range_highlights([RangeHighlight::new(range, color)], cx)
+                    .ok();
+            }
+        });
+    }
+
+    /// Sets the note definitions for the next chapter.
+    pub(crate) fn set_notes(&mut self, notes: HashMap<String, u32>) {
+        self.note_definitions = Arc::new(notes);
+    }
+
+    /// Sets the handler for activating an inline footnote marker.
+    pub(crate) fn on_note(
+        &mut self,
+        follow: impl Fn(u32, &mut Window, &mut App) + Send + Sync + 'static,
+    ) {
+        self.on_note = Some(Arc::new(follow));
     }
 
     /// Tells where the pictures of the text come from.
@@ -415,10 +503,9 @@ impl ChapterView {
         self.land(Landing::End, cx);
     }
 
-    /// The byte offset of the place that is kept: scrolled, the block at the
-    /// top of the window; paged, the first line of the page, as near as the
-    /// height of its block tells. While the text is not laid out yet, the
-    /// place it is to be put at.
+    /// The byte offset of the reading place, estimated within the top block.
+    /// A paged view can also retain a target within the visible page. While
+    /// the text is being laid out, returns its pending destination.
     pub(crate) fn top_offset(&self, cx: &App) -> u32 {
         match self.landing {
             Some(Landing::Offset(offset)) => return offset,
@@ -437,11 +524,21 @@ impl ChapterView {
                 part,
             );
         }
-        blocks::offset_of_item(
+        let top = list.logical_scroll_top();
+        let part = list.bounds_for_item(top.item_ix).map_or(0.0, |bounds| {
+            let height = bounds.size.height.as_f32();
+            if height > 0.0 {
+                top.offset_in_item.as_f32() / height
+            } else {
+                0.0
+            }
+        });
+        blocks::offset_of_place(
             &self.blocks,
             self.text.len(),
             list.item_count(),
-            list.logical_scroll_top().item_ix,
+            top.item_ix,
+            part,
         )
     }
 
@@ -543,6 +640,7 @@ impl ChapterView {
     fn install(&mut self, markdown: &str, blocks: Option<Vec<u32>>, cx: &mut Context<'_, Self>) {
         self.generation += 1;
         self.text = markdown.to_owned().into();
+        self.observed_scroll.set(None);
         self.shown = self.text.clone();
         // A paged text is hidden until it is divided, so it always has a
         // place to be put at.
@@ -667,23 +765,6 @@ impl ChapterView {
         cx.notify();
     }
 
-    /// The style changed: the heights of the blocks are not what they were.
-    fn restyled(&mut self, cx: &mut Context<'_, Self>) {
-        if self.paging.is_some() {
-            // The pages are divided again from the new heights, and the page
-            // is found at the place it was.
-            self.state.read(cx).list_state().remeasure();
-            cx.notify();
-            return;
-        }
-        let at = self.top_offset(cx);
-        self.state.read(cx).list_state().remeasure();
-        if self.landing.is_none() {
-            self.land(Landing::Offset(at), cx);
-        }
-        cx.notify();
-    }
-
     /// A picture of the text cannot be shown: write its alternative text.
     fn failures_changed(&mut self, cx: &mut Context<'_, Self>) {
         let failed: HashSet<String> = self
@@ -759,15 +840,27 @@ impl ChapterView {
                 offset_in_item: px(0.0),
             }),
             Landing::End => list.scroll_to_end(),
-            Landing::Offset(offset) => list.scroll_to(ListOffset {
-                item_ix: blocks::item_of_offset(
+            Landing::Offset(offset) => {
+                let (item_ix, part) = blocks::place_of_offset(
                     &self.blocks,
                     self.text.len(),
                     list.item_count(),
                     offset,
-                ),
-                offset_in_item: px(0.0),
-            }),
+                );
+                list.scroll_to(ListOffset {
+                    item_ix,
+                    offset_in_item: px(0.0),
+                });
+                if let Some(bounds) = list.bounds_for_item(item_ix) {
+                    list.scroll_to(ListOffset {
+                        item_ix,
+                        offset_in_item: bounds.size.height * part,
+                    });
+                } else if part > 0.0 && self.waited < LANDING_FRAMES {
+                    window.request_animation_frame();
+                    return;
+                }
+            }
         }
         self.landing = None;
         cx.emit(ChapterViewEvent::Moved);
@@ -795,7 +888,9 @@ impl ChapterView {
                 paging.page_of_anchor(measures)
             }
         };
-        paging.keep_anchor();
+        if !matches!(landing, Landing::Offset(_)) {
+            paging.keep_anchor();
+        }
         if !paging.arrived {
             // The text is shown for the first time: it slides in from the
             // side it was reached from.
@@ -1052,28 +1147,40 @@ fn placeholder_image(size: (u32, u32)) -> Arc<RenderImage> {
     )
 }
 
-impl Render for ChapterView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let (settings, tone, class, font) = match Appearance::try_global(cx) {
-            Some(appearance) => {
-                let appearance = appearance.read(cx);
-                (
-                    appearance.settings().clone(),
-                    Some(appearance.page_tone(window)),
-                    appearance.size_class(window),
-                    appearance.reading_font(cx),
-                )
-            }
-            None => (
-                crate::entities::catalogue::Settings::default(),
-                None,
-                crate::shared::layout::SizeClass::Expanded,
-                cx.theme().font_family.clone(),
-            ),
-        };
-        // What GPUI makes of a relative line height: whole pixels.
-        let line = (settings.text_size * settings.line_height).round();
-        let gap = window.rem_size().as_f32() * PARAGRAPH_GAP_REMS;
+pub(crate) fn reading_column(
+    window: &Window,
+    cx: &App,
+    settings: &Settings,
+    class: crate::shared::layout::SizeClass,
+    family: &SharedString,
+) -> f32 {
+    let mut font = gpui_kit::font(family.clone());
+    font.weight = reading_weight(settings);
+    let system = cx.text_system();
+    let zero = system
+        .advance(system.resolve_font(&font), px(settings.text_size), '0')
+        .map_or(settings.text_size * 0.54, |advance| advance.width.as_f32());
+    let insets = window.insets().effective();
+    let viewport = (window.viewport_size().width - insets.left - insets.right).as_f32();
+    layout::column_width(viewport, zero, settings.reading.column, class)
+}
+
+fn reading_weight(settings: &Settings) -> FontWeight {
+    if settings.reading.heavier {
+        FontWeight::MEDIUM
+    } else {
+        FontWeight::NORMAL
+    }
+}
+
+impl ChapterView {
+    fn measure(&mut self, geometry: Geometry, cx: &App) {
+        let line = geometry.line;
+        let gap = geometry.gap;
+        if self.geometry.as_ref() != Some(&geometry) {
+            self.geometry = Some(geometry);
+            self.state.read(cx).list_state().remeasure();
+        }
         if self.paging.is_some() && (self.pictures.is_some() || !self.figure_sources.is_empty()) {
             let list = self.state.read(cx).list_state();
             let page = list.viewport_bounds().size.height.as_f32();
@@ -1088,6 +1195,44 @@ impl Render for ChapterView {
                 list.remeasure();
             }
         }
+    }
+}
+
+impl Render for ChapterView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
+        let (settings, tone, class, font) = match Appearance::try_global(cx) {
+            Some(appearance) => {
+                let appearance = appearance.read(cx);
+                (
+                    appearance.settings().clone(),
+                    Some(appearance.page_tone(window)),
+                    appearance.size_class(window),
+                    appearance.reading_font(cx),
+                )
+            }
+            None => (
+                Settings::default(),
+                None,
+                crate::shared::layout::SizeClass::Expanded,
+                cx.theme().font_family.clone(),
+            ),
+        };
+        // What GPUI makes of a relative line height: whole pixels.
+        let line = (settings.text_size * settings.line_height).round();
+        let gap = settings.text_size * settings.reading.paragraph_gap;
+        let weight = reading_weight(&settings);
+        let column = reading_column(window, cx, &settings, class, &font);
+        self.measure(
+            Geometry {
+                column,
+                size: settings.text_size,
+                line,
+                gap,
+                weight,
+                font: font.clone(),
+            },
+            cx,
+        );
         self.repaginate(line, gap, cx);
         self.settle(window, cx);
         let (page, ink) = tone.map_or((cx.theme().background, cx.theme().foreground), page_colors);
@@ -1096,7 +1241,6 @@ impl Render for ChapterView {
             cx,
         );
         let viewport = window.viewport_size().width.as_f32();
-        let column = layout::column_width(viewport, settings.text_size, class);
         let on_link = self.on_link.clone();
         let stage = Stage {
             table: self.figures.clone(),
@@ -1105,13 +1249,10 @@ impl Render for ChapterView {
             text_size: settings.text_size,
             gap,
         };
-        // The plugins read the table when the text is parsed, so the parser
-        // is the same whatever the table holds: its revision never changes.
-        let extensions = MarkdownExtensions::default()
-            .plugin(BlockFigures(stage.clone()))
-            .plugin(LineFigures(stage))
-            .parser_revision(1);
+        let extensions = self.extensions(stage, tone.map_or(ink, |tone| tone.colors().link.into()));
+        let style = self.page_style(tone, gap, (page, ink), window, cx);
         let mut view = TextView::new(&self.state)
+            .style(style)
             .scrollable(true)
             .selectable(true)
             .markdown_extensions(extensions)
@@ -1119,6 +1260,7 @@ impl Render for ChapterView {
             .text_size(px(settings.text_size))
             .line_height(relative(settings.line_height))
             .font_family(font)
+            .font_weight(weight)
             .text_color(ink);
         if let Some(on_link) = on_link {
             view = view.on_link_click(move |destination, event, window, cx| {
@@ -1137,8 +1279,10 @@ impl Render for ChapterView {
             .bg(page);
         if self.paging.is_none() {
             return article
+                .relative()
                 .justify_center()
-                .child(div().h_full().w(px(column)).child(view));
+                .child(div().h_full().w(px(column)).child(view))
+                .child(self.watch_scroll(cx));
         }
         let hints = (viewport - column) / 2.0 >= MARGIN_HINT;
         article
@@ -1151,6 +1295,83 @@ impl Render for ChapterView {
 }
 
 impl ChapterView {
+    fn extensions(&self, stage: Stage, link_ink: Hsla) -> MarkdownExtensions {
+        // The plugins read the table when the text is parsed, so the parser
+        // is the same whatever the table holds: its revision never changes.
+        let extensions = MarkdownExtensions::default()
+            .plugin(BlockFigures(stage.clone()))
+            .plugin(LineFigures(stage));
+        let extensions = if let Some(follow) = self.on_note.clone()
+            && !self.note_definitions.is_empty()
+        {
+            extensions.plugin(notes::Notes {
+                definitions: self.note_definitions.clone(),
+                follow,
+                ink: link_ink,
+            })
+        } else {
+            extensions
+        };
+        extensions.parser_revision(1)
+    }
+
+    fn page_style(
+        &mut self,
+        tone: Option<crate::shared::theme::PageTone>,
+        gap: f32,
+        (page, ink): (Hsla, Hsla),
+        window: &Window,
+        cx: &mut Context<'_, Self>,
+    ) -> TextViewStyle {
+        let mut style =
+            TextViewStyle::default().with_paragraph_gap(rems(gap / window.rem_size().as_f32()));
+        if let Some(tone) = tone {
+            let colors = tone.colors();
+            self.sync_search(colors.search.into(), cx);
+            style = style
+                .with_dark(tone.is_dark())
+                .with_code_background(page)
+                .with_inline_code(gpui_kit::HighlightStyle {
+                    background_color: Some(page),
+                    ..Default::default()
+                })
+                .with_border(colors.muted.into())
+                .with_foreground(ink)
+                .with_muted_foreground(ink)
+                .with_link(colors.link.into())
+                .with_selection(colors.selection.into());
+        }
+        style
+    }
+
+    /// Samples the list after it lays out. The Kit can update its list
+    /// directly, for example during a scrollbar drag or a touch gesture.
+    fn watch_scroll(&self, cx: &Context<'_, Self>) -> impl IntoElement {
+        let entity = cx.entity().downgrade();
+        let previous = self.observed_scroll.clone();
+        let list = self.state.read(cx).list_state().clone();
+        canvas(
+            move |_, window, cx| {
+                let offset = list.logical_scroll_top();
+                if previous.replace(Some(offset)) != Some(offset) {
+                    let entity = entity.clone();
+                    window.defer(cx, move |_, cx| {
+                        entity
+                            .update(cx, |view, cx| {
+                                if !view.is_paged() && view.landing.is_none() {
+                                    cx.emit(ChapterViewEvent::Moved);
+                                }
+                            })
+                            .ok();
+                    });
+                }
+            },
+            |_, (), _, _| {},
+        )
+        .absolute()
+        .size_0()
+    }
+
     /// The page of a paged text: the column of the Kit with the start of the
     /// page at its top, and what follows the end of the page covered.
     fn sheet(
@@ -1161,7 +1382,17 @@ impl ChapterView {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
-        let (shown, motion) = self.sample_turn(window, cx);
+        let (shown, motion) = if Appearance::try_global(cx).is_some_and(|appearance| {
+            appearance.read(cx).settings().reading.flow == ReadingFlow::AnimatedPages
+        }) {
+            self.sample_turn(window, cx)
+        } else {
+            let shown = self.paging.as_mut().map_or(0, |paging| {
+                paging.turn = None;
+                paging.page
+            });
+            (shown, MotionTransform::default())
+        };
         let list = self.state.read(cx).list_state().clone();
         let ready = self.landing.is_none();
         let page = self

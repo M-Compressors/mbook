@@ -13,8 +13,8 @@ use crate::shared::ui::search_bar::TYPING_PAUSE;
 /// A match and the chapter that contains it.
 #[derive(Clone, Debug)]
 pub(super) struct BookMatch {
-    chapter: usize,
-    found: RenderedMatch,
+    pub(super) chapter: usize,
+    pub(super) found: RenderedMatch,
 }
 
 impl ReaderPage {
@@ -28,6 +28,7 @@ impl ReaderPage {
         let was_open = self.search.open;
         self.search.show(window, cx);
         if !was_open {
+            self.search_origin = Some(self.here(cx));
             self.search_book(false, false, cx);
         }
         cx.notify();
@@ -35,6 +36,12 @@ impl ReaderPage {
 
     pub(super) fn close_search(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.search.hide();
+        self.view.update(cx, |view, cx| view.set_search(None, cx));
+        if let Some(origin) = self.search_origin.take()
+            && origin != self.here(cx)
+        {
+            self.goto(origin, cx);
+        }
         self.touch(cx);
         self.handles.search.focus(window, cx);
         cx.notify();
@@ -74,6 +81,7 @@ impl ReaderPage {
         let cursor = from.map(|hit| hit.found.cursor);
         let count = reading.snapshot.chapters.len();
         self.search.reset();
+        self.view.update(cx, |view, cx| view.set_search(None, cx));
         let query = self.search.input.read(cx).value();
         if query.trim().is_empty() {
             cx.notify();
@@ -144,8 +152,18 @@ impl ReaderPage {
         let offset = hit.found.offset;
         let title = controls::chapter_title(&reading.snapshot, hit.chapter, offset);
         let feedback = format!("{} · {}", title, hit.found.excerpt);
-        self.jump(hit.chapter, offset, cx);
+        let same_chapter = reading.chapter == hit.chapter && !reading.loading;
+        let spot = super::Spot {
+            chapter: hit.chapter,
+            offset,
+        };
+        if same_chapter {
+            self.view.update(cx, |view, cx| {
+                view.set_search(Some(hit.found.source.clone()), cx);
+            });
+        }
         self.search_feedback(Some(hit), feedback, cx);
+        self.goto(spot, cx);
     }
 
     fn search_feedback(

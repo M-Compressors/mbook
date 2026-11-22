@@ -59,7 +59,22 @@ fn start_with(
     chapters: &[(&str, String)],
     stored: Option<ReadingState>,
 ) -> TestResult<Started> {
+    start_with_mode(cx, width, chapters, stored, true)
+}
+
+fn start_with_mode(
+    cx: &mut TestAppContext,
+    width: f32,
+    chapters: &[(&str, String)],
+    stored: Option<ReadingState>,
+    paged: bool,
+) -> TestResult<Started> {
     let fixture = Fixture::new();
+    if paged {
+        let mut settings = crate::entities::catalogue::Settings::default();
+        settings.reading.flow = crate::entities::catalogue::ReadingFlow::Pages;
+        fixture.catalogue.put_settings(&settings)?;
+    }
     let key = fixture.add_book("Dune");
     let chapters: Vec<(&str, &str)> = chapters
         .iter()
@@ -798,7 +813,14 @@ fn the_page_tone_is_chosen_by_name_and_the_choice_is_stored(cx: &mut TestAppCont
     settle(&started, cx);
     click(&started, "appearance", cx);
     testing::frame(cx, started.window, |window, _| {
-        for name in ["Follow the system", "Paper", "Sepia", "Dusk", "Night"] {
+        for name in [
+            "Follow the system",
+            "Paper",
+            "Neutral",
+            "Sepia",
+            "Night",
+            "High contrast",
+        ] {
             assert!(
                 window.try_find_by_label(name).is_some()
                     || window
@@ -824,14 +846,14 @@ fn the_text_is_made_larger_and_smaller_within_its_bounds(cx: &mut TestAppContext
     let size = |cx: &mut TestAppContext| {
         cx.update(|cx| Appearance::global(cx).read(cx).settings().text_size)
     };
-    assert!((size(cx) - 20.0).abs() < f32::EPSILON);
-    click(&started, "text-larger", cx);
     assert!((size(cx) - 22.0).abs() < f32::EPSILON);
+    click(&started, "text-larger", cx);
+    assert!((size(cx) - 23.0).abs() < f32::EPSILON);
     click(&started, "text-smaller", cx);
     click(&started, "text-smaller", cx);
-    assert!((size(cx) - 18.0).abs() < f32::EPSILON);
+    assert!((size(cx) - 21.0).abs() < f32::EPSILON);
     testing::frame(cx, started.window, |window, _| {
-        assert_eq!(window.find("text-size").label(), Some("18 pixels"));
+        assert_eq!(window.find("text-size").label(), Some("21 pixels"));
     });
 }
 
@@ -840,13 +862,14 @@ fn the_line_height_buttons_update_the_value(cx: &mut TestAppContext) {
     let started = start(cx, 1280.0).unwrap();
     settle(&started, cx);
     click(&started, "appearance", cx);
+    click(&started, "reading-advanced", cx);
     click(&started, "line-looser", cx);
     testing::frame(cx, started.window, |window, _| {
-        assert_eq!(window.find("line-height").label(), Some("1.7"));
+        assert_eq!(window.find("line-height").label(), Some("1.65"));
     });
     click(&started, "line-tighter", cx);
     testing::frame(cx, started.window, |window, _| {
-        assert_eq!(window.find("line-height").label(), Some("1.6"));
+        assert_eq!(window.find("line-height").label(), Some("1.60"));
     });
 }
 
@@ -878,11 +901,7 @@ fn the_typeface_is_chosen_from_the_ones_on_offer(cx: &mut TestAppContext) {
     testing::frame(cx, started.window, |window, _| {
         assert!(window.try_find_by_label("Georgia, selected").is_some());
         assert!(window.try_find_by_label("Literata").is_some());
-        assert!(
-            window
-                .try_find_by_label("All typefaces in Settings")
-                .is_some()
-        );
+        assert!(window.try_find_by_label("Noto Sans").is_some());
     });
     click(&started, "typeface-Literata", cx);
     let face = cx.update(|cx| Appearance::global(cx).read(cx).settings().typeface.clone());
@@ -1543,4 +1562,217 @@ fn the_compact_reader_title_has_room_between_the_controls(cx: &mut TestAppContex
         assert!(window.find("edit").bounds().right() <= window.viewport_size().width);
         assert!(window.find("find-book").visible());
     });
+}
+
+#[gpui_kit::test]
+fn a_new_reader_uses_scrolling_and_keeps_the_initial_size_when_resized(cx: &mut TestAppContext) {
+    for (width, expected) in [(390.0, 20.0), (1280.0, 22.0)] {
+        let started = start_with_mode(cx, width, &two_chapters(), None, false).unwrap();
+        settle(&started, cx);
+        assert!(
+            !started
+                .page
+                .read_with(cx, |page, cx| page.view.read(cx).is_paged())
+        );
+        testing::frame(cx, started.window, |window, _| {
+            window.resize(gpui_kit::size(gpui_kit::px(768.0), gpui_kit::px(390.0)));
+        });
+        settle(&started, cx);
+        let saved = started.fixture.catalogue.settings().unwrap();
+        assert!((saved.text_size - expected).abs() < f32::EPSILON);
+    }
+}
+
+#[gpui_kit::test]
+fn scrolling_keeps_the_passage_across_reflow_and_reset(cx: &mut TestAppContext) {
+    let text =
+        "Тихое утро у реки. Анна открыла ворота и увидела ёжика. API и за́мок.\n\n".repeat(850);
+    let target = u32::try_from(text.find("\n\n").unwrap() + 2).unwrap() * 420;
+    let chapters = [("one.md", text)];
+    let started = start_with_mode(cx, 1280.0, &chapters, None, false).unwrap();
+    settle(&started, cx);
+    started.page.update(cx, |page, cx| {
+        page.goto(
+            super::Spot {
+                chapter: 0,
+                offset: target,
+            },
+            cx,
+        );
+    });
+    settle(&started, cx);
+    assert_eq!(top(&started, cx), target);
+    cx.update(|cx| {
+        Appearance::global(cx).update(cx, |appearance, cx| {
+            appearance.update(
+                |settings| {
+                    settings.text_size = 44.0;
+                    settings.line_height = 2.0;
+                    settings.typeface = "Noto Sans".to_owned();
+                    settings.reading.heavier = true;
+                    settings.reading.paragraph_gap = 2.0;
+                    settings.reading.column = 45.0;
+                },
+                cx,
+            );
+        });
+    });
+    testing::frame(cx, started.window, |window, _| {
+        window.resize(gpui_kit::size(gpui_kit::px(390.0), gpui_kit::px(844.0)));
+    });
+    settle(&started, cx);
+    assert_eq!(top(&started, cx), target);
+    click(&started, "appearance", cx);
+    press(&started, "escape", cx);
+    assert_eq!(top(&started, cx), target);
+    testing::frame(cx, started.window, |window, cx| {
+        Appearance::global(cx).update(cx, |appearance, cx| appearance.reset_reader(window, cx));
+    });
+    settle(&started, cx);
+    assert_eq!(top(&started, cx), target);
+    started.page.update(cx, ReaderPage::close);
+    settle(&started, cx);
+    assert_eq!(
+        started
+            .fixture
+            .catalogue
+            .state(started.key)
+            .unwrap()
+            .place
+            .unwrap()
+            .offset,
+        target
+    );
+}
+
+#[gpui_kit::test]
+fn search_closes_back_at_the_passage_it_started_from(cx: &mut TestAppContext) {
+    let chapters = [
+        ("one.md", "# Начало\n\nМы пошли домой.\n".to_owned()),
+        (
+            "two.md",
+            "# Продолжение\n\nАнна увидела **ёжика**.\n".to_owned(),
+        ),
+    ];
+    let started = start_with_mode(cx, 390.0, &chapters, None, false).unwrap();
+    settle(&started, cx);
+    click(&started, "find-book", cx);
+    enter_book_query(&started, "ЁЖИКА", cx);
+    assert_eq!(chapter_of(&started, cx), 1);
+    click(&started, "find-close", cx);
+    assert_eq!(chapter_of(&started, cx), 0);
+    assert_eq!(top(&started, cx), 0);
+}
+
+#[gpui_kit::test]
+fn a_footnote_leads_to_its_definition_and_back(cx: &mut TestAppContext) {
+    let middle = "Текст главы продолжается.\n\n".repeat(60);
+    let text = format!(
+        "# Заметки\n\nАнна сверилась с журналом.[^журнал]\n\n{middle}[^журнал]: Запись за вторник.\n"
+    );
+    let footnote = u32::try_from(text.find("[^журнал]:").unwrap()).unwrap();
+    let chapters = [("one.md", text)];
+    let started = start_with_mode(cx, 800.0, &chapters, None, false).unwrap();
+    settle(&started, cx);
+    let origin = top(&started, cx);
+    testing::frame(cx, started.window, |window, cx| {
+        let at = window.find_by_label("Footnote журнал").bounds().center();
+        window.pointer_down(at, gpui_kit::MouseButton::Left, cx);
+        window.pointer_up(at, gpui_kit::MouseButton::Left, cx);
+    });
+    settle(&started, cx);
+    assert!(top(&started, cx) > footnote / 2);
+    click(&started, "reader-return", cx);
+    assert_eq!(top(&started, cx), origin);
+}
+
+#[gpui_kit::test]
+fn scrolling_with_the_wheel_updates_the_saved_place(cx: &mut TestAppContext) {
+    let started = start_with_mode(cx, 800.0, &two_chapters(), None, false).unwrap();
+    settle(&started, cx);
+    started
+        .page
+        .update(cx, |page, cx| page.load_chapter(1, Arrival::Start, cx));
+    settle(&started, cx);
+    testing::frame(cx, started.window, |window, cx| {
+        window.scroll(
+            "chapter-text",
+            gpui_kit::ScrollDelta::Pixels(gpui_kit::point(gpui_kit::px(0.0), gpui_kit::px(-250.0))),
+            cx,
+        );
+    });
+    settle(&started, cx);
+    cx.executor().advance_clock(Duration::from_secs(1));
+    settle(&started, cx);
+    let offset = top(&started, cx);
+    assert!(offset > 0);
+    assert_eq!(
+        started
+            .fixture
+            .catalogue
+            .state(started.key)
+            .unwrap()
+            .place
+            .unwrap()
+            .offset,
+        offset,
+    );
+}
+
+#[gpui_kit::test]
+fn the_appearance_controls_apply_and_reset_the_saved_preferences(cx: &mut TestAppContext) {
+    let started = start_with_mode(cx, 1280.0, &two_chapters(), None, false).unwrap();
+    testing::frame(cx, started.window, |window, _| {
+        window.resize(gpui_kit::size(gpui_kit::px(1280.0), gpui_kit::px(1100.0)));
+    });
+    settle(&started, cx);
+    click(&started, "appearance", cx);
+    click(&started, "text-scale", cx);
+    let settings = || started.fixture.catalogue.settings().unwrap();
+    assert!((settings().text_size - 44.0).abs() < f32::EPSILON);
+    click(&started, "text-scale", cx);
+    click(&started, "typeface-System", cx);
+    click(&started, "reading-advanced", cx);
+    for id in [
+        "column-wider",
+        "column-narrower",
+        "paragraph-tighter",
+        "paragraph-looser",
+        "reading-heavy",
+        "reading-paged",
+        "reading-page-motion",
+        "reading-reduced-motion",
+    ] {
+        click(&started, id, cx);
+    }
+    let scroll = |amount, cx: &mut TestAppContext| {
+        testing::frame(cx, started.window, |window, cx| {
+            window.scroll(
+                "appearance-panel",
+                gpui_kit::ScrollDelta::Pixels(gpui_kit::point(
+                    gpui_kit::px(0.0),
+                    gpui_kit::px(amount),
+                )),
+                cx,
+            );
+        });
+    };
+    scroll(-500.0, cx);
+    click(&started, "reading-progress", cx);
+    let changed = settings();
+    assert!(changed.reading.heavier);
+    assert!(changed.reading.hide_progress);
+    assert_eq!(
+        changed.reading.flow,
+        crate::entities::catalogue::ReadingFlow::AnimatedPages
+    );
+    assert_eq!(changed.typeface, "System");
+    scroll(500.0, cx);
+    click(&started, "reading-reset", cx);
+    let mut expected = crate::entities::catalogue::Settings {
+        text_size: 22.0,
+        ..crate::entities::catalogue::Settings::default()
+    };
+    expected.reading.size_set = true;
+    assert_eq!(settings(), expected);
 }

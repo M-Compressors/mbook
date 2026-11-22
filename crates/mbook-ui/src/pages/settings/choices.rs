@@ -5,15 +5,13 @@ use std::ops::RangeInclusive;
 use gpui_kit::SharedString;
 use gpui_kit::component::searchable_list::SearchableListItem;
 
+use crate::entities::catalogue::READING_FACES;
 use crate::shared::theme::PageTone;
 
-/// The typeface that is part of the application and the default.
-pub(super) const LITERATA: &str = "Literata";
-
 /// The sizes of the text of a book, in pixels.
-pub(super) const TEXT_SIZE: RangeInclusive<f32> = 12.0..=32.0;
+pub(super) const TEXT_SIZE: RangeInclusive<f32> = 12.0..=80.0;
 /// The line heights, as a multiple of the size.
-pub(super) const LINE_HEIGHT: RangeInclusive<f32> = 1.2..=2.0;
+pub(super) const LINE_HEIGHT: RangeInclusive<f32> = 1.3..=2.0;
 /// The sizes of the interface, in percent.
 pub(super) const INTERFACE_PERCENT: RangeInclusive<f32> = 100.0..=200.0;
 /// The step of the size of the interface, in percent.
@@ -21,12 +19,13 @@ pub(super) const INTERFACE_STEP: f32 = 10.0;
 
 /// The page tones the settings offer, in order, with their names. `None`
 /// follows the system.
-pub(super) const TONES: [(Option<PageTone>, &str); 5] = [
+pub(super) const TONES: [(Option<PageTone>, &str); 6] = [
     (None, "Follow the system"),
-    (Some(PageTone::Paper), "Paper"),
-    (Some(PageTone::Sepia), "Sepia"),
-    (Some(PageTone::Dusk), "Dusk"),
-    (Some(PageTone::Night), "Night"),
+    (Some(PageTone::Paper), PageTone::Paper.label()),
+    (Some(PageTone::Neutral), PageTone::Neutral.label()),
+    (Some(PageTone::Sepia), PageTone::Sepia.label()),
+    (Some(PageTone::Night), PageTone::Night.label()),
+    (Some(PageTone::HighContrast), PageTone::HighContrast.label()),
 ];
 
 /// The position of a page tone among [`TONES`].
@@ -81,8 +80,8 @@ impl SearchableListItem for Typeface {
 /// While the families are not read (`families` is empty) the stored typeface
 /// is shown as it is, not as missing.
 pub(super) fn typeface_items(stored: &str, families: &[String]) -> Vec<Typeface> {
-    let mut items = vec![Typeface::installed(LITERATA)];
-    let known = stored == LITERATA || families.iter().any(|family| family == stored);
+    let mut items: Vec<_> = READING_FACES.into_iter().map(Typeface::installed).collect();
+    let known = READING_FACES.contains(&stored) || families.iter().any(|family| family == stored);
     if !known {
         items.push(if families.is_empty() {
             Typeface::installed(stored)
@@ -93,7 +92,7 @@ pub(super) fn typeface_items(stored: &str, families: &[String]) -> Vec<Typeface>
     items.extend(
         families
             .iter()
-            .filter(|family| family.as_str() != LITERATA)
+            .filter(|family| !READING_FACES.contains(&family.as_str()))
             .map(|family| Typeface::installed(family)),
     );
     items
@@ -111,7 +110,7 @@ pub(super) fn size_text(size: f32) -> String {
 
 /// The line height as shown: `1.6`.
 pub(super) fn line_height_text(height: f32) -> String {
-    format!("{height:.1}")
+    format!("{height:.2}")
 }
 
 /// The size of the interface as shown: `120%`.
@@ -126,7 +125,7 @@ pub(super) fn snap_size(value: f32) -> f32 {
 
 /// A line height from a slider: tenths.
 pub(super) fn snap_line_height(value: f32) -> f32 {
-    ((value * 10.0).round() / 10.0).clamp(*LINE_HEIGHT.start(), *LINE_HEIGHT.end())
+    ((value * 20.0).round() / 20.0).clamp(*LINE_HEIGHT.start(), *LINE_HEIGHT.end())
 }
 
 /// A scale of the interface from a slider in percent: steps of ten percent,
@@ -156,42 +155,54 @@ mod tests {
     #[test]
     fn literata_comes_first_then_the_families_of_the_device() {
         let items = typeface_items("Literata", &families(&["Arial", "Georgia"]));
-        assert_eq!(names(&items), ["Literata", "Arial", "Georgia"]);
+        assert_eq!(
+            names(&items),
+            ["Literata", "Noto Sans", "System", "Arial", "Georgia"]
+        );
     }
 
     #[test]
     fn literata_is_not_listed_twice() {
         let items = typeface_items("Literata", &families(&["Arial", "Literata"]));
-        assert_eq!(names(&items), ["Literata", "Arial"]);
+        assert_eq!(names(&items), ["Literata", "Noto Sans", "System", "Arial"]);
     }
 
     #[test]
     fn a_stored_typeface_the_device_lacks_is_listed_and_marked() {
         let items = typeface_items("Palatino", &families(&["Arial"]));
-        assert_eq!(names(&items), ["Literata", "Palatino", "Arial"]);
-        assert_eq!(items[1].title, "Palatino (not installed)");
-        assert_eq!(items[1].family, "Palatino", "the stored name is kept");
+        assert_eq!(
+            names(&items),
+            ["Literata", "Noto Sans", "System", "Palatino", "Arial"]
+        );
+        assert_eq!(items[3].title, "Palatino (not installed)");
+        assert_eq!(items[3].family, "Palatino", "the stored name is kept");
     }
 
     #[test]
     fn a_stored_typeface_the_device_has_is_not_marked() {
         let items = typeface_items("Arial", &families(&["Arial", "Georgia"]));
-        assert_eq!(names(&items), ["Literata", "Arial", "Georgia"]);
-        assert_eq!(items[1].title, "Arial");
+        assert_eq!(
+            names(&items),
+            ["Literata", "Noto Sans", "System", "Arial", "Georgia"]
+        );
+        assert_eq!(items[3].title, "Arial");
     }
 
     #[test]
     fn a_stored_typeface_is_not_marked_before_the_families_are_read() {
         let items = typeface_items("Palatino", &[]);
-        assert_eq!(names(&items), ["Literata", "Palatino"]);
-        assert_eq!(items[1].title, "Palatino");
+        assert_eq!(
+            names(&items),
+            ["Literata", "Noto Sans", "System", "Palatino"]
+        );
+        assert_eq!(items[3].title, "Palatino");
     }
 
     #[test]
     fn the_stored_typeface_is_found_in_the_list() {
         let items = typeface_items("Palatino", &families(&["Arial"]));
-        assert_eq!(typeface_index(&items, "Palatino"), Some(1));
-        assert_eq!(typeface_index(&items, "Arial"), Some(2));
+        assert_eq!(typeface_index(&items, "Palatino"), Some(3));
+        assert_eq!(typeface_index(&items, "Arial"), Some(4));
         assert_eq!(typeface_index(&items, "Nothing"), None);
     }
 
@@ -206,8 +217,8 @@ mod tests {
     fn values_are_shown_in_the_unit_the_user_knows() {
         assert_eq!(size_text(18.0), "18 px");
         assert_eq!(size_text(17.6), "18 px");
-        assert_eq!(line_height_text(1.6), "1.6");
-        assert_eq!(line_height_text(2.0), "2.0");
+        assert_eq!(line_height_text(1.6), "1.60");
+        assert_eq!(line_height_text(2.0), "2.00");
         assert_eq!(scale_text(1.0), "100%");
         assert_eq!(scale_text(1.2), "120%");
     }
@@ -216,9 +227,9 @@ mod tests {
     fn a_slider_value_snaps_to_what_the_setting_accepts() {
         assert!(same(snap_size(17.6), 18.0));
         assert!(same(snap_size(3.0), 12.0));
-        assert!(same(snap_size(99.0), 32.0));
+        assert!(same(snap_size(99.0), 80.0));
         assert!(same(snap_line_height(1.500_000_1), 1.5));
-        assert!(same(snap_line_height(0.5), 1.2));
+        assert!(same(snap_line_height(0.5), 1.3));
         assert!(same(snap_line_height(5.0), 2.0));
         assert!(same(snap_scale(123.0), 1.2));
         assert!(same(snap_scale(100.0), 1.0));

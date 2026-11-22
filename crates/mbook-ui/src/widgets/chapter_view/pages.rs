@@ -145,6 +145,11 @@ fn span(count: usize, line: f32) -> f32 {
 /// top is at `top`, is the first that does not fit above `limit`.
 fn break_in(block: Block, top: f32, start: f32, limit: f32, measures: Measures) -> f32 {
     let line = measures.line.max(1.0);
+    if measures.page < line {
+        // A short viewport can only show part of a line. The next page
+        // continues that line so large text cannot disappear between pages.
+        return limit;
+    }
     let count = match block.kind {
         BlockKind::Text => lines(block.height, measures),
         BlockKind::Heading | BlockKind::Whole => None,
@@ -174,12 +179,7 @@ fn break_in(block: Block, top: f32, start: f32, limit: f32, measures: Measures) 
         fit -= 1;
     }
     let cut = top + span(fit, line);
-    if cut > start + EPSILON {
-        cut
-    } else {
-        // Not one line fits: the page is lower than a line.
-        start + line.max(measures.page)
-    }
+    if cut > start + EPSILON { cut } else { limit }
 }
 
 /// Divides the column of `blocks` into pages. A text without blocks has one
@@ -470,10 +470,18 @@ mod tests {
     fn a_page_lower_than_a_line_still_moves_on() {
         let low = Measures { page: 6.0, ..M };
         let pages = paginate(&[text(3)], low);
-        assert!(pages.len() >= 3, "{pages:?}");
-        assert!(pages.windows(2).all(|pair| pair[1].top > pair[0].top));
+        assert_eq!(pages.len(), 5, "{pages:?}");
+        assert!(
+            pages
+                .windows(2)
+                .all(|pair| (pair[1].top - pair[0].top - pair[0].extent).abs() < 0.01)
+        );
         let pages = paginate(&[whole(30.0)], low);
-        assert!(pages.windows(2).all(|pair| pair[1].top > pair[0].top));
+        assert!(
+            pages
+                .windows(2)
+                .all(|pair| (pair[1].top - pair[0].top - pair[0].extent).abs() < 0.01)
+        );
     }
 
     #[test]

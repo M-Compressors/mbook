@@ -91,50 +91,90 @@ impl Chrome {
     };
 }
 
+/// Reading colors for a page, including interaction states.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ReadingColors {
+    pub(crate) background: Rgb,
+    pub(crate) text: Rgb,
+    pub(crate) muted: Rgb,
+    pub(crate) link: Rgb,
+    pub(crate) selection: Rgb,
+    pub(crate) search: Rgb,
+}
+
+impl ReadingColors {
+    const fn new(
+        background: u32,
+        text: u32,
+        muted: u32,
+        link: u32,
+        selection: u32,
+        search: u32,
+    ) -> Self {
+        Self {
+            background: Rgb::hex(background),
+            text: Rgb::hex(text),
+            muted: Rgb::hex(muted),
+            link: Rgb::hex(link),
+            selection: Rgb::hex(selection),
+            search: Rgb::hex(search),
+        }
+    }
+}
+
 /// The colours of the page of a book.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PageTone {
-    /// Black on white.
     Paper,
-    /// Brown on cream.
+    Neutral,
     Sepia,
-    /// Light grey on dark grey.
-    Dusk,
-    /// Grey on black.
     Night,
+    HighContrast,
 }
 
 impl PageTone {
     /// Every tone, in the order the settings offer them.
-    pub(crate) const ALL: [Self; 4] = [Self::Paper, Self::Sepia, Self::Dusk, Self::Night];
+    pub(crate) const ALL: [Self; 5] = [
+        Self::Paper,
+        Self::Neutral,
+        Self::Sepia,
+        Self::Night,
+        Self::HighContrast,
+    ];
 
-    /// The colour of the page.
+    /// Page and interaction tokens for this tone.
+    pub(crate) const fn colors(self) -> ReadingColors {
+        match self {
+            Self::Paper => ReadingColors::new(
+                0xF7_F4ED, 0x2B_2926, 0x69_645C, 0x53_3C87, 0xDE_D5F1, 0xFF_EA9E,
+            ),
+            Self::Neutral => ReadingColors::new(
+                0xFA_FAF8, 0x26_2626, 0x62_6262, 0x4D_458E, 0xDE_D9F2, 0xFF_EA9E,
+            ),
+            Self::Sepia => ReadingColors::new(
+                0xF1_E6CF, 0x3B_3026, 0x6B_5B49, 0x56_336F, 0xD9_C8E2, 0xFF_EA9E,
+            ),
+            Self::Night => ReadingColors::new(
+                0x1E_2024, 0xD8_D7D3, 0xA6_A8AD, 0xBC_A9EA, 0x44_375D, 0x40_3214,
+            ),
+            Self::HighContrast => {
+                ReadingColors::new(0xFF_FFFF, 0, 0x50_5050, 0x00_0080, 0xFF_FF00, 0xFF_D880)
+            }
+        }
+    }
+
     pub(crate) const fn page(self) -> Rgb {
-        match self {
-            Self::Paper => Rgb::hex(0x00FF_FFFF),
-            Self::Sepia => Rgb::hex(0x00F4_ECD8),
-            Self::Dusk => Rgb::hex(0x002A_2C31),
-            Self::Night => Rgb::hex(0x0000_0000),
-        }
+        self.colors().background
     }
 
-    /// The colour of the text.
     pub(crate) const fn text(self) -> Rgb {
-        match self {
-            Self::Paper => Rgb::hex(0x001B_1B1B),
-            Self::Sepia => Rgb::hex(0x003A_2E1F),
-            Self::Dusk => Rgb::hex(0x00D5_D7DB),
-            Self::Night => Rgb::hex(0x00B8_B8B8),
-        }
+        self.colors().text
     }
 
-    /// Whether the page is dark, which decides the appearance of the
-    /// controls drawn over it.
     pub(crate) const fn is_dark(self) -> bool {
-        matches!(self, Self::Dusk | Self::Night)
+        matches!(self, Self::Night)
     }
 
-    /// The colours of the interface that go with the page.
     pub(crate) const fn chrome(self) -> Chrome {
         if self.is_dark() {
             Chrome::DARK
@@ -147,14 +187,28 @@ impl PageTone {
     pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::Paper => "paper",
+            Self::Neutral => "neutral",
             Self::Sepia => "sepia",
-            Self::Dusk => "dusk",
             Self::Night => "night",
+            Self::HighContrast => "high-contrast",
         }
     }
 
-    /// The tone a stored name stands for.
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Paper => "Paper",
+            Self::Neutral => "Neutral",
+            Self::Sepia => "Sepia",
+            Self::Night => "Night",
+            Self::HighContrast => "High contrast",
+        }
+    }
+
+    /// The tone a stored name stands for, including the previous dark option.
     pub(crate) fn from_name(name: &str) -> Option<Self> {
+        if name == "dusk" {
+            return Some(Self::Night);
+        }
         Self::ALL.into_iter().find(|tone| tone.name() == name)
     }
 }
@@ -209,9 +263,20 @@ mod tests {
     }
 
     #[test]
-    fn the_text_of_every_page_tone_meets_level_aa() {
+    fn reading_and_interaction_pairs_meet_the_product_contrast_targets() {
         for tone in PageTone::ALL {
-            assert!(tone.text().contrast(tone.page()) >= TEXT, "{tone:?}");
+            let colors = tone.colors();
+            for background in [colors.background, colors.selection, colors.search] {
+                assert!(colors.text.contrast(background) >= 7.0, "{tone:?}");
+                // The renderer preserves link ink when painting selection and highlights.
+                let target = if background == colors.background {
+                    7.0
+                } else {
+                    TEXT
+                };
+                assert!(colors.link.contrast(background) >= target, "{tone:?}");
+            }
+            assert!(colors.muted.contrast(colors.background) >= TEXT, "{tone:?}");
         }
     }
 
@@ -227,7 +292,7 @@ mod tests {
     fn dark_tones_take_the_dark_interface() {
         assert_eq!(PageTone::Paper.chrome(), Chrome::LIGHT);
         assert_eq!(PageTone::Sepia.chrome(), Chrome::LIGHT);
-        assert_eq!(PageTone::Dusk.chrome(), Chrome::DARK);
+        assert_eq!(PageTone::Night.chrome(), Chrome::DARK);
         assert_eq!(PageTone::Night.chrome(), Chrome::DARK);
     }
 
@@ -237,5 +302,6 @@ mod tests {
             assert_eq!(PageTone::from_name(tone.name()), Some(tone));
         }
         assert_eq!(PageTone::from_name("neon"), None);
+        assert_eq!(PageTone::from_name("dusk"), Some(PageTone::Night));
     }
 }

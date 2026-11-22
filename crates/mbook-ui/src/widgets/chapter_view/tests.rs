@@ -92,7 +92,7 @@ fn top(started: &Started, cx: &mut TestAppContext) -> u32 {
 
 #[gpui_kit::test]
 fn the_text_of_a_chapter_is_shown_at_each_width(cx: &mut TestAppContext) {
-    for width in [390.0, 800.0, 1280.0] {
+    for width in [320.0, 360.0, 390.0, 430.0, 768.0, 1280.0, 1920.0] {
         let started = start(cx, width, 600.0);
         started
             .view
@@ -132,7 +132,7 @@ fn the_text_does_not_take_more_than_the_column(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn a_block_is_revealed_at_the_top_of_the_window(cx: &mut TestAppContext) {
+fn the_requested_offset_within_a_block_is_restored(cx: &mut TestAppContext) {
     let started = start(cx, 800.0, 400.0);
     let text = chapter(60);
     let blocks = blocks::block_offsets(&text);
@@ -142,7 +142,7 @@ fn a_block_is_revealed_at_the_top_of_the_window(cx: &mut TestAppContext) {
         view.reveal(target + 5, cx);
     });
     settle(&started, cx);
-    assert_eq!(top(&started, cx), target);
+    assert_eq!(top(&started, cx), target + 5);
 }
 
 #[gpui_kit::test]
@@ -303,7 +303,7 @@ fn a_picture_that_is_not_ready_holds_its_place_at_its_size(cx: &mut TestAppConte
         .view
         .read_with(cx, |view, _| view.placeholder_sizes());
     // The window width minus its two 32-pixel margins, with the picture at half that height.
-    assert_eq!(sizes, vec![(736, 368)]);
+    assert_eq!(sizes, vec![(720, 360)]);
 }
 
 #[gpui_kit::test]
@@ -458,14 +458,14 @@ fn paged_with(cx: &mut TestAppContext, text: &str) -> Started {
 }
 
 #[gpui_kit::test]
-fn a_paragraph_is_as_high_as_its_lines_and_the_gap_of_the_kit(cx: &mut TestAppContext) {
+fn a_paragraph_is_as_high_as_its_lines_and_the_reading_gap(cx: &mut TestAppContext) {
     // What the pages are divided by: a line of 20 pixels at 1.6 is 32 pixels
-    // high, and a paragraph that another follows has 0.75 rem under it.
+    // high, and a paragraph that another follows has 0.7 em under it.
     let started = paged_with(cx, "One line.\n\nAnother.\n");
     let heights = started
         .view
         .read_with(cx, |view, _| view.paging.as_ref().unwrap().heights.clone());
-    assert_eq!(heights, vec![32.0 + 16.0 * PARAGRAPH_GAP_REMS, 32.0]);
+    assert_eq!(heights, vec![32.0 + 14.0, 32.0]);
 }
 
 #[gpui_kit::test]
@@ -777,7 +777,15 @@ fn a_click_beside_a_paged_text_asks_for_a_page(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn a_turn_is_drawn_in_two_steps_when_motion_is_allowed(cx: &mut TestAppContext) {
     let started = paged_with(cx, &long_chapter(12));
-    cx.update(|cx| cx.set_reduce_motion(false));
+    cx.update(|cx| {
+        cx.set_reduce_motion(false);
+        Appearance::global(cx).update(cx, |appearance, cx| {
+            appearance.update(
+                |settings| settings.reading.flow = ReadingFlow::AnimatedPages,
+                cx,
+            );
+        });
+    });
     started
         .view
         .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
@@ -864,7 +872,7 @@ fn a_diagram_and_a_formula_alone_in_a_paragraph_are_drawn_as_blocks(cx: &mut Tes
     assert_eq!(names, ["The way", "The energy"]);
     for (name, width, height) in &drawn {
         // Each takes the whole column and is as high as its drawing.
-        assert!((*width - 736.0).abs() < 1.0, "{name}: {width}");
+        assert!((*width - 720.0).abs() < 1.0, "{name}: {width}");
         assert!(*height > 10.0, "{name}: {height}");
     }
     assert!(
@@ -1076,4 +1084,47 @@ fn a_paged_text_with_figures_is_divided_into_pages(cx: &mut TestAppContext) {
     let (page, pages) = page_number(&started, cx);
     assert_eq!(page, 1);
     assert!(pages > 1, "{pages}");
+}
+
+#[gpui_kit::test]
+fn changing_reading_flow_without_turning_a_page_keeps_the_source_position(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    let paragraph =
+        "Ёжик наблюдал за утренней росой, а рядом, за высоким забором, шумели ветки. ".repeat(100);
+    let at = paragraph.char_indices().nth(3500).unwrap().0;
+    let offset = u32::try_from(at).unwrap();
+    started.view.update(cx, |view, cx| {
+        view.set_chapter(&paragraph, vec![0], cx);
+        view.reveal(offset, cx);
+    });
+    settle(&started, cx);
+    let before = top(&started, cx);
+    assert!(before.abs_diff(offset) <= 1);
+    started.view.update(cx, |view, cx| view.set_paged(true, cx));
+    settle(&started, cx);
+    assert!(page_number(&started, cx).0 > 1);
+    started
+        .view
+        .update(cx, |view, cx| view.set_paged(false, cx));
+    settle(&started, cx);
+    assert!(top(&started, cx).abs_diff(before) <= 1);
+}
+
+#[gpui_kit::test]
+fn a_large_mixed_script_chapter_reaches_its_final_passage(cx: &mut TestAppContext) {
+    let started = start(cx, 320.0, 640.0);
+    let text = format!(
+        "# Глава\n\n{}Последняя строка. API и ₽.\n",
+        "В саду ещё темно, и Анна находит _ёжика_. За́мок на воротах закрыт.\n\n".repeat(3_050)
+    );
+    let blocks = blocks::block_offsets(&text);
+    let final_offset = offset_of(&text, "Последняя строка.");
+    started.view.update(cx, |view, cx| {
+        view.set_chapter(&text, blocks, cx);
+        view.reveal(final_offset, cx);
+    });
+    settle(&started, cx);
+    started.view.update(cx, ChapterView::reveal_end);
+    settle(&started, cx);
+    assert!(top(&started, cx) > final_offset - 1024);
 }

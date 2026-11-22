@@ -1,5 +1,4 @@
-//! What the application embeds: the icons of its controls and, later, the
-//! typeface of books.
+//! The icons and reading fonts embedded in the application.
 
 use std::borrow::Cow;
 
@@ -58,25 +57,30 @@ impl AssetSource for Assets {
     }
 }
 
-/// The font files the application embeds, as bytes.
-///
-/// None yet: Literata is embedded here once its files are in `assets/`.
-fn embedded_fonts() -> Vec<Cow<'static, [u8]>> {
-    // Literata is embedded here once its files are in assets/
-    Vec::new()
-}
-
-/// Registers the embedded fonts with the text system. Until a font is
-/// embedded this does nothing, and books are set in the typeface the
-/// appearance falls back to.
+/// Registers local faces before any reading view is constructed.
 pub(crate) fn register_fonts(cx: &App) {
-    let fonts = embedded_fonts();
-    if fonts.is_empty() {
-        return;
+    macro_rules! face {
+        ($name:literal) => {
+            include_bytes!(concat!("../../assets/fonts/", $name, ".ttf")).as_slice()
+        };
     }
-    // A font that fails to register leaves the fallback in place; nothing else
-    // depends on it.
-    cx.text_system().add_fonts(fonts).ok();
+    for font in [
+        face!("Literata-Regular"),
+        face!("Literata-Medium"),
+        face!("Literata-Bold"),
+        face!("Literata-Italic"),
+        face!("Literata-MediumItalic"),
+        face!("Literata-BoldItalic"),
+        face!("NotoSans-Regular"),
+        face!("NotoSans-Medium"),
+        face!("NotoSans-Bold"),
+        face!("NotoSans-Italic"),
+        face!("NotoSans-MediumItalic"),
+        face!("NotoSans-BoldItalic"),
+    ] {
+        // A failed face leaves the platform's fallback available.
+        cx.text_system().add_fonts(vec![Cow::Borrowed(font)]).ok();
+    }
 }
 
 #[cfg(test)]
@@ -142,10 +146,5 @@ mod tests {
                 "{name}"
             );
         }
-    }
-
-    #[test]
-    fn no_font_is_embedded_yet() {
-        assert_eq!(embedded_fonts().len(), 0);
     }
 }

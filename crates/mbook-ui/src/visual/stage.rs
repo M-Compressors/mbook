@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt};
 use gpui_kit::{
@@ -199,6 +199,55 @@ impl Stage {
     pub(super) fn click(&mut self, id: &'static str) -> Result<()> {
         let at = self.centre_of(id)?;
         self.press_at(at)
+    }
+
+    /// Checks that the platform selects distinct faces with the required glyphs.
+    pub(super) fn check_reading_faces(&mut self) -> Result<()> {
+        self.with_app(|cx| {
+            let system = cx.text_system();
+            for family in ["Literata", "Noto Sans"] {
+                let mut seen = Vec::new();
+                for style in [gpui_kit::FontStyle::Normal, gpui_kit::FontStyle::Italic] {
+                    for weight in [
+                        gpui_kit::FontWeight::NORMAL,
+                        gpui_kit::FontWeight::MEDIUM,
+                        gpui_kit::FontWeight::BOLD,
+                    ] {
+                        let mut request = gpui_kit::font(family);
+                        request.style = style;
+                        request.weight = weight;
+                        let id = system.resolve_font(&request);
+                        let exact = system
+                            .get_font_for_id(id)
+                            .is_some_and(|face| face.family == request.family);
+                        if !exact || seen.contains(&id) {
+                            return Err(missing(&format!(
+                                "{family} face for {style:?}, {weight:?}"
+                            )));
+                        }
+                        seen.push(id);
+                        for glyph in "ЁёЙЩЪыь₽—„“API\u{0301}".chars() {
+                            if system.advance(id, px(22.0), glyph).is_err() {
+                                return Err(missing(&format!("{glyph} glyph in {family}")));
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+
+    /// Times pointer dispatch and the first subsequent native headless frame.
+    pub(super) fn time_click(&mut self, id: &'static str) -> Result<Duration> {
+        let at = self.centre_of(id)?;
+        self.with_window(|window, cx| {
+            let start = Instant::now();
+            window.pointer_down(at, MouseButton::Left, cx);
+            window.pointer_up(at, MouseButton::Left, cx);
+            window.render_frame(cx);
+            start.elapsed()
+        })
     }
 
     /// Clicks an element whose id is made at run time.

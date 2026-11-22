@@ -215,7 +215,7 @@ fn every_setting_has_a_control_named_by_its_visible_label(cx: &mut TestAppContex
             ("Follow the system", Role::RadioButton),
             ("Paper", Role::RadioButton),
             ("Sepia", Role::RadioButton),
-            ("Dusk", Role::RadioButton),
+            ("Neutral", Role::RadioButton),
             ("Night", Role::RadioButton),
             ("Size of the interface", Role::Slider),
             ("Controls of the reader", Role::Group),
@@ -292,7 +292,7 @@ fn the_form_holds_the_stored_values(cx: &mut TestAppContext) {
                     settings.text_size = 22.0;
                     settings.line_height = 1.8;
                     settings.interface_scale = 1.5;
-                    settings.page_tone = Some(PageTone::Dusk);
+                    settings.page_tone = Some(PageTone::Neutral);
                     settings.keep_controls = true;
                     settings.reduce_motion = true;
                 },
@@ -306,14 +306,14 @@ fn the_form_holds_the_stored_values(cx: &mut TestAppContext) {
     );
     assert_eq!(
         label_of(&started, "line-height-value", cx).as_deref(),
-        Some("1.8")
+        Some("1.80")
     );
     assert_eq!(
         label_of(&started, "interface-size-value", cx).as_deref(),
         Some("150%")
     );
     testing::frame(cx, started.window, |window, _| {
-        assert_eq!(window.find_by_label("Dusk").checked(), Some(true));
+        assert_eq!(window.find_by_label("Neutral").checked(), Some(true));
         assert_eq!(window.find_by_label("Paper").checked(), Some(false));
         assert_eq!(window.find_by_label("Always shown").checked(), Some(true));
         assert_eq!(window.find_by_label("Reduced").checked(), Some(true));
@@ -327,7 +327,7 @@ fn a_page_tone_is_chosen_by_its_name_and_applies_at_once(cx: &mut TestAppContext
         ("Sepia", Some(PageTone::Sepia)),
         ("Night", Some(PageTone::Night)),
         ("Paper", Some(PageTone::Paper)),
-        ("Dusk", Some(PageTone::Dusk)),
+        ("Neutral", Some(PageTone::Neutral)),
         ("Follow the system", None),
     ] {
         click_label(&started, label, cx);
@@ -382,7 +382,7 @@ fn the_buttons_stop_at_the_ends_of_the_range(cx: &mut TestAppContext) {
     set(&started, cx, |settings| settings.text_size = 12.0);
     assert!(is_disabled(&started, "Smaller text", cx));
     assert!(!is_disabled(&started, "Larger text", cx));
-    set(&started, cx, |settings| settings.text_size = 32.0);
+    set(&started, cx, |settings| settings.text_size = 80.0);
     assert!(is_disabled(&started, "Larger text", cx));
     assert!(!is_disabled(&started, "Smaller text", cx));
 }
@@ -403,14 +403,14 @@ fn the_slider_of_the_text_size_is_set_with_the_keys_alone(cx: &mut TestAppContex
 }
 
 #[gpui_kit::test]
-fn the_slider_of_the_line_height_moves_in_tenths(cx: &mut TestAppContext) {
+fn the_slider_of_the_line_height_moves_in_twentieths(cx: &mut TestAppContext) {
     let started = start(cx, 800.0);
     tab_to(&started, "Line height", cx);
     press(&started, "right", cx);
-    assert!((settings(&started, cx).line_height - 1.7).abs() < 0.001);
+    assert!((settings(&started, cx).line_height - 1.65).abs() < 0.001);
     assert_eq!(
         label_of(&started, "line-height-value", cx).as_deref(),
-        Some("1.7")
+        Some("1.65")
     );
 }
 
@@ -448,7 +448,7 @@ fn a_change_made_elsewhere_moves_the_controls(cx: &mut TestAppContext) {
     );
     assert_eq!(
         label_of(&started, "line-height-value", cx).as_deref(),
-        Some("1.4")
+        Some("1.40")
     );
     assert_eq!(
         label_of(&started, "interface-size-value", cx).as_deref(),
@@ -550,10 +550,10 @@ fn the_sample_grows_with_the_text_and_with_the_line_height(cx: &mut TestAppConte
     };
     set(&started, cx, |settings| {
         settings.text_size = 12.0;
-        settings.line_height = 1.2;
+        settings.line_height = 1.3;
     });
     let small = height(&started, cx);
-    set(&started, cx, |settings| settings.text_size = 32.0);
+    set(&started, cx, |settings| settings.text_size = 80.0);
     let large = height(&started, cx);
     assert!(large > small, "{small:?} {large:?}");
     set(&started, cx, |settings| settings.line_height = 2.0);

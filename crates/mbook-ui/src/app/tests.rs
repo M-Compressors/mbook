@@ -770,7 +770,7 @@ fn a_dark_page_tone_makes_the_whole_window_dark(cx: &mut TestAppContext) {
     cx.update(|cx| {
         Appearance::global(cx).update(cx, |appearance, cx| {
             appearance.update(
-                |settings| settings.page_tone = Some(crate::shared::theme::PageTone::Dusk),
+                |settings| settings.page_tone = Some(crate::shared::theme::PageTone::Night),
                 cx,
             );
         });

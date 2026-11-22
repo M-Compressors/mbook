@@ -1,3 +1,4 @@
+use gpui_kit::component::ActiveTheme as _;
 use std::cell::Cell;
 use std::error::Error as _;
 use std::rc::Rc;
@@ -87,8 +88,8 @@ fn values_out_of_range_are_brought_into_it(cx: &mut TestAppContext) {
         settings.interface_scale = 5.0;
     });
     let now = settings(&appearance, cx);
-    assert!((now.text_size - 32.0).abs() < f32::EPSILON);
-    assert!((now.line_height - 1.2).abs() < f32::EPSILON);
+    assert!((now.text_size - 80.0).abs() < f32::EPSILON);
+    assert!((now.line_height - 1.3).abs() < f32::EPSILON);
     assert!((now.interface_scale - 2.0).abs() < f32::EPSILON);
     change(&appearance, cx, |settings| {
         settings.text_size = 1.0;
@@ -190,8 +191,8 @@ fn the_page_tone_and_the_chrome_are_those_of_the_settings(cx: &mut TestAppContex
                 PageTone::Paper,
                 "a light window"
             );
-            appearance.update(|settings| settings.page_tone = Some(PageTone::Dusk), cx);
-            assert_eq!(appearance.page_tone(window), PageTone::Dusk);
+            appearance.update(|settings| settings.page_tone = Some(PageTone::Night), cx);
+            assert_eq!(appearance.page_tone(window), PageTone::Night);
             assert_eq!(appearance.chrome(window), Chrome::DARK);
             appearance.update(|settings| settings.page_tone = Some(PageTone::Sepia), cx);
             assert_eq!(appearance.chrome(window), Chrome::LIGHT);
@@ -343,16 +344,16 @@ fn the_stored_typeface_is_used_when_the_device_has_it(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn a_missing_typeface_falls_back_to_the_first_installed_reading_serif(cx: &mut TestAppContext) {
+fn a_missing_typeface_falls_back_to_an_available_bundled_face(cx: &mut TestAppContext) {
     let fixture = Fixture::new();
     let appearance = appearance(cx, &fixture);
     cx.run_until_parked();
     appearance.update(cx, |appearance, _| {
-        appearance.families = Some(vec!["Georgia".to_owned(), "Times New Roman".to_owned()]);
+        appearance.families = Some(vec!["Georgia".to_owned(), "Noto Sans".to_owned()]);
     });
     assert_eq!(
         cx.update(|cx| appearance.read(cx).reading_font(cx)),
-        "Georgia"
+        "Noto Sans"
     );
     assert_eq!(
         settings(&appearance, cx).typeface,
@@ -362,28 +363,30 @@ fn a_missing_typeface_falls_back_to_the_first_installed_reading_serif(cx: &mut T
 }
 
 #[gpui_kit::test]
-fn the_interface_font_is_used_when_no_reading_serif_is_installed(cx: &mut TestAppContext) {
+fn the_system_font_is_used_when_neither_bundled_face_is_available(cx: &mut TestAppContext) {
     let fixture = Fixture::new();
     let appearance = appearance(cx, &fixture);
     cx.run_until_parked();
     appearance.update(cx, |appearance, _| {
         appearance.families = Some(vec!["A Sans Font".to_owned()]);
     });
-    cx.update(|cx| assert_eq!(appearance.read(cx).reading_font(cx), cx.theme().font_family));
+    cx.update(|cx| {
+        assert_eq!(
+            appearance.read(cx).reading_font(cx),
+            gpui_kit::Font::default().family
+        );
+    });
 }
 
 #[gpui_kit::test]
-fn before_the_families_are_read_the_font_of_the_interface_is_used(cx: &mut TestAppContext) {
+fn the_bundled_font_can_be_used_before_system_fonts_are_listed(cx: &mut TestAppContext) {
     let fixture = Fixture::new();
     let appearance = appearance(cx, &fixture);
     appearance.update(cx, |appearance, _| appearance.families = None);
-    let (font, interface) = cx.update(|cx| {
-        (
-            appearance.read(cx).reading_font(cx),
-            cx.theme().font_family.clone(),
-        )
-    });
-    assert_eq!(font, interface);
+    assert_eq!(
+        cx.update(|cx| appearance.read(cx).reading_font(cx)),
+        "Literata"
+    );
 }
 
 #[gpui_kit::test]

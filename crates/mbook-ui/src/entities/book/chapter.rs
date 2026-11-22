@@ -23,6 +23,8 @@ pub(crate) struct PreparedChapter {
     pub(crate) blocks: Vec<u32>,
     /// Every link destination of the text, as the Markdown parser reports it.
     pub(crate) links: HashMap<String, Target>,
+    /// The source byte offsets of GFM footnote definitions by identifier.
+    pub(crate) footnotes: HashMap<String, u32>,
     /// Every picture destination of the text that is a picture of the book.
     pub(crate) pictures: HashMap<String, PictureRef>,
     /// Every picture destination of the text that is a diagram or a formula
@@ -65,6 +67,29 @@ pub(crate) enum Target {
 }
 
 impl PreparedChapter {
+    /// Relocates a passage after an in-app edit using a short source quotation.
+    pub(crate) fn after_edit(&self, before: &Self, offset: u32) -> u32 {
+        if self.text == before.text {
+            return offset;
+        }
+        let start = before.text.floor_char_boundary(offset as usize);
+        let end = before.text.floor_char_boundary(start.saturating_add(80));
+        let quote = before.text[start..end].trim_end();
+        let nearby = (!quote.is_empty())
+            .then(|| {
+                self.text
+                    .match_indices(quote)
+                    .min_by_key(|(at, _)| at.abs_diff(start))
+            })
+            .flatten()
+            .map_or(offset, |(at, _)| to_offset(at));
+        let block = self
+            .blocks
+            .partition_point(|at| *at <= nearby)
+            .saturating_sub(1);
+        self.blocks.get(block).copied().unwrap_or(0)
+    }
+
     /// The index of the block that contains a byte offset: the last block
     /// that starts at or before it, or the first when the offset is before
     /// every block.
@@ -83,6 +108,7 @@ pub(super) struct Analysis {
     pub(super) blocks: Vec<u32>,
     /// The destination of every link, once each.
     pub(super) links: Vec<String>,
+    pub(super) footnotes: HashMap<String, u32>,
     /// The destination of every picture, once each.
     pub(super) pictures: Vec<String>,
     /// The destination of every picture shown through a link reference
@@ -186,6 +212,15 @@ fn visit(
     seen: &mut (HashSet<String>, HashSet<String>),
 ) {
     let (link, picture) = match node {
+        Node::FootnoteDefinition(definition) => {
+            if let Some(position) = definition.position.as_ref() {
+                analysis
+                    .footnotes
+                    .entry(definition.identifier.clone())
+                    .or_insert_with(|| to_offset(position.start.offset));
+            }
+            (None, None)
+        }
         Node::Link(link) => (Some(link.url.as_str()), None),
         Node::Image(image) => (None, Some(image.url.as_str())),
         Node::LinkReference(reference) => (
@@ -243,6 +278,7 @@ mod tests {
             text: String::new(),
             blocks: blocks.to_vec(),
             links: HashMap::new(),
+            footnotes: HashMap::new(),
             pictures: HashMap::new(),
             figures: FigureSources::default(),
         }
@@ -250,6 +286,24 @@ mod tests {
 
     fn offset_of(text: &str, needle: &str) -> u32 {
         u32::try_from(text.find(needle).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_quotation_relocates_a_block_after_an_edit() {
+        let before = "Начало.\n\nАнна увидела кошку в саду.\n";
+        let after = format!("Ещё один абзац перед началом.\n\n{before}");
+        let old = PreparedChapter {
+            text: before.to_owned(),
+            ..chapter(&analyse(before).blocks)
+        };
+        let new = PreparedChapter {
+            text: after.clone(),
+            ..chapter(&analyse(&after).blocks)
+        };
+        assert_eq!(
+            new.after_edit(&old, offset_of(before, "увидела")),
+            offset_of(&after, "Анна")
+        );
     }
 
     #[test]

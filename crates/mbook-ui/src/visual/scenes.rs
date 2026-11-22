@@ -9,7 +9,7 @@ use gpui_kit::component::input::SelectAll;
 
 use super::stage::Stage;
 use crate::app::show_about;
-use crate::entities::catalogue::Settings;
+use crate::entities::catalogue::{ReadingFlow, Settings};
 use crate::error::{Error, Result};
 use crate::features::import_book::{ImportQueue, ImportStatus};
 use crate::pages::library::LibraryEvent;
@@ -22,6 +22,8 @@ pub(super) enum Library {
     Empty,
     /// Nine books.
     Books,
+    /// Russian reading sample.
+    Reading,
 }
 
 /// One screen in one state.
@@ -43,6 +45,16 @@ fn same(_: &mut Settings) {}
 
 fn keep_controls(settings: &mut Settings) {
     settings.keep_controls = true;
+}
+
+fn large_text(settings: &mut Settings) {
+    keep_controls(settings);
+    settings.text_size = 44.0;
+}
+
+fn paged_text(settings: &mut Settings) {
+    keep_controls(settings);
+    settings.reading.flow = ReadingFlow::Pages;
 }
 
 const fn shot(name: &'static str, library: Library, run: fn(&mut Stage) -> Result<()>) -> Shot {
@@ -155,8 +167,16 @@ fn other_shots() -> Vec<Shot> {
             ..shot("05-reader-chapter", Library::Books, open_reader)
         },
         Shot {
-            settings: keep_controls,
+            settings: paged_text,
             ..shot("05b-reader-next-page", Library::Books, reader_next_page)
+        },
+        Shot {
+            settings: keep_controls,
+            ..shot("05c-reading-mode", Library::Reading, open_reader)
+        },
+        Shot {
+            settings: large_text,
+            ..shot("05d-reading-mode-enlarged", Library::Reading, open_reader)
         },
         shot("06a-reader-hidden", Library::Books, reader_hidden),
         Shot {
@@ -303,6 +323,26 @@ fn reader_next_page(stage: &mut Stage) -> Result<()> {
     open_reader(stage)?;
     stage.click("next-page")?;
     stage.hover_label("Reading position")
+}
+
+pub(super) fn reading_latency(stage: &mut Stage) -> Result<Vec<(&'static str, Duration)>> {
+    open_reader(stage)?;
+    let mut samples = Vec::new();
+    for _ in 0..5 {
+        samples.push(("page-turn", stage.time_click("next-page")?));
+        stage.settle()?;
+        stage.click("previous-page")?;
+    }
+    stage.click("appearance")?;
+    for _ in 0..5 {
+        samples.push(("theme", stage.time_click("tone-night")?));
+        stage.settle()?;
+        stage.click("tone-paper")?;
+        samples.push(("text-size", stage.time_click("text-larger")?));
+        stage.settle()?;
+        stage.click("text-smaller")?;
+    }
+    Ok(samples)
 }
 
 fn reader_hidden(stage: &mut Stage) -> Result<()> {

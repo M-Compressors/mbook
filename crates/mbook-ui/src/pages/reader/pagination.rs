@@ -21,6 +21,8 @@ pub(super) struct Layout {
     pub(super) rem: Pixels,
     /// The reading typeface actually used.
     pub(super) font: SharedString,
+    pub(super) paragraph_gap: f32,
+    pub(super) heavier: bool,
 }
 
 impl Layout {
@@ -143,6 +145,8 @@ mod tests {
             line_height: 1.6,
             rem: px(16.0),
             font: "Literata".into(),
+            paragraph_gap: 0.7,
+            heavier: false,
         }
     }
 

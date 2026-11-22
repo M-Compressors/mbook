@@ -16,6 +16,8 @@ pub(crate) struct RenderedMatch {
     pub(crate) cursor: Cursor,
     /// The source offset to reveal.
     pub(crate) offset: u32,
+    /// Matching span in the Markdown source.
+    pub(crate) source: Range<usize>,
     /// A short stretch of the text that contains the match.
     pub(crate) excerpt: String,
 }
@@ -92,16 +94,26 @@ fn find_node(
         let mut spans = Vec::new();
         inline_text(node, &mut text, &mut spans);
         let found = in_block(pattern, &text, start, from, backward)?;
-        let offset = spans
-            .iter()
-            .rev()
-            .find(|(at, _)| *at <= found.start)
-            .map_or(start, |(at, source)| {
-                (source.start + found.start - at).min(source.end.saturating_sub(1))
-            });
+        let source_at = |index, end: bool| {
+            spans
+                .iter()
+                .rev()
+                .find(|(at, _)| *at <= index && (!end || *at < index))
+                .map_or(start, |(at, source)| {
+                    let limit = if end {
+                        source.end
+                    } else {
+                        source.end.saturating_sub(1)
+                    };
+                    (source.start + index - at).min(limit)
+                })
+        };
+        let offset = source_at(found.start, false);
+        let end = source_at(found.end, true);
         return Some(RenderedMatch {
             cursor: Cursor(start, found.start),
             offset: u32::try_from(offset).unwrap_or(u32::MAX),
+            source: offset..end.max(offset),
             excerpt: excerpt(&text, found),
         });
     }

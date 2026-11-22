@@ -590,6 +590,10 @@ mod tests {
             keep_controls: true,
             reduce_motion: true,
             check_updates: false,
+            reading: super::super::settings::ReadingOptions {
+                size_set: true,
+                ..Default::default()
+            },
         };
         catalogue.put_settings(&settings)?;
         assert_eq!(catalogue.settings()?, settings);
@@ -621,8 +625,8 @@ mod tests {
             ..Settings::default()
         })?;
         let settings = catalogue.settings()?;
-        assert!((settings.text_size - 32.0).abs() < f32::EPSILON);
-        assert!((settings.line_height - 1.2).abs() < f32::EPSILON);
+        assert!((settings.text_size - 80.0).abs() < f32::EPSILON);
+        assert!((settings.line_height - 1.3).abs() < f32::EPSILON);
         assert!((settings.interface_scale - 1.0).abs() < f32::EPSILON);
         Ok(())
     }

@@ -32,20 +32,79 @@ pub(super) mod name {
 }
 
 /// The range of the size of the text, in pixels.
-const TEXT_SIZE: (f32, f32) = (12.0, 32.0);
+pub(crate) const TEXT_SIZE: (f32, f32) = (12.0, 80.0);
 /// The range of the line height, as a multiple of the size.
-const LINE_HEIGHT: (f32, f32) = (1.2, 2.0);
+pub(crate) const LINE_HEIGHT: (f32, f32) = (1.3, 2.0);
 /// The range of the size of the interface, as a multiple of 100%.
 const INTERFACE_SCALE: (f32, f32) = (1.0, 2.0);
+
+/// The ways the reader moves through a chapter.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum ReadingFlow {
+    #[default]
+    Scroll,
+    Pages,
+    AnimatedPages,
+}
+
+impl ReadingFlow {
+    pub(crate) fn is_paged(self) -> bool {
+        self != Self::Scroll
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Scroll => "scroll",
+            Self::Pages => "pages",
+            Self::AnimatedPages => "animated-pages",
+        }
+    }
+
+    fn from_name(name: &str) -> Self {
+        match name {
+            "pages" => Self::Pages,
+            "animated-pages" => Self::AnimatedPages,
+            _ => Self::Scroll,
+        }
+    }
+}
+
+/// The local reading layout and optional appearance adjustments.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ReadingOptions {
+    pub(crate) column: f32,
+    pub(crate) paragraph_gap: f32,
+    pub(crate) heavier: bool,
+    pub(crate) flow: ReadingFlow,
+    pub(crate) hide_progress: bool,
+    /// The first reader opening or a previous explicit size set the size.
+    pub(crate) size_set: bool,
+}
+
+impl Default for ReadingOptions {
+    fn default() -> Self {
+        Self {
+            column: 60.0,
+            paragraph_gap: 0.7,
+            heavier: false,
+            flow: ReadingFlow::Scroll,
+            hide_progress: false,
+            size_set: false,
+        }
+    }
+}
+
+pub(crate) const READING_FACES: [&str; 3] = ["Literata", "Noto Sans", "System"];
 
 /// What the reader chose for the application and for the page of a book.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Settings {
     /// The font family of books.
     pub(crate) typeface: String,
-    /// The size of the text in pixels, from 12 to 32.
+    /// The size of the text in logical pixels, including legacy sizes below 16.
     pub(crate) text_size: f32,
-    /// The line height as a multiple of the size, from 1.2 to 2.0.
+    pub(crate) reading: ReadingOptions,
+    /// The line height as a multiple of the size, from 1.3 to 2.0.
     pub(crate) line_height: f32,
     /// The colours of the page; `None` follows the system.
     pub(crate) page_tone: Option<PageTone>,
@@ -64,6 +123,7 @@ impl Default for Settings {
         Self {
             typeface: "Literata".to_owned(),
             text_size: 20.0,
+            reading: ReadingOptions::default(),
             line_height: 1.6,
             page_tone: None,
             interface_scale: 1.0,
@@ -80,13 +140,28 @@ impl Settings {
     pub(super) fn encode(&self) -> Vec<(&'static str, String)> {
         let mut rows = vec![
             (name::TYPEFACE, self.typeface.clone()),
-            (name::TEXT_SIZE, self.text_size.to_string()),
+            ("reading_column", self.reading.column.to_string()),
+            (
+                "reading_paragraph_gap",
+                self.reading.paragraph_gap.to_string(),
+            ),
+            ("reading_heavier", self.reading.heavier.to_string()),
+            ("reading_flow", self.reading.flow.name().to_owned()),
+            (
+                "reading_hide_progress",
+                self.reading.hide_progress.to_string(),
+            ),
             (name::LINE_HEIGHT, self.line_height.to_string()),
             (name::INTERFACE_SCALE, self.interface_scale.to_string()),
             (name::KEEP_CONTROLS, self.keep_controls.to_string()),
             (name::REDUCE_MOTION, self.reduce_motion.to_string()),
             (name::CHECK_UPDATES, self.check_updates.to_string()),
         ];
+        if self.reading.size_set
+            || (self.text_size - Self::default().text_size).abs() > f32::EPSILON
+        {
+            rows.push((name::TEXT_SIZE, self.text_size.to_string()));
+        }
         if let Some(tone) = self.page_tone {
             rows.push((name::PAGE_TONE, tone.name().to_owned()));
         }
@@ -103,6 +178,21 @@ impl Settings {
                 .cloned()
                 .unwrap_or(default.typeface),
             text_size: number(rows, name::TEXT_SIZE, TEXT_SIZE, default.text_size),
+            reading: ReadingOptions {
+                column: number(rows, "reading_column", (45.0, 80.0), default.reading.column),
+                paragraph_gap: number(
+                    rows,
+                    "reading_paragraph_gap",
+                    (0.0, 2.0),
+                    default.reading.paragraph_gap,
+                ),
+                heavier: flag(rows, "reading_heavier", default.reading.heavier),
+                flow: rows
+                    .get("reading_flow")
+                    .map_or(ReadingFlow::default(), |name| ReadingFlow::from_name(name)),
+                size_set: rows.contains_key(name::TEXT_SIZE),
+                hide_progress: flag(rows, "reading_hide_progress", default.reading.hide_progress),
+            },
             line_height: number(rows, name::LINE_HEIGHT, LINE_HEIGHT, default.line_height),
             page_tone: rows
                 .get(name::PAGE_TONE)
@@ -170,6 +260,14 @@ mod tests {
         let settings = Settings {
             typeface: "Inter".to_owned(),
             text_size: 21.5,
+            reading: ReadingOptions {
+                column: 71.0,
+                paragraph_gap: 1.4,
+                heavier: true,
+                flow: ReadingFlow::AnimatedPages,
+                hide_progress: true,
+                size_set: true,
+            },
             line_height: 1.75,
             page_tone: Some(PageTone::Sepia),
             interface_scale: 1.25,
@@ -198,7 +296,7 @@ mod tests {
             (name::LINE_HEIGHT, "5"),
             (name::INTERFACE_SCALE, "3"),
         ]));
-        assert!((settings.text_size - 32.0).abs() < f32::EPSILON);
+        assert!((settings.text_size - 80.0).abs() < f32::EPSILON);
         assert!((settings.line_height - 2.0).abs() < f32::EPSILON);
         assert!((settings.interface_scale - 2.0).abs() < f32::EPSILON);
     }
@@ -211,7 +309,7 @@ mod tests {
             (name::INTERFACE_SCALE, "-4"),
         ]));
         assert!((settings.text_size - 12.0).abs() < f32::EPSILON);
-        assert!((settings.line_height - 1.2).abs() < f32::EPSILON);
+        assert!((settings.line_height - 1.3).abs() < f32::EPSILON);
         assert!((settings.interface_scale - 1.0).abs() < f32::EPSILON);
     }
 
@@ -219,8 +317,8 @@ mod tests {
     fn the_ends_of_a_range_are_kept() {
         let settings = Settings::decode(&stored(&[(name::TEXT_SIZE, "12")]));
         assert!((settings.text_size - 12.0).abs() < f32::EPSILON);
-        let settings = Settings::decode(&stored(&[(name::TEXT_SIZE, "32")]));
-        assert!((settings.text_size - 32.0).abs() < f32::EPSILON);
+        let settings = Settings::decode(&stored(&[(name::TEXT_SIZE, "80")]));
+        assert!((settings.text_size - 80.0).abs() < f32::EPSILON);
     }
 
     #[test]

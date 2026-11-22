@@ -273,10 +273,10 @@ mod tests {
 
     #[test]
     fn a_palette_is_made_of_a_page_tone_and_of_gpui_colours() {
-        assert_eq!(Palette::from(PageTone::Paper), Palette::PAPER);
-        assert_eq!(Palette::from(PageTone::Night), NIGHT);
-        let (page, ink) = crate::shared::ui::page_colors(PageTone::Sepia);
-        assert_eq!(Palette::of(page, ink), Palette::from(PageTone::Sepia));
+        for tone in PageTone::ALL {
+            let (page, ink) = crate::shared::ui::page_colors(tone);
+            assert_eq!(Palette::of(page, ink), Palette::from(tone));
+        }
     }
 
     #[test]

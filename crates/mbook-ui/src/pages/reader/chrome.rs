@@ -31,7 +31,7 @@ use crate::shared::layout::SizeClass;
 use crate::shared::ui::{
     BAR_HEIGHT, empty_state, icon_button, page_colors, page_header, status_line, target_size,
 };
-use crate::widgets::chapter_view::{ChapterView, Direction, column_width};
+use crate::widgets::chapter_view::{ChapterView, Direction, reading_column};
 
 /// The height the line under the text takes, in pixels.
 const FOOTER: f32 = 64.0;
@@ -51,6 +51,7 @@ impl Render for ReaderPage {
         let class = appearance.size_class(window);
         let keep = appearance.settings().keep_controls;
         let (page, ink) = page_colors(tone);
+        let muted: Hsla = tone.colors().muted.into();
         let ready = matches!(&self.phase, Phase::Ready(reading) if reading.error.is_none());
         let show = self.controls.shown || self.search.open || keep || !ready;
         let presence = Presence::new("reader-controls", show)
@@ -144,7 +145,7 @@ impl Render for ReaderPage {
                     .w_full()
                     .h(px(footer) + bottom)
                     .pb(bottom)
-                    .children(ready.then(|| self.footer(class, ink, presence, window, cx))),
+                    .children(ready.then(|| self.footer(class, muted, presence, window, cx))),
             )
     }
 }
@@ -362,13 +363,16 @@ impl ReaderPage {
         let viewport = window.viewport_size();
         let insets = window.insets().effective();
         let height = viewport.height - insets.top - insets.bottom - px(BAR_HEIGHT + footer);
+        let font = appearance.reading_font(cx);
         self.pages.set_layout(Layout {
-            column: column_width(viewport.width.as_f32(), settings.text_size, class),
+            column: reading_column(window, cx, settings, class, &font),
             height: height.as_f32().max(1.0),
             text_size: settings.text_size,
             line_height: settings.line_height,
             rem: window.rem_size(),
-            font: appearance.reading_font(cx),
+            font,
+            paragraph_gap: settings.reading.paragraph_gap,
+            heavier: settings.reading.heavier,
         });
         self.scrubber.sync(self.progress, window, cx);
     }
@@ -402,7 +406,7 @@ impl ReaderPage {
     fn footer(
         &self,
         class: SizeClass,
-        ink: Hsla,
+        muted: Hsla,
         presence: PresenceSample,
         window: &Window,
         cx: &mut Context<'_, Self>,
@@ -411,7 +415,12 @@ impl ReaderPage {
             return div().into_any_element();
         };
         let shown = presence.should_render();
-        let muted = ink.opacity(0.72);
+        let progress_visible = !Appearance::global(cx)
+            .read(cx)
+            .settings()
+            .reading
+            .hide_progress;
+        let paged = self.view.read(cx).is_paged();
         let (chapter, offset, progress) = self
             .scrubber
             .preview
@@ -428,7 +437,7 @@ impl ReaderPage {
             .view
             .read(cx)
             .page_number()
-            .filter(|_| !reading.loading)
+            .filter(|_| progress_visible && !reading.loading)
             .map(|local| {
                 let number = self.pages.label(&reading.snapshot, reading.chapter, local);
                 status_line("reader-page-number", number)
@@ -437,14 +446,26 @@ impl ReaderPage {
                     .text_sm()
                     .text_color(muted)
             });
-        let previous = icon_button("previous-page", IconName::ChevronLeft, "Previous page")
-            .rounded_full()
-            .track_focus(&self.handles.previous)
-            .on_click(cx.listener(|this, _, _, cx| this.screen(Direction::Back, cx)));
-        let next = icon_button("next-page", IconName::ChevronRight, "Next page")
-            .rounded_full()
-            .track_focus(&self.handles.next)
-            .on_click(cx.listener(|this, _, _, cx| this.screen(Direction::Forward, cx)));
+        let previous = icon_button(
+            "previous-page",
+            IconName::ChevronLeft,
+            if paged {
+                "Previous page"
+            } else {
+                "Scroll back"
+            },
+        )
+        .rounded_full()
+        .track_focus(&self.handles.previous)
+        .on_click(cx.listener(|this, _, _, cx| this.screen(Direction::Back, cx)));
+        let next = icon_button(
+            "next-page",
+            IconName::ChevronRight,
+            if paged { "Next page" } else { "Scroll forward" },
+        )
+        .rounded_full()
+        .track_focus(&self.handles.next)
+        .on_click(cx.listener(|this, _, _, cx| this.screen(Direction::Forward, cx)));
         let compact = class == SizeClass::Compact;
         let status = || {
             status_line("reader-status", text.clone())
@@ -462,7 +483,11 @@ impl ReaderPage {
                     .flex_1()
                     .min_w_0()
                     .opacity(presence.progress)
-                    .children((shown && !compact).then(status)),
+                    .children((progress_visible && shown && !compact).then(status)),
+            )
+            .children(
+                (shown && !self.history.is_empty())
+                    .then(|| self.return_control(cx).opacity(presence.progress)),
             )
             .children(shown.then(|| previous.opacity(presence.progress)))
             .children(number)
@@ -473,14 +498,29 @@ impl ReaderPage {
             .size_full()
             .px_5()
             .child(row)
-            .children((shown && compact).then(|| {
+            .children((progress_visible && shown && compact).then(|| {
                 div()
                     .text_center()
                     .opacity(presence.progress)
                     .child(status())
             }))
-            .child(self.seek_strip(ink, window, cx))
+            .children(progress_visible.then(|| self.seek_strip(muted, window, cx)))
             .into_any_element()
+    }
+
+    fn return_control(&self, cx: &Context<'_, Self>) -> Button {
+        icon_button(
+            "reader-return",
+            IconName::Undo2,
+            "Return to previous passage",
+        )
+        .rounded_full()
+        .track_focus(&self.handles.return_to_passage)
+        .on_click(cx.listener(|this, _, window, cx| {
+            if this.back(cx) {
+                this.focus_handle.focus(window, cx);
+            }
+        }))
     }
 
     /// The middle of the page: the text, or what stands in its place.
@@ -553,6 +593,10 @@ impl ReaderPage {
         cx: &mut Context<'_, Self>,
     ) {
         if !matches!(event, ClickEvent::Touch(touch) if !touch.long_press) {
+            return;
+        }
+        if !self.view.read(cx).is_paged() {
+            self.touch(cx);
             return;
         }
         let width = window.viewport_size().width.as_f32();

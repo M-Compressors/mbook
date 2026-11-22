@@ -10,6 +10,7 @@ mod scenes;
 mod stage;
 mod world;
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -30,7 +31,8 @@ fn can_render() -> bool {
 /// the files it wrote.
 ///
 /// Each screen is drawn 390, 800 and 1280 pixels wide in the light
-/// appearance, and 1280 pixels wide in the dark one. A file is named by the
+/// appearance, and 1280 pixels wide in the dark one. Reading samples are
+/// also drawn in dark at every width. A file is named by the
 /// number of the screen, what it shows, the width and the appearance:
 /// `02-library-books-1280-light.png`. The library is made of books that are
 /// written to a temporary folder; nothing outside it is read or changed, and
@@ -53,17 +55,20 @@ pub fn render_screens(out: &Path) -> Result<Vec<PathBuf>> {
     fs::create_dir_all(out)?;
     let empty = World::empty()?;
     let books = World::with_books()?;
+    let reading = World::reading()?;
+    write_reading_latency(&reading, out)?;
     let mut written = Vec::new();
     let mut failures = Vec::new();
     for shot in scenes::all() {
         let world = match shot.library {
             Library::Empty => &empty,
             Library::Books => &books,
+            Library::Reading => &reading,
         };
         for (width, height) in SIZES {
             for dark in [false, true] {
                 // The dark appearance is drawn at the width of a desktop only.
-                if dark && width < 1000.0 {
+                if dark && width < 1000.0 && !matches!(shot.library, Library::Reading) {
                     continue;
                 }
                 let look = Look {
@@ -92,4 +97,32 @@ fn one(world: &World, look: Look, shot: &scenes::Shot, path: &Path) -> Result<Pa
     let mut stage = Stage::open(world, look, shot.settings)?;
     (shot.run)(&mut stage)?;
     stage.capture(path)
+}
+
+fn write_reading_latency(world: &World, out: &Path) -> Result<()> {
+    let mut stage = Stage::open(
+        world,
+        Look {
+            width: 1280.0,
+            height: 780.0,
+            dark: false,
+            calm: true,
+        },
+        |settings| {
+            settings.keep_controls = true;
+            settings.text_size = 44.0;
+            settings.reading.flow = crate::entities::catalogue::ReadingFlow::Pages;
+        },
+    )?;
+    stage.check_reading_faces()?;
+    let mut csv = String::from(
+        "action,first_frame_ms
+",
+    );
+    for (action, elapsed) in scenes::reading_latency(&mut stage)? {
+        writeln!(csv, "{action},{:.3}", elapsed.as_secs_f64() * 1000.0)
+            .map_err(|error| Error::Render(error.to_string()))?;
+    }
+    fs::write(out.join("reading-latency.csv"), csv)?;
+    Ok(())
 }
