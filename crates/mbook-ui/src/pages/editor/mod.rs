@@ -9,20 +9,29 @@
 //!
 //! - `view` composes the page for each size class,
 //! - `sections` is the list of sections and chapters,
-//! - `details`, `chapter`, `landmarks`, `panels` are the sections,
+//! - `details`, `chapter`, `contents`, `landmarks`, `panels` are the sections,
 //! - `preview` makes the reader's chapter view that shows the text being
 //!   edited,
-//! - `commands`, `files` and `prompts` are what the controls do.
+//! - `commands`, `files` and `prompts` are what the controls do,
+//! - `link_prompt`, `picture_prompt`, `entry_prompt` and `place_picker` are
+//!   the dialogs that put a link or a picture into a chapter, change an entry
+//!   of the contents and choose a place of the book,
+//! - `markup` writes the Markdown the editor inserts itself.
 
 mod chapter;
 mod commands;
+mod contents;
 mod details;
 mod encode;
+mod entry_prompt;
 mod files;
 mod keys;
 mod landmarks;
+mod link_prompt;
+mod markup;
 mod panels;
 mod picture_prompt;
+mod place_picker;
 mod preview;
 mod prompts;
 mod sections;
@@ -92,6 +101,8 @@ struct Encoder {
     prompting: bool,
     /// The encoded picture has been sent to the book.
     waiting_for_book: bool,
+    /// The chapter the picture that was sent goes into, and its Markdown.
+    placing: Option<(String, String)>,
 }
 
 impl Encoder {
@@ -161,6 +172,9 @@ pub(crate) struct EditorPage {
     chooser: Option<Task<()>>,
     /// The caret goes here when the text that is loading has arrived.
     caret: Option<usize>,
+    /// The chapter that is loading was just added: when its text has
+    /// arrived, the editor takes the focus with the caret at its end.
+    write_next: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -226,6 +240,7 @@ impl EditorPage {
             places_task: None,
             chooser: None,
             caret: None,
+            write_next: false,
             _subscriptions: subscriptions,
         };
         page.send(Command::Load, commands::Origin::Load, window, cx);

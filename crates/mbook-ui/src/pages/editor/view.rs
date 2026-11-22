@@ -49,12 +49,10 @@ impl EditorPage {
         let page = cx.weak_entity();
         window.open_sheet_at(Placement::Left, cx, move |sheet, _, cx| {
             let sections = page
-                .update(cx, |this, cx| {
-                    this.render_sections(true, cx).into_any_element()
-                })
+                .update(cx, |this, cx| this.render_sections(cx).into_any_element())
                 .ok();
             sheet
-                .title("Sections")
+                .title("Book and chapters")
                 .size(px(SHEET_WIDTH))
                 .children(sections)
         });
@@ -68,7 +66,6 @@ impl EditorPage {
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let section = self.session.section;
-        let compact = class == SizeClass::Compact;
         let scrolled = |content: AnyElement| {
             div()
                 .id("section-scroll")
@@ -89,9 +86,6 @@ impl EditorPage {
             .font_weight(FontWeight::SEMIBOLD)
             .child(section.label());
         match section {
-            Section::Chapters if compact && self.session.level != Level::Chapter => {
-                scrolled(self.render_chapter_screen(cx).into_any_element())
-            }
             Section::Chapters => self
                 .render_chapter_area(class, window, cx)
                 .into_any_element(),
@@ -105,6 +99,12 @@ impl EditorPage {
                 v_flex()
                     .child(heading)
                     .child(self.render_cover(cx))
+                    .into_any_element(),
+            ),
+            Section::Contents => scrolled(
+                v_flex()
+                    .child(heading)
+                    .child(self.render_contents(cx))
                     .into_any_element(),
             ),
             Section::Landmarks => scrolled(
@@ -137,7 +137,7 @@ impl EditorPage {
     ) -> AnyElement {
         match class {
             SizeClass::Expanded => {
-                let sidebar = self.render_sections(true, cx);
+                let sidebar = self.render_sections(cx);
                 let content = self.render_section(class, window, cx);
                 h_flex()
                     .size_full()
@@ -168,7 +168,7 @@ impl EditorPage {
                             .py_1()
                             .border_b_1()
                             .border_color(cx.theme().border)
-                            .child(control("open-sections", "Sections").on_click(
+                            .child(control("open-sections", "Book and chapters").on_click(
                                 cx.listener(|_, _, window, cx| Self::open_sections(window, cx)),
                             )),
                     )
@@ -181,7 +181,7 @@ impl EditorPage {
                         .id("sections-screen")
                         .size_full()
                         .overflow_y_scroll()
-                        .child(self.render_sections(false, cx))
+                        .child(self.render_sections(cx))
                         .into_any_element()
                 } else {
                     let content = self.render_section(class, window, cx);

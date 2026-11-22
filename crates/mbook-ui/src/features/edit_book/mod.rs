@@ -10,6 +10,7 @@
 
 pub(crate) mod actor;
 pub(crate) mod command;
+mod contents;
 pub(crate) mod error;
 pub(crate) mod outline;
 #[cfg(test)]

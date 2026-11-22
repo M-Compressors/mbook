@@ -5,18 +5,17 @@ use std::rc::Rc;
 
 use gpui_kit::component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{
     AppContext as _, Context, Entity, Focusable as _, ParentElement as _, SharedString,
     Styled as _, Window, div, px,
 };
 
-use super::session::clean_path;
+use super::session::required;
 use super::{EditorEvent, EditorPage};
 use crate::shared::ui::{status_line, target_size};
 
-/// What a dialog that asks for a path says.
+/// What a dialog that asks for one line of words says.
 #[derive(Debug, Clone)]
 pub(super) struct PathRequest {
     /// The title of the dialog.
@@ -27,13 +26,15 @@ pub(super) struct PathRequest {
     pub(super) initial: String,
     /// The name of the button that goes on.
     pub(super) ok: &'static str,
-    /// Chapter names and link destinations to copy into the field.
-    pub(super) chapters: Vec<(String, String)>,
+    /// What the dialog says when the field is empty; `None` lets it be
+    /// empty.
+    pub(super) required: Option<&'static str>,
 }
 
-/// Asks for a path in a dialog. `on_ok` gets the path that was entered;
-/// `on_cancel` is called when the dialog is dismissed. An empty path is
-/// refused in the dialog, which stays open and says what to enter.
+/// Asks for one line in a dialog. `on_ok` gets what was entered, without its
+/// edges; `on_cancel` is called when the dialog is dismissed. A field that
+/// must not be empty is refused in the dialog, which stays open and says
+/// what to enter.
 pub(super) fn ask_path(
     request: &PathRequest,
     window: &mut Window,
@@ -50,7 +51,7 @@ pub(super) fn ask_path(
     let (on_ok, on_cancel) = (Rc::new(on_ok), Rc::new(on_cancel));
     let first = Cell::new(true);
     let (title, label, ok) = (request.title, request.label, request.ok);
-    let chapters = Rc::new(request.chapters.clone());
+    let missing = request.required;
     window.open_alert_dialog(cx, move |alert, window, cx| {
         if first.replace(false) {
             input.focus_handle(cx).focus(window, cx);
@@ -59,26 +60,6 @@ pub(super) fn ask_path(
         let danger = cx.theme().danger;
         let field = v_flex()
             .gap_2()
-            .children((!chapters.is_empty()).then(|| {
-                let chapters = chapters.clone();
-                let input = input.clone();
-                Button::new("link-choose-chapter")
-                    .label("Choose chapter")
-                    .dropdown_caret(true)
-                    .dropdown_menu(move |menu, _, _| {
-                        chapters.iter().fold(menu, |menu, (label, destination)| {
-                            let input = input.clone();
-                            let destination = destination.clone();
-                            menu.item(PopupMenuItem::new(label.clone()).on_click(
-                                move |_, window, cx| {
-                                    input.update(cx, |field, cx| {
-                                        field.set_value(destination.clone(), window, cx);
-                                    });
-                                },
-                            ))
-                        })
-                    })
-            }))
             .child(div().child(label))
             .child(Input::new(&input).aria_label(label))
             .children(message.map(|message| status_line("path-error", message).text_color(danger)));
@@ -91,8 +72,11 @@ pub(super) fn ask_path(
             .confirm()
             .ok_text(ok)
             .cancel_text("Cancel")
-            .on_ok(
-                move |_, window, cx| match clean_path(&input.read(cx).value()) {
+            .on_ok(move |_, window, cx| {
+                match missing.map_or_else(
+                    || Ok(input.read(cx).value().trim().to_owned()),
+                    |missing| required(&input.read(cx).value(), missing),
+                ) {
                     Ok(path) => {
                         page_ok
                             .update(cx, |this, cx| on_ok(this, path, window, cx))
@@ -107,8 +91,8 @@ pub(super) fn ask_path(
                         window.refresh();
                         false
                     }
-                },
-            )
+                }
+            })
             .on_cancel(move |_, window, cx| {
                 page_cancel
                     .update(cx, |this, cx| on_cancel(this, window, cx))
@@ -162,6 +146,42 @@ pub(super) fn ask_leave(window: &mut Window, cx: &mut Context<'_, EditorPage>) {
     });
 }
 
+/// What a dialog asks before a change that cannot be undone.
+#[derive(Debug, Clone)]
+pub(super) struct Question {
+    /// The question, as the title of the dialog.
+    pub(super) title: String,
+    /// What the change does.
+    pub(super) detail: String,
+    /// The name of the button that goes on.
+    pub(super) ok: &'static str,
+}
+
+/// Asks before a change that cannot be undone; `act` makes the change.
+pub(super) fn confirm(
+    question: Question,
+    window: &mut Window,
+    cx: &mut Context<'_, EditorPage>,
+    act: impl Fn(&mut EditorPage, &mut Window, &mut Context<'_, EditorPage>) + 'static,
+) {
+    let page = cx.weak_entity();
+    let act = Rc::new(act);
+    window.open_alert_dialog(cx, move |alert, _, _| {
+        let (page, act) = (page.clone(), act.clone());
+        alert
+            .title(question.title.clone())
+            .description(question.detail.clone())
+            .confirm()
+            .ok_text(question.ok)
+            .ok_variant(ButtonVariant::Danger)
+            .cancel_text("Cancel")
+            .on_ok(move |_, window, cx| {
+                page.update(cx, |this, cx| act(this, window, cx)).ok();
+                true
+            })
+    });
+}
+
 /// Asks before something is removed, because it cannot be undone.
 pub(super) fn confirm_remove(
     what: &str,
@@ -169,21 +189,14 @@ pub(super) fn confirm_remove(
     cx: &mut Context<'_, EditorPage>,
     remove: impl Fn(&mut EditorPage, &mut Window, &mut Context<'_, EditorPage>) + 'static,
 ) {
-    let page = cx.weak_entity();
-    let remove = Rc::new(remove);
-    let title = format!("Remove {what}?");
-    window.open_alert_dialog(cx, move |alert, _, _| {
-        let (page, remove) = (page.clone(), remove.clone());
-        alert
-            .title(title.clone())
-            .description("This cannot be undone.")
-            .confirm()
-            .ok_text("Remove")
-            .ok_variant(ButtonVariant::Danger)
-            .cancel_text("Cancel")
-            .on_ok(move |_, window, cx| {
-                page.update(cx, |this, cx| remove(this, window, cx)).ok();
-                true
-            })
-    });
+    confirm(
+        Question {
+            title: format!("Remove {what}?"),
+            detail: "This cannot be undone.".to_owned(),
+            ok: "Remove",
+        },
+        window,
+        cx,
+        remove,
+    );
 }

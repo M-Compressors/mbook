@@ -1,9 +1,9 @@
 //! The session end to end: a book on disk, commands, and the file after a save.
 
 use super::actor::{EditHandle, session};
-use super::command::{Command, MetaChange};
-use super::error::EditError;
-use super::outline::{Outline, ProblemOutline, SeriesOutline};
+use super::command::{Command, ContentsChange, EntryDraft, MetaChange};
+use super::error::{ContentsError, EditError};
+use super::outline::{Fault, Outline, ProblemOutline, SeriesOutline};
 use futures::FutureExt;
 use futures::executor::block_on;
 use futures::future::join;
@@ -24,6 +24,21 @@ fn sample() -> Result<(TempDir, PathBuf)> {
     book.add_chapter("ch01.md", "# Arrival\n\nThe train came in.\n")?;
     book.add_chapter("ch02.md", "# Departure\n")?;
     book.add_picture("img/a.avif", PICTURE)?;
+    book.save(&path)?;
+    Ok((folder, path))
+}
+
+/// The first chapter of [`sections`] with its two inner headings swapped.
+const SWAPPED: &str = "# Arrival\n\n## Hall\n\n## Platform\n";
+
+/// A saved book whose first chapter has two headings under its title. Its
+/// file keeps four contents entries: Arrival, Platform, Hall, Departure.
+fn sections() -> Result<(TempDir, PathBuf)> {
+    let folder = tempfile::tempdir()?;
+    let path = folder.path().join("book.mbook");
+    let mut book = mbook::Book::new("The Example", "en")?;
+    book.add_chapter("ch01.md", "# Arrival\n\n## Platform\n\n## Hall\n")?;
+    book.add_chapter("ch02.md", "# Departure\n")?;
     book.save(&path)?;
     Ok((folder, path))
 }
@@ -401,7 +416,7 @@ fn a_chapter_moves_in_the_reading_order() -> Result {
 }
 
 #[test]
-fn moving_a_chapter_with_a_contents_item_past_another_is_a_problem_of_the_save() -> Result {
+fn the_contents_entries_of_a_moved_chapter_move_with_it() -> Result {
     // A loaded book keeps the explicit contents of its file.
     let (_folder, path) = sample()?;
     let outline = run(&path, |h| async move {
@@ -416,9 +431,59 @@ fn moving_a_chapter_with_a_contents_item_past_another_is_a_problem_of_the_save()
         send(&h, Command::Save).await
     })?;
     assert_eq!(paths(&outline), ["ch02.md", "ch01.md"]);
-    assert!(outline.unsaved);
-    assert_eq!(outline.problems.len(), 1);
-    assert_eq!(reopened(&path)?.chapters()[0].path(), "ch01.md");
+    assert_eq!(entries(&outline), ["1 Departure", "1 Arrival"]);
+    assert_eq!(outline.problems, Vec::new());
+    assert!(!outline.unsaved);
+    let saved = reopened(&path)?;
+    assert_eq!(saved.chapters()[0].path(), "ch02.md");
+    assert_eq!(stored(&saved), ["1 Departure", "1 Arrival"]);
+    Ok(())
+}
+
+#[test]
+fn a_list_that_was_out_of_order_is_not_sorted_by_moving_a_chapter() -> Result {
+    let (_folder, path) = sections()?;
+    let outline = run(&path, |h| async move {
+        send(&h, set_text("ch01.md", SWAPPED)).await?;
+        send(&h, add("ch03.md", "# Return\n")).await?;
+        send(
+            &h,
+            Command::MoveChapter {
+                path: "ch03.md".into(),
+                index: 0,
+            },
+        )
+        .await
+    })?;
+    assert_eq!(paths(&outline), ["ch03.md", "ch01.md", "ch02.md"]);
+    assert_eq!(
+        entries(&outline),
+        ["1 Arrival", "2 Platform", "2 Hall", "1 Departure"]
+    );
+    Ok(())
+}
+
+#[test]
+fn the_contents_entries_of_a_chapter_follow_it_to_another_path() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        let rename = Command::MoveChapterPath {
+            from: "ch02.md".into(),
+            to: "leaving.md".into(),
+        };
+        send(&h, rename).await?;
+        send(&h, Command::Save).await
+    })?;
+    let leads: Vec<&str> = outline
+        .contents
+        .entries
+        .iter()
+        .map(|entry| entry.chapter.as_str())
+        .collect();
+    assert_eq!(leads, ["ch01.md", "leaving.md"]);
+    assert!(outline.contents.entries.iter().all(|e| e.fault.is_none()));
+    assert_eq!(outline.problems, Vec::new());
+    assert_eq!(stored(&reopened(&path)?), ["1 Arrival", "1 Departure"]);
     Ok(())
 }
 
@@ -480,6 +545,22 @@ fn a_chapter_keeps_its_place_and_text_when_its_path_changes() -> Result {
         Some("Just notes.\n")
     );
     assert!(saved.chapter("notes.md").is_none());
+    Ok(())
+}
+
+#[test]
+fn contents_that_follow_the_headings_stay_so_when_a_chapter_gets_another_path() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        send(&h, Command::ContentsFromHeadings).await?;
+        let rename = Command::MoveChapterPath {
+            from: "ch02.md".into(),
+            to: "leaving.md".into(),
+        };
+        send(&h, rename).await
+    })?;
+    assert!(outline.contents.automatic);
+    assert_eq!(outline.contents.entries[1].chapter, "leaving.md");
     Ok(())
 }
 
@@ -564,7 +645,7 @@ fn a_chapter_is_removed() -> Result {
 }
 
 #[test]
-fn removing_a_chapter_with_a_contents_item_is_a_problem_of_the_save() -> Result {
+fn the_contents_entries_of_a_removed_chapter_are_removed_with_it() -> Result {
     // A loaded book keeps the explicit contents of its file.
     let (_folder, path) = sample()?;
     let outline = run(&path, |h| async move {
@@ -578,13 +659,135 @@ fn removing_a_chapter_with_a_contents_item_is_a_problem_of_the_save() -> Result 
         send(&h, Command::Save).await
     })?;
     assert_eq!(paths(&outline), ["ch01.md"]);
-    assert!(outline.unsaved);
-    assert_eq!(outline.problems.len(), 1);
+    assert!(!outline.contents.automatic);
+    assert_eq!(entries(&outline), ["1 Arrival"]);
+    assert_eq!(outline.problems, Vec::new());
+    assert!(!outline.unsaved);
+    let saved = reopened(&path)?;
+    assert_eq!(saved.chapters().len(), 1);
+    assert_eq!(stored(&saved), ["1 Arrival"]);
+    Ok(())
+}
+
+#[test]
+fn a_list_whose_last_entries_go_with_their_chapter_follows_the_headings() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        send(&h, add("ch03.md", "# Return\n")).await?;
+        for gone in ["ch01.md", "ch02.md"] {
+            send(&h, Command::RemoveChapter { path: gone.into() }).await?;
+        }
+        send(&h, Command::Load).await
+    })?;
+    assert!(outline.contents.automatic);
+    assert_eq!(entries(&outline), ["1 Return"]);
+    Ok(())
+}
+
+#[test]
+fn contents_that_follow_the_headings_lose_the_headings_of_a_removed_chapter() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        send(&h, Command::ContentsFromHeadings).await?;
+        send(
+            &h,
+            Command::RemoveChapter {
+                path: "ch02.md".into(),
+            },
+        )
+        .await
+    })?;
+    assert!(outline.contents.automatic);
+    assert_eq!(entries(&outline), ["1 Arrival"]);
+    Ok(())
+}
+
+/// A start landmark at the first chapter and notes at the second.
+fn two_landmarks() -> Command {
+    Command::SetLandmarks(vec![
+        mbook::Landmark::new("start", "", "ch01.md"),
+        mbook::Landmark::new("notes", "Endnotes", "ch02.md"),
+    ])
+}
+
+#[test]
+fn the_landmarks_of_a_removed_chapter_are_removed_with_it() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        send(&h, two_landmarks()).await?;
+        send(
+            &h,
+            Command::RemoveChapter {
+                path: "ch02.md".into(),
+            },
+        )
+        .await?;
+        send(&h, Command::Save).await
+    })?;
     assert_eq!(
-        outline.problems[0].message,
-        "The contents item \"Departure\" leads nowhere."
+        outline.landmarks,
+        [mbook::Landmark::new("start", "", "ch01.md")]
     );
-    assert_eq!(reopened(&path)?.chapters().len(), 2);
+    assert_eq!(outline.problems, Vec::new());
+    assert_eq!(reopened(&path)?.landmarks().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn the_landmarks_of_a_chapter_follow_it_to_another_path() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        send(&h, two_landmarks()).await?;
+        let rename = Command::MoveChapterPath {
+            from: "ch02.md".into(),
+            to: "leaving.md".into(),
+        };
+        send(&h, rename).await?;
+        send(&h, Command::Save).await
+    })?;
+    assert_eq!(
+        outline.landmarks,
+        [
+            mbook::Landmark::new("start", "", "ch01.md"),
+            mbook::Landmark::new("notes", "Endnotes", "leaving.md"),
+        ]
+    );
+    assert_eq!(outline.problems, Vec::new());
+    assert_eq!(reopened(&path)?.landmarks()[1].chapter, "leaving.md");
+    Ok(())
+}
+
+#[test]
+fn a_refused_path_leaves_the_landmarks_of_the_chapter_as_they_were() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        send(&h, two_landmarks()).await?;
+        let rename = Command::MoveChapterPath {
+            from: "ch02.md".into(),
+            to: "ch01.md".into(),
+        };
+        assert!(h.send(rename).await.is_err());
+        send(&h, Command::Load).await
+    })?;
+    assert_eq!(outline.landmarks[1].chapter, "ch02.md");
+    Ok(())
+}
+
+#[test]
+fn removing_a_chapter_without_entries_leaves_the_list_as_it_is() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        send(&h, add("ch03.md", "# Return\n")).await?;
+        send(
+            &h,
+            Command::RemoveChapter {
+                path: "ch03.md".into(),
+            },
+        )
+        .await
+    })?;
+    assert!(!outline.contents.automatic);
+    assert_eq!(entries(&outline), ["1 Arrival", "1 Departure"]);
     Ok(())
 }
 
@@ -616,6 +819,151 @@ fn building_the_contents_from_the_headings_is_a_change_to_save() -> Result {
         send(&h, Command::ContentsFromHeadings).await
     })?;
     assert!(outline.unsaved);
+    Ok(())
+}
+
+// The list of contents a book keeps
+
+fn entry(title: &str, chapter: &str, anchor: Option<&str>) -> EntryDraft {
+    EntryDraft {
+        title: title.to_owned(),
+        chapter: chapter.to_owned(),
+        anchor: anchor.map(str::to_owned),
+    }
+}
+
+/// The entries of the outline as `level title`.
+fn entries(outline: &Outline) -> Vec<String> {
+    let entries = outline.contents.entries.iter();
+    entries
+        .map(|entry| format!("{} {}", entry.level, entry.title))
+        .collect()
+}
+
+/// The contents of a book as `level title`, when it keeps a list.
+fn stored(book: &mbook::Book) -> Vec<String> {
+    match book.toc() {
+        mbook::Toc::Explicit(items) => items
+            .iter()
+            .map(|item| format!("{} {}", item.level, item.title))
+            .collect(),
+        mbook::Toc::FromHeadings { .. } => Vec::new(),
+    }
+}
+
+#[test]
+fn an_entry_of_the_stored_list_gets_another_title_and_is_saved() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        let change = ContentsChange::Set {
+            index: 1,
+            entry: entry("Leaving", "ch02.md", None),
+        };
+        send(&h, Command::EditContents(change)).await?;
+        send(&h, Command::Save).await
+    })?;
+    assert!(!outline.contents.automatic);
+    assert_eq!(outline.problems, Vec::new());
+    assert_eq!(stored(&reopened(&path)?), ["1 Arrival", "1 Leaving"]);
+    Ok(())
+}
+
+#[test]
+fn an_entry_is_added_where_its_place_is_and_moved_in_under_the_entry_above() -> Result {
+    let (_folder, path) = sample()?;
+    let (added, outline) = run(&path, |h| async move {
+        send(&h, set_text("ch01.md", "# Arrival\n\n## Platform\n")).await?;
+        let add = ContentsChange::Add(entry("The platform", "ch01.md", Some("platform")));
+        let added = send(&h, Command::EditContents(add)).await?;
+        let shift = ContentsChange::Shift {
+            index: 1,
+            deeper: true,
+        };
+        send(&h, Command::EditContents(shift)).await?;
+        Ok::<_, Box<dyn std::error::Error>>((added, send(&h, Command::Save).await?))
+    })?;
+    assert_eq!(
+        entries(&added),
+        ["1 Arrival", "1 The platform", "1 Departure"]
+    );
+    assert!(added.unsaved);
+    assert_eq!(outline.problems, Vec::new());
+    assert_eq!(
+        stored(&reopened(&path)?),
+        ["1 Arrival", "2 The platform", "1 Departure"]
+    );
+    Ok(())
+}
+
+#[test]
+fn contents_that_follow_the_headings_have_no_list_to_change() -> Result {
+    let (_folder, path) = sample()?;
+    let (error, outline) = run(&path, |h| async move {
+        send(&h, Command::ContentsFromHeadings).await?;
+        let remove = ContentsChange::Remove { index: 0 };
+        let error = h.send(Command::EditContents(remove)).await.err();
+        Ok::<_, Box<dyn std::error::Error>>((error, send(&h, Command::Load).await?))
+    })?;
+    assert!(matches!(
+        error,
+        Some(EditError::Contents(ContentsError::Automatic))
+    ));
+    assert_eq!(entries(&outline), ["1 Arrival", "1 Departure"]);
+    Ok(())
+}
+
+#[test]
+fn a_list_that_loses_its_last_entry_follows_the_headings() -> Result {
+    let (_folder, path) = sample()?;
+    let outline = run(&path, |h| async move {
+        let remove = || Command::EditContents(ContentsChange::Remove { index: 0 });
+        let one_left = send(&h, remove()).await?;
+        assert_eq!(entries(&one_left), ["1 Departure"]);
+        assert!(!one_left.contents.automatic);
+        send(&h, remove()).await
+    })?;
+    assert!(outline.contents.automatic);
+    assert_eq!(entries(&outline), ["1 Arrival", "1 Departure"]);
+    Ok(())
+}
+
+#[test]
+fn entries_that_headings_moved_in_the_text_left_out_of_order_are_sorted() -> Result {
+    let (_folder, path) = sections()?;
+    let (swapped, outline) = run(&path, |h| async move {
+        let swapped = send(&h, set_text("ch01.md", SWAPPED)).await?;
+        send(&h, Command::EditContents(ContentsChange::InBookOrder)).await?;
+        Ok::<_, Box<dyn std::error::Error>>((swapped, send(&h, Command::Save).await?))
+    })?;
+    let faults: Vec<_> = swapped.contents.entries.iter().map(|e| e.fault).collect();
+    assert_eq!(faults, [None, None, Some(Fault::OutOfOrder), None]);
+    assert_eq!(
+        entries(&outline),
+        ["1 Arrival", "2 Hall", "2 Platform", "1 Departure"]
+    );
+    assert!(outline.contents.entries.iter().all(|e| e.fault.is_none()));
+    assert_eq!(outline.problems, Vec::new());
+    Ok(())
+}
+
+#[test]
+fn a_refused_change_of_the_list_leaves_the_book_as_it_was() -> Result {
+    let (_folder, path) = sample()?;
+    let (error, outline) = run(&path, |h| async move {
+        let change = ContentsChange::Set {
+            index: 9,
+            entry: entry("Nine", "ch01.md", None),
+        };
+        let error = h.send(Command::EditContents(change)).await.err();
+        (error, send(&h, Command::Load).await)
+    });
+    assert!(matches!(
+        error,
+        Some(EditError::Contents(ContentsError::NoSuchEntry(9)))
+    ));
+    let outline = outline?;
+    assert!(!outline.unsaved);
+    assert_eq!(entries(&outline), ["1 Arrival", "1 Departure"]);
     Ok(())
 }
 

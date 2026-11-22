@@ -5,23 +5,28 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use gpui_kit::component::button::Button;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::{ActiveTheme as _, WindowExt as _, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Selectable as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Context, ImageCacheError, ImageSource,
-    InteractiveElement as _, ObjectFit, ParentElement as _, RenderImage, Role,
-    StatefulInteractiveElement as _, Styled as _, StyledImage as _, TestSupportExt as _, Window,
-    div, img, px,
+    AnyWindowHandle, App, AppContext as _, Context, Focusable as _, FontWeight, ImageCacheError,
+    ImageSource, InteractiveElement as _, ObjectFit, ParentElement as _, RenderImage, Role,
+    SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
+    TestSupportExt as _, Window, div, img, px,
 };
 use percent_encoding::percent_decode_str;
 
 use super::EditorPage;
+use super::encode::Target;
+use super::markup::picture_markdown;
+use super::picture_prompt::{DESCRIPTION_HINT, DESCRIPTION_LABEL};
 use crate::entities::book::chapter::picture_destinations;
 use crate::entities::picture::{PictureCache, decode_avif};
 use crate::features::edit_book::actor::EditHandle;
 use crate::features::edit_book::outline::PictureOutline;
 use crate::shared::ui::announce;
+use crate::shared::ui::{status_line, target_size};
 use crate::widgets::chapter_view::picture_size;
 
 const MAX_DECODE_PIXELS: u64 = 40_000_000;
@@ -44,7 +49,123 @@ impl Default for VisualPictures {
     }
 }
 
+/// The control of the dialog that takes a picture from a file.
+pub(super) const FROM_COMPUTER: &str = "Add from your computer…";
+/// The control of the dialog that puts the chosen picture into the chapter.
+pub(super) const INSERT: &str = "Insert the picture";
+/// What the dialog says when it is confirmed with no picture chosen.
+pub(super) const CHOOSE_FIRST: &str = "Choose a picture, or add one from your computer.";
+/// What the dialog says about a book without pictures.
+pub(super) const NO_PICTURES: &str = "This book has no pictures yet.";
+
+/// The sides of a picture in the dialog that offers them, in pixels.
+const CHOICE: (f32, f32) = (132.0, 96.0);
+
 impl EditorPage {
+    /// The dialog that puts a picture where the caret is: one the book has
+    /// already, chosen by its thumbnail, or a new one from a file, which is
+    /// added to the book on the way.
+    pub(super) fn ask_chapter_picture(&self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let Some(chapter) = self.loaded.clone() else {
+            return;
+        };
+        let pictures: Rc<Vec<PictureOutline>> = Rc::new(self.session.pictures().to_vec());
+        let state = Arc::clone(&self.visual.pictures);
+        let handle = self.handle.clone();
+        let selected = Rc::new(Cell::new(None::<usize>));
+        let description = cx.new(|cx| InputState::new(window, cx).placeholder(DESCRIPTION_HINT));
+        let error = cx.new(|_| None::<SharedString>);
+        let page = cx.weak_entity();
+        let first = Cell::new(true);
+        window.open_alert_dialog(cx, move |alert, window, cx| {
+            if first.replace(false) {
+                description.focus_handle(cx).focus(window, cx);
+            }
+            let theme = cx.theme().clone();
+            let width = (window.viewport_size().width.as_f32() - 96.0).clamp(240.0, 600.0);
+            let choices = h_flex()
+                .id("picture-choices")
+                .role(Role::Group)
+                .aria_label("Pictures of the book")
+                .test_support()
+                .flex_wrap()
+                .gap_2()
+                .max_h(px(280.0))
+                .overflow_y_scroll()
+                .children(pictures.iter().enumerate().map(|(index, picture)| {
+                    let key = picture_size(
+                        (picture.width, picture.height),
+                        CHOICE.0 * 2.0,
+                        Some(CHOICE.1 * 2.0),
+                    )
+                    .map(|size| (picture.path.clone(), size));
+                    let image = image_source(key, Arc::clone(&state), handle.clone());
+                    let (chosen, error) = (selected.clone(), error.clone());
+                    picture_choice(
+                        index,
+                        &picture.path,
+                        selected.get() == Some(index),
+                        image,
+                        cx,
+                    )
+                    .on_click(move |_, window, cx| {
+                        chosen.set(Some(index));
+                        error.update(cx, |error, cx| {
+                            *error = None;
+                            cx.notify();
+                        });
+                        window.refresh();
+                    })
+                }));
+            let upload = upload_button(page.clone());
+            let form = v_flex()
+                .gap_3()
+                .children(pictures.is_empty().then(|| {
+                    status_line("no-book-pictures", NO_PICTURES).text_color(theme.muted_foreground)
+                }))
+                .children((!pictures.is_empty()).then_some(choices))
+                .child(h_flex().child(upload))
+                .children((!pictures.is_empty()).then(|| {
+                    v_flex()
+                        .gap_1()
+                        .child(
+                            div()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(DESCRIPTION_LABEL),
+                        )
+                        .child(Input::new(&description).aria_label(DESCRIPTION_LABEL))
+                }))
+                .children(error.read(cx).clone().map(|message| {
+                    status_line("picture-choice-error", message).text_color(theme.danger)
+                }));
+            let (page, pictures, chapter) = (page.clone(), pictures.clone(), chapter.clone());
+            let (selected, description, error) =
+                (selected.clone(), description.clone(), error.clone());
+            alert
+                .title("Insert a picture")
+                .width(px(width))
+                .description(form)
+                .confirm()
+                .ok_text(INSERT)
+                .cancel_text("Cancel")
+                .on_ok(move |_, window, cx| {
+                    let Some(picture) = selected.get().and_then(|index| pictures.get(index)) else {
+                        error.update(cx, |error, cx| {
+                            *error = Some(CHOOSE_FIRST.into());
+                            cx.notify();
+                        });
+                        window.refresh();
+                        return false;
+                    };
+                    let markdown =
+                        picture_markdown(&chapter, &picture.path, &description.read(cx).value());
+                    page.update(cx, |this, cx| this.insert_markdown(markdown, window, cx))
+                        .ok();
+                    true
+                })
+        });
+    }
+
     pub(super) fn preview_chapter_pictures(&self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let Some(chapter) = &self.loaded else { return };
         let source = self.text.read(cx).value();
@@ -139,6 +260,65 @@ impl EditorPage {
             .map(|size| (picture.path.clone(), size));
         image_source(key, Arc::clone(&self.visual.pictures), self.handle.clone())
     }
+}
+
+/// The control that closes the dialog and takes the picture from a file.
+fn upload_button(page: gpui_kit::WeakEntity<EditorPage>) -> Button {
+    Button::new("picture-upload")
+        .label(FROM_COMPUTER)
+        .min_h(px(target_size()))
+        .cursor_pointer()
+        .on_click(move |_, window, cx| {
+            window.close_dialog(cx);
+            page.update(cx, |this, cx| {
+                this.choose_pictures(Target::Chapter, window, cx);
+            })
+            .ok();
+        })
+}
+
+/// One picture the dialog offers: its thumbnail over the name of its file.
+/// What assistive technology hears is its whole path, and whether it is the
+/// one chosen.
+fn picture_choice(index: usize, path: &str, chosen: bool, image: ImageSource, cx: &App) -> Button {
+    let name = path.rsplit('/').next().unwrap_or_default().to_owned();
+    Button::new(("picture-choice", index))
+        .ghost()
+        .selected(chosen)
+        .accessibility_label(if chosen {
+            format!("{path}, chosen")
+        } else {
+            path.to_owned()
+        })
+        .cursor_pointer()
+        .w(px(CHOICE.0 + 16.0))
+        .h(px(CHOICE.1 + 44.0))
+        .p_2()
+        .child(
+            v_flex()
+                .w(px(CHOICE.0))
+                .gap_1()
+                .child(
+                    div()
+                        .relative()
+                        .flex_none()
+                        .w_full()
+                        .h(px(CHOICE.1))
+                        .overflow_hidden()
+                        .rounded_md()
+                        .bg(cx.theme().muted)
+                        .child(
+                            img(image)
+                                .object_fit(ObjectFit::Contain)
+                                .absolute()
+                                .top_0()
+                                .left_0()
+                                .w_full()
+                                .h(px(CHOICE.1)),
+                        ),
+                )
+                .child(div().w_full().truncate().text_sm().child(name)),
+        )
 }
 
 fn image_source(

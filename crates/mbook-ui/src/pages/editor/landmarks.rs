@@ -1,21 +1,19 @@
 //! Editing the landmarks that lead to the book's notes.
 
 use std::cell::Cell;
-use std::rc::Rc;
 
-use gpui_kit::component::button::Button;
 use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{
-    AnyElement, AppContext as _, Context, Entity, Focusable as _, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Role,
-    StatefulInteractiveElement as _, Styled as _, Window, div,
+    AnyElement, AppContext as _, Context, Focusable as _, FontWeight, InteractiveElement as _,
+    IntoElement, ParentElement as _, Role, StatefulInteractiveElement as _, Styled as _, Window,
+    div,
 };
 use mbook::Landmark;
 
 use super::EditorPage;
 use super::commands::Origin;
+use super::place_picker::{Place, chapter_choices, chapter_words, place_picker, place_words};
 use super::prompts::confirm_remove;
 use super::sections::control;
 use super::session::Control;
@@ -23,6 +21,8 @@ use crate::features::edit_book::command::Command;
 use crate::shared::ui::status_line;
 
 const NOTES: &str = "notes";
+/// What the section says a landmark is, in the words of a reader.
+pub(super) const LANDMARKS_HINT: &str = "A landmark tells a reading application where a part of the book is, so that it can lead a reader there. Here you mark where the notes of the book are collected.";
 
 impl EditorPage {
     /// The notes landmarks and the controls to add, edit and remove them.
@@ -36,21 +36,41 @@ impl EditorPage {
             .enumerate()
             .filter(|(_, landmark)| landmark.kind == NOTES);
         let empty_message = if has_chapters {
-            "Add a landmark to the place where the book’s notes are collected."
+            "No place is marked as the notes yet."
         } else {
             "Add a chapter before adding a notes landmark."
         };
+        let choices = chapter_choices(self.session.chapters());
         v_flex()
             .id("landmarks")
             .role(Role::Group)
             .aria_label("Landmarks")
             .gap_3()
             .p_4()
-            .children(notes.clone().next().is_none().then(|| {
-                status_line("no-notes", empty_message).text_color(cx.theme().muted_foreground)
-            }))
+            .max_w(gpui_kit::px(640.0))
+            .w_full()
+            .child(
+                status_line("landmarks-hint", LANDMARKS_HINT)
+                    .text_color(cx.theme().muted_foreground),
+            )
+            .children(
+                notes
+                    .clone()
+                    .next()
+                    .is_none()
+                    .then(|| status_line("no-notes", empty_message)),
+            )
             .children(notes.map(|(index, landmark)| {
-                Self::render_note(index, landmark, pending, has_chapters, cx)
+                let place = Place {
+                    chapter: Some(landmark.chapter.clone()),
+                    anchor: landmark.anchor.clone(),
+                };
+                let target = format!(
+                    "{}, {}",
+                    chapter_words(&place, &choices),
+                    place_words(&place, &choices)
+                );
+                Self::render_note(index, landmark, &target, pending, has_chapters, cx)
             }))
             .child(
                 control("add-note", "Add a notes landmark…")
@@ -69,6 +89,7 @@ impl EditorPage {
     fn render_note(
         index: usize,
         landmark: &Landmark,
+        target: &str,
         pending: bool,
         has_chapters: bool,
         cx: &Context<'_, Self>,
@@ -78,10 +99,6 @@ impl EditorPage {
         } else {
             landmark.title.clone()
         };
-        let target = landmark.anchor.as_ref().map_or_else(
-            || landmark.chapter.clone(),
-            |anchor| format!("{}#{anchor}", landmark.chapter),
-        );
         h_flex()
             .id(("note", index))
             .role(Role::Group)
@@ -105,7 +122,7 @@ impl EditorPage {
                             .truncate()
                             .text_sm()
                             .text_color(cx.theme().muted_foreground)
-                            .child(target.clone()),
+                            .child(target.to_owned()),
                     ),
             )
             .child(
@@ -143,30 +160,27 @@ impl EditorPage {
             return;
         };
         let existing = index.and_then(|index| self.session.landmarks().get(index));
-        let chapter = existing.map_or_else(
-            || {
-                self.session
-                    .open
-                    .clone()
-                    .unwrap_or_else(|| first_chapter.path.clone())
+        let place = existing.map_or_else(
+            || Place {
+                chapter: Some(
+                    self.session
+                        .open
+                        .clone()
+                        .unwrap_or_else(|| first_chapter.path.clone()),
+                ),
+                anchor: None,
             },
-            |note| note.chapter.clone(),
+            |note| Place {
+                chapter: Some(note.chapter.clone()),
+                anchor: note.anchor.clone(),
+            },
         );
-        let selected = cx.new(|_| chapter);
-        let chapters: Rc<[String]> = self
-            .session
-            .chapters()
-            .iter()
-            .map(|chapter| chapter.path.clone())
-            .collect();
-        let title = cx.new(|cx| InputState::new(window, cx));
-        let anchor = cx.new(|cx| InputState::new(window, cx).placeholder("Start of chapter"));
+        let selected = cx.new(|_| place);
+        let choices = chapter_choices(self.session.chapters());
+        let title = cx.new(|cx| InputState::new(window, cx).placeholder("Notes"));
         if let Some(note) = existing {
             title.update(cx, |field, cx| {
                 field.set_value(note.title.as_str(), window, cx);
-            });
-            anchor.update(cx, |field, cx| {
-                field.set_value(note.anchor.as_deref().unwrap_or_default(), window, cx);
             });
         }
         let page = cx.weak_entity();
@@ -184,23 +198,13 @@ impl EditorPage {
                         .child("Title (optional)")
                         .child(Input::new(&title).aria_label("Title (optional)")),
                 )
-                .child(v_flex().gap_1().child("Chapter").child(chapter_picker(
-                    &selected,
-                    chapters.clone(),
-                    cx,
-                )))
                 .child(
                     v_flex()
                         .gap_1()
-                        .child("Anchor name (optional)")
-                        .child(Input::new(&anchor).aria_label("Anchor name (optional)")),
+                        .child("Where the notes are")
+                        .child(place_picker("note", &selected, &choices, None, cx)),
                 );
-            let (page, title, selected, anchor) = (
-                page.clone(),
-                title.clone(),
-                selected.clone(),
-                anchor.clone(),
-            );
+            let (page, title, selected) = (page.clone(), title.clone(), selected.clone());
             alert
                 .title(if editing {
                     "Edit notes landmark"
@@ -212,12 +216,14 @@ impl EditorPage {
                 .ok_text(if editing { "Apply" } else { "Add" })
                 .cancel_text("Cancel")
                 .on_ok(move |_, window, cx| {
-                    let anchor = anchor.read(cx).value().to_string();
+                    let place = selected.read(cx).clone();
                     let note = Landmark {
                         kind: NOTES.to_owned(),
-                        title: title.read(cx).value().to_string(),
-                        chapter: selected.read(cx).clone(),
-                        anchor: (!anchor.is_empty()).then_some(anchor),
+                        title: title.read(cx).value().trim().to_owned(),
+                        // The dialog opens with a chapter chosen; a book
+                        // refuses a landmark without one.
+                        chapter: place.chapter.unwrap_or_default(),
+                        anchor: place.anchor,
                     };
                     page.update(cx, |this, cx| {
                         let mut landmarks = this.session.landmarks().to_vec();
@@ -260,32 +266,4 @@ impl EditorPage {
         );
         cx.notify();
     }
-}
-
-fn chapter_picker(
-    selected: &Entity<String>,
-    chapters: Rc<[String]>,
-    cx: &gpui_kit::App,
-) -> impl IntoElement + use<> {
-    let chapter = selected.read(cx).clone();
-    let selected = selected.clone();
-    Button::new("note-chapter")
-        .label(chapter.clone())
-        .accessibility_label(format!("Chapter, {chapter}"))
-        .dropdown_caret(true)
-        .dropdown_menu(move |menu, _, _| {
-            chapters.iter().fold(menu, |menu, chapter| {
-                let selected = selected.clone();
-                let path = chapter.clone();
-                menu.item(
-                    PopupMenuItem::new(chapter.clone()).on_click(move |_, window, cx| {
-                        selected.update(cx, |chapter, cx| {
-                            chapter.clone_from(&path);
-                            cx.notify();
-                        });
-                        window.refresh();
-                    }),
-                )
-            })
-        })
 }

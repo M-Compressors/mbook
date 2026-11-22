@@ -194,54 +194,131 @@ Pointer over the slider                  Controls hidden
 
 ### Editor
 
+The editor speaks of a book the way its author does: chapters have a number
+and a title, a picture has a description, a link leads to a place. The paths
+of files stay visible beside the titles, because links use them, but nothing
+is asked for by path unless the path itself is being changed.
+
 ```text
 Expanded
-+--------------+----------------------------------------------------------+
-| <  Library   | ch01.md    Visual | Source | Split | Preview    [ Save ] |
-|              +----------------------------------------------------------+
-| Details      | Heading 1    Bold  Italic  Quote              Insert     |
-| Cover        +----------------------------------------------------------+
-| Chapters     | Chapter 1                                                |
-| > ch01.md    |                                                          |
-|   ch02.md    | It was then that the second act began.                   |
-|   [ + ]      |                                                          |
-| Landmarks    |                                                          |
-| Pictures     |                                                          |
-| Problems  2  |                                                          |
-+--------------+----------------------------------------------------------+
++------------------+--------------------------------------------------------+
+| <  The Quiet Orchard                          Unsaved changes   [ Save ]  |
++------------------+--------------------------------------------------------+
+| Book             | 2 The harvest  ch02.md     Visual Source Split Preview … |
+|  Details         +--------------------------------------------------------+
+|  Cover           | Undo Redo | Heading 1  B I S  | Link  Picture  Insert  |
+|  Contents        +--------------------------------------------------------+
+|  Pictures        | The harvest                                            |
+|  Landmarks       |                                                        |
+|  Problems (2)    | The apples came late that year.                        |
+| Chapters  [+ New]|                                                        |
+|  1 The gate      |                                                        |
+|  2 The harvest   |                                                        |
+|  3 Notes         |                                                        |
++------------------+--------------------------------------------------------+
 
-Compact: a stack that opens in the chapter. Back reaches the chapters and sections.
+Medium: the list slides over the content from "Book and chapters".
+Compact: a stack. It opens in the chapter; Back reaches the same list.
 ```
 
-- The chapter toolbar offers Visual, Source, Split and Preview. Split is
-  available in expanded windows. Each icon has a tooltip and an accessible
-  name. Editing opens the first chapter in Visual for both new and existing
-  books.
-- **Visual** edits Markdown as blocks. The toolbar changes heading levels
-  and inline formatting, indents nested lists, inserts tables, task lists,
-  rules and code blocks, and edits links. Book pictures are inserted with
-  chapter-relative paths. Code blocks offer a language picker.
+**Finding the way.** One list holds everything: the sections about the whole
+book under *Book*, then the chapters in reading order under *Chapters*.
+
+- A chapter is listed by its number and the title its first heading gives
+  it. A chapter without a heading is an *Untitled chapter*. A chapter with
+  changes that are not saved says *edited*.
+- The bar over a chapter repeats its number and title, and shows the path of
+  its file.
+
+**Writing a chapter.**
+
+- **New chapter…** stands over the list of chapters, so that a long book
+  does not push it out of sight. It asks for a title. The chapter is added after the last
+  one, starts with that title as a heading of the first level, and is
+  opened. Its file gets the next free name of the form `chNN.md`. A chapter
+  may be added without a title.
+- The bar offers Visual, Source, Split and Preview, by name in an expanded or
+  medium window and by icon in a compact one. Split is available in expanded
+  windows. Editing opens the first chapter in Visual for both new and
+  existing books.
+- **Visual** edits Markdown as blocks. One toolbar holds undo and redo, the
+  heading level and inline formatting, quotes and list indents, then what is
+  put into the text: **Link**, **Picture** and the **Insert** menu with
+  tables, code blocks, rules and lists. Code blocks offer a language picker.
 - Click or Tab into a table cell to edit it. Row and column grips open
   controls for insertion, deletion and alignment. Tables and code blocks can
   move between top-level blocks by dragging their handles. Task items can
   be checked in the editor.
-- The Visual link dialog can fill in a relative destination from the chapter
-  picker. The destination remains editable.
-- The Visual toolbar opens a preview of pictures referenced in the chapter.
-  Source can edit picture alternative text and destinations, and can edit
-  footnote and reference definitions.
+- The menu at the end of the bar (*Chapter actions*) moves the chapter up or
+  down in the reading order, renames its file and removes it. Renaming and
+  removing ask first.
 - **Source** and the source side of **Split** highlight Markdown syntax.
+  Source can edit picture alternative text and destinations, and footnote
+  and reference definitions.
+
+**Putting a picture into a chapter.** **Picture** opens one dialog.
+
+- It shows the pictures of the book as thumbnails. Choosing one, describing
+  it and confirming puts it where the caret is, with a path relative to the
+  chapter.
+- **Add from your computer…** takes a file instead. The file is encoded,
+  added to the pictures of the book and put where the caret is, in one go.
+  Dropping picture files on the chapter does the same.
+- The description is what is read to someone who cannot see the picture. It
+  may be left empty.
+- **Pictures in this chapter** previews the pictures the chapter refers to.
+
+**Linking.** **Link** opens one dialog.
+
+- With words selected, they become the link. With nothing selected, the
+  dialog also asks for the words and inserts them. With the caret in a link,
+  the dialog edits it and offers **Remove the link**.
+- Where the link leads is typed as a web address, or chosen as a place of
+  the book: a chapter by number and title, then its start, one of its
+  headings or a line it names. A choice fills in the relative destination,
+  which stays editable.
+
+**The contents.** The **Contents** section shows what a reader is shown as
+the contents, and says where it comes from.
+
+- Contents that follow the headings list every heading of every chapter. To
+  rename an entry, its heading is changed; a new heading adds one.
+- A book made from another format keeps the contents of its source as a list
+  of its own. The section says so, and **Build the contents from the
+  headings** replaces the list after a question.
+- An entry of such a list ends with a menu. **Edit…** asks for its title and
+  for where it leads: a chapter, and its start or one of its headings,
+  chosen by title. **Nest under the entry above** and **Move out one level**
+  change its level, and the entries under it move with it. **Remove…** asks
+  first. **Add an entry…** opens the same dialog; choosing a heading fills
+  in its words as the title.
+- Nobody orders the list by hand. An entry sits where its place is in the
+  book, and one that is given another place moves there. The entries of a
+  chapter go with it when it moves up or down, and keep leading to it when
+  its file is renamed. They are removed with it, and the question before a
+  chapter is removed says how many there are. Landmarks do the same.
+- An entry whose heading is gone is marked "leads nowhere", and
+  one whose heading was moved past another in the text "out of order". The
+  section counts both, and **Put the entries in the order of the book**
+  sorts the list. The Problems section leads here with **Open Contents**.
+- Choosing an entry opens its chapter.
+
+**The whole book.**
+
 - **Details** is a form over the metadata of RFC 0001: title, authors,
   language, series, publisher, date, annotation.
-- **Chapters** are a list in reading order: add, remove, move up and down.
-- **Landmarks** lists the book's [`notes` landmarks](0001-mbook-format.md#landmarks-1)
-  and lets the editor add, edit or remove them. Each entry points to the
-  start of a selected chapter or to a named anchor in it. Its title is
-  optional. The chapter editor is where the text of the notes is written.
 - **Pictures** shows a gallery with a preview, dimensions, size and a remove
   control for each picture. Pictures and the **Cover** accept AVIF, JPEG,
-  PNG, GIF, WebP and BMP. The add dialog accepts quality and maximum output
-  dimensions. It starts at quality 80 and the original dimensions.
+  PNG, GIF, WebP and BMP. Adding one offers the name of its file in the
+  book, a quality and maximum output dimensions. It starts at quality 80 and
+  the original dimensions.
+- **Landmarks** says what a landmark is, lists the book's
+  [`notes` landmarks](0001-mbook-format.md#landmarks-1) and lets the editor
+  add, edit or remove them. Each entry points to a place chosen like the
+  destination of a link: a chapter, and its start or a named place in it.
+  Its title is optional. The chapter editor is where the text of the notes
+  is written. A landmark keeps leading to its chapter when the file of the
+  chapter is renamed, and is removed with the chapter.
 - **Problems** lists what `Book::check` reports, each with its chapter and
   place; choosing one opens that place. A book with problems is not saved.
 - **Save** replaces the book in the library. For a book with automatic
@@ -281,8 +358,9 @@ is Paper while the system is light and Night while it is dark.
   takes the compact layout instead of cutting anything off. Text and
   controls keep the contrast of level AA in every page tone.
 - **Touch and tremor.** Nothing needs a drag, a hover or a timed gesture: a
-  chapter is moved with "Move up" and "Move down", and the controls of the
-  reader can be kept on screen.
+  chapter is moved with "Move up" and "Move down", a picture is added from a
+  dialog as well as by dropping it, and the controls of the reader can be
+  kept on screen.
 
 ### Visual direction
 
@@ -781,15 +859,80 @@ sequenceDiagram
 - A chapter moves to another path by being removed and inserted at the same
   position, since `Book` has no rename; the links that broke are then among
   the problems.
+- A new chapter gets the first free path of the form `chNN.md` and the text
+  `# Title`, followed by an empty line, when a title was entered. The title
+  is escaped so that it is read back as the same words.
+- The outline carries, for every chapter, the places a link or a landmark
+  can name: its headings, with their level and their text without markup,
+  and the lines an anchor definition names. They are found from the anchors
+  `Book` keeps; only the block of each heading is parsed again, and the
+  whole chapter when that block has a bracket, which may refer to a
+  definition elsewhere. The list of
+  chapters, the dialogs of a link and of a landmark and the Contents section
+  all read them from there.
+- The outline carries the contents as a reader is shown them. For automatic
+  contents they are computed from those headings by the rule `Book` writes
+  them with ([RFC 0002](0002-mbook-api.md)); for a stored list they are its
+  items.
+- A link made with nothing selected is typed by the block editor as plain
+  text, selected and then linked, so that the editor escapes the words and
+  writes the destination.
+- A picture is put into a chapter as `![description](path)`, pasted into the
+  block editor as Markdown. The path is relative to the chapter and
+  percent-encoded; the description is escaped.
+  - A picture chosen from a file for a chapter remembers that chapter. When
+    the book has taken the picture and Visual still shows that chapter, the
+    picture is put at the caret. Otherwise it stays among the pictures of
+    the book and a notification says how to place it.
+  - A drop on the chapter takes the files with the extension of a picture
+    and leaves the others to the window, which imports books.
 - A book with an empty contents list uses automatic contents when opened
   in the editor. Save builds the list from the current chapter headings
   and records the mode in the private metadata key
   `x-mbook-ui-contents` with value `headings`. Reopening such a book in
   the editor restores the mode for subsequent edits.
 - A book with entries and no automatic mode keeps the contents of its file,
-  item by item. Removing or moving a chapter can make an item lead nowhere
-  or fall out of order and block the save. The editor then offers to switch
-  to automatic contents from headings.
+  item by item. Removing a heading can make an item lead nowhere, and
+  moving a heading past another in the text can make one fall out of order;
+  either blocks the save. The outline marks each such item
+  by the walk `Book` writes the contents with, so the Contents section
+  shows which entries to change. The editor also offers to switch to
+  automatic contents from headings.
+- The items of such a list follow their chapter.
+  - Moving a chapter sorts the list again, by the rule of the sorting
+    control below, when the list was in the order of the book before the
+    move. A list that was out of order already is left as it is: the editor
+    does not rearrange what the author has not sorted.
+  - A chapter that gets another path takes the items that led into it
+    along, and so do the landmarks, of every kind. The links of other
+    chapters do not follow; they are reported by the check.
+  - Removing a chapter removes the items that led into it, and the items
+    under them move up as they do when one entry is removed. A list left
+    without items gives way to automatic contents. The landmarks that led
+    into the chapter are removed too, of every kind: the Landmarks section
+    shows only `notes`, so a landmark of another kind that led nowhere
+    could not be repaired there.
+- A list the book keeps is changed by commands of the editing task that
+  name an entry by its position in the last outline. The section takes no
+  second change until the first is answered.
+  - An entry needs a title and a place the contents can lead to: a chapter,
+    or one of its headings. A line that an anchor definition names is not
+    offered, because the format does not allow it
+    ([RFC 0001](0001-mbook-format.md#resource-3-toc)).
+  - A new entry is put after the last entry that leads to the same place or
+    an earlier one, at the level of the entry above it. An entry given
+    another place is taken out and put back by the same rule with the level
+    it had.
+  - A level is kept between what the entry above allows and what the entry
+    below needs. Moving an entry in or out moves the entries under it too;
+    removing one, or moving it elsewhere, brings them one level up. A list
+    that follows the rules of the format therefore still follows them after
+    any of these changes.
+  - Sorting is stable by chapter and offset. An entry that leads nowhere
+    stays behind the entry it followed, and a level the new order does not
+    allow is brought up.
+  - A list that loses its last entry gives way to automatic contents, as an
+    empty list does when a book is opened.
 - Text that `Chapter::set_text` refused stays in the editor as a draft, and
   the book is not saved while a draft exists: nothing typed is dropped.
 - A picture, or a cover, is added from a file in AVIF, JPEG, PNG, GIF, WebP
@@ -829,7 +972,7 @@ sequenceDiagram
 | Columns of the shelf | As many covers of 104 px as fit | Covers of 132 px | Covers of 132 px |
 | Contents of a book | A sheet | A sheet | A popover |
 | Paged text column | Window width less 20 px on each side | At most 38 em with at least 32 px on each side | At most 38 em with at least 32 px on each side |
-| Editor | A stack; Visual, Source or Preview | Visual, Source or Preview; sections slide over | Sections beside Visual, Source, Split or Preview |
+| Editor | A stack; the list of sections and chapters, then Visual, Source or Preview | Visual, Source or Preview; the list slides over | The list beside Visual, Source, Split or Preview |
 | Menu of a book | A long press | A long press, or `…` | A right click, or `…` |
 
 ### Updates
@@ -937,7 +1080,7 @@ Ruled out:
 - Every layout is drawn at 390, 800 and 1280 px of width. With the Cargo
   feature `visual`, `cargo test -p mbook-ui --features visual --test visual`
   renders every screen without a window, in these widths and in a light
-  and a dark page tone, into `target/visual/`: 104 pictures for a person to
+  and a dark page tone, into `target/visual/`: 136 pictures for a person to
   look at. The renderer exists on macOS; elsewhere the test says so and
   passes.
 - Accessibility is tested, not reviewed:
@@ -965,7 +1108,7 @@ can break in its middle.
 | Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
 | Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures scale to fit a page. Other tall blocks can be clipped through a line. |
-| Editor | Editing opens the first chapter in Visual. Visual supports tables, nested and task lists, quotes, code blocks, chapter link selection, and a picture preview. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. |
+| Editor | Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. The installer is compiled on macOS and Windows. No real release exists, so neither has met the network. |
 | Release workflow | Written; never run. The macOS and Windows x64 jobs make NASM available before building. A local `cargo bundle` on macOS produces the application with its icon. |
@@ -1041,6 +1184,15 @@ asks:
 | Creating a book | Create a titled book with one empty chapter and open it in the editor | Ask for chapter paths before opening the editor | A writer can start with the title and go straight to writing. The title and chapter paths remain editable. |
 | Editing | One background task owns the `Book`; commands in order | A `Book` behind a mutex, one task per change | Separate tasks may run out of order: a save could miss the edit before it. |
 | Visual chapter editing | Use the GPUI Kit block editor and restore intact source blocks with `similar` | Extend the inline Markdown projection | The block editor provides table and list structure, selection and undo. Restoring unchanged blocks protects source spelling and heading anchors. |
+| How a chapter is named in the editor | Its number and the title of its first heading; the path beside it | The path alone | An author knows a chapter by its title. The path stays in sight because links and problems name it. |
+| Adding a chapter | Ask for a title; propose the path | Ask for a path | The title is what the author has in mind, and it becomes the heading the contents are built from. The path can be changed afterwards. |
+| Putting a picture into a chapter | One dialog in the chapter: the pictures of the book, or a file that is added on the way | Add the picture in Pictures first, then pick its path from a menu in the chapter | The second way takes three screens and needs the name of a file to be remembered. |
+| Where chapter actions are | A menu with words: Move up, Move down, Rename the file, Remove the chapter | A row of icons beside the views | Arrows beside a title read as "previous" and "next". The actions are rare and one of them cannot be undone. |
+| Where the contents are explained | A section of their own that shows them | Only the control that rebuilds them among the problems | An author who asks how to change the contents finds neither a list nor a rule otherwise. |
+| The order of a stored contents list | The editor keeps it: an entry sits where its place is in the book | Controls that move an entry up and down | The format refuses a list that is not in reading order, so almost every move by hand would be a mistake to undo. A moved chapter takes its entries along, a removed one takes them away, and one control sorts a list that an edit of the text left out of order. |
+| The level of a contents entry | Two menu items that move it in or out with the entries under it | A level number in the dialog | The level that is allowed depends on the entries around it. Moving in and out, as an outliner does, cannot produce a list the format refuses. |
+| The places a link can lead to | Carried in the outline, from the anchors `Book` keeps | A public call of `mbook` that lists the contents | RFC 0002 stays as it is. The price is that the rule which lists a heading is written here a second time, with a test. |
+| Escaping the words the editor writes into Markdown | A function of this crate, tested by reading the result back with `markdown` | `mdast_util_to_markdown` 0.0.2 | That crate is a pre-release without the GFM extensions. `mbook-converter` escapes with a function of its own for the same reason ([RFC 0003](0003-mbook-converter-api.md)); it is not public, and RFC 0003 stays as it is. A link needs none of it: the block editor types and links the words. |
 | Where an edit is saved | Over the book in the library, by a rename | Always a new copy | Decided by the format author. The library is the working copy; the original file was never touched. |
 | Catalogue | `redb` | SQLite through `rusqlite` | Decided by the format author. Pure Rust: nothing to cross-compile for a phone. The price is no SQL; a library is filtered in memory. |
 | | | No catalogue; open every file at start | Reading places and settings need a store anyway, and a shelf of thousands should not wait for thousands of files. |
@@ -1107,5 +1259,11 @@ application.
 - **Collections** in the library.
 - **A journal of unsaved edits**, replayed after a crash.
 - **Undo for changes of structure.**
+- **Links that follow a renamed chapter**: the links of other chapters
+  into it would be rewritten.
+- **Turning automatic contents into a list**, for an author who wants to
+  leave headings out of the contents.
+- **Showing where a picture is used**, and offering to remove the ones no
+  chapter refers to.
 - **Exporting** a book of the library as a file.
 - **Conversion progress and cancellation**, when RFC 0003 has them.

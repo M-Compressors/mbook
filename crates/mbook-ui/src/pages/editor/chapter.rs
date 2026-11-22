@@ -4,17 +4,19 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{ButtonVariants as _, Toggle, ToggleGroup};
 use gpui_kit::component::input::Editor;
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
+use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
 use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div, px, relative,
 };
 
 use super::EditorPage;
+use super::encode::Target;
 use super::keys::{ESCAPED_CONTEXT, SOURCE_CONTEXT};
-use super::prompts::confirm_remove;
+use super::prompts::{Question, confirm};
 use super::sections::control;
-use super::session::{Control, ViewMode};
+use super::session::{Control, ViewMode, chapter_label, chapter_title};
 use crate::features::appearance::Appearance;
 use crate::shared::layout::SizeClass;
 use crate::shared::ui::{empty_state, icon_button, page_colors, status_line, target_size};
@@ -22,6 +24,43 @@ use crate::shared::ui::{empty_state, icon_button, page_colors, status_line, targ
 /// What the Markdown editor says about leaving it, as its description and as
 /// the hint under it.
 pub(super) const EDITOR_HINT: &str = "Tab indents. Press Escape, then Tab, to leave the editor.";
+
+/// The question before a chapter is removed. It says what goes with the
+/// chapter because it led into it: entries of a contents list the book
+/// keeps, and landmarks.
+fn removal_question(name: &str, entries: usize, landmarks: usize) -> Question {
+    let mut gone = Vec::new();
+    match entries {
+        0 => {}
+        1 => gone.push("Its entry of the contents".to_owned()),
+        count => gone.push(format!("Its {count} entries of the contents")),
+    }
+    match (landmarks, gone.is_empty()) {
+        (0, _) => {}
+        (1, true) => gone.push("The landmark that leads into it".to_owned()),
+        (1, false) => gone.push("the landmark that leads into it".to_owned()),
+        (count, true) => gone.push(format!("The {count} landmarks that lead into it")),
+        (count, false) => gone.push(format!("the {count} landmarks that lead into it")),
+    }
+    let verb = if entries + landmarks == 1 {
+        "is"
+    } else {
+        "are"
+    };
+    let detail = if gone.is_empty() {
+        "This cannot be undone.".to_owned()
+    } else {
+        format!(
+            "{} {verb} removed with it. This cannot be undone.",
+            gone.join(" and ")
+        )
+    };
+    Question {
+        title: format!("Remove {name}?"),
+        detail,
+        ok: "Remove",
+    }
+}
 
 impl EditorPage {
     /// The chapter area of an expanded or a medium window, or the screen of a
@@ -34,13 +73,13 @@ impl EditorPage {
     ) -> impl IntoElement {
         let Some(path) = self.session.open.clone() else {
             return empty_state(
-                "This book has no chapters",
-                "Add a chapter to start writing.",
+                "This book has no chapters yet",
+                "Add the first chapter to start writing.",
             )
             .action(
-                control("add-first-chapter", "Add a chapter…")
+                control("add-first-chapter", "New chapter…")
                     .primary()
-                    .on_click(cx.listener(|this, _, window, cx| this.add_chapter(window, cx))),
+                    .on_click(cx.listener(|_, _, window, cx| Self::add_chapter(window, cx))),
             )
             .into_any_element();
         };
@@ -109,12 +148,29 @@ impl EditorPage {
                             .text_color(theme.danger)
                     }),
             )
+            .children(
+                self.session
+                    .error_text(&Control::ChapterPicture)
+                    .map(|message| {
+                        status_line("chapter-picture-error", message)
+                            .px_3()
+                            .py_1()
+                            .text_sm()
+                            .text_color(theme.danger)
+                    }),
+            )
+            .children(self.encoder.names(Target::Chapter).into_iter().map(|name| {
+                status_line("chapter-picture-encoding", format!("Adding {name}…"))
+                    .px_3()
+                    .py_1()
+                    .text_sm()
+            }))
             .child(div().flex_1().min_h_0().child(body))
             .into_any_element()
     }
 
-    /// The name of the chapter, the choice of view and what changes the
-    /// chapter.
+    /// The number and title of the chapter with its file, the choice of view,
+    /// and the menu of what changes the chapter.
     fn render_chapter_bar(
         &mut self,
         path: &str,
@@ -126,18 +182,13 @@ impl EditorPage {
         let index = self.session.chapter_index(path).unwrap_or(0);
         let last = self.session.chapters().len().saturating_sub(1);
         let edited = self.session.is_edited(path);
-        let title = if edited {
-            format!("{path} - edited")
-        } else {
-            path.to_owned()
-        };
-        let (up_path, down_path, rename_path, remove_path) = (
-            path.to_owned(),
-            path.to_owned(),
-            path.to_owned(),
-            path.to_owned(),
-        );
-        let modes_for_click = modes;
+        let heading = self
+            .session
+            .chapter(path)
+            .and_then(|chapter| chapter.heading.clone());
+        let name = chapter_label(index + 1, path, heading.as_deref(), false, edited);
+        let muted = cx.theme().muted_foreground;
+        let words = class != SizeClass::Compact;
         h_flex()
             .id("chapter-bar")
             .w_full()
@@ -149,16 +200,43 @@ impl EditorPage {
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
-                div()
+                h_flex()
                     .id("chapter-title")
                     .role(Role::Heading)
                     .aria_level(2)
-                    .aria_label(title.clone())
+                    .aria_label(name)
                     .test_support()
-                    .font_weight(FontWeight::SEMIBOLD)
+                    .flex_1()
                     .min_w_0()
-                    .truncate()
-                    .child(title),
+                    .items_baseline()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(muted)
+                            .child((index + 1).to_string()),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(chapter_title(heading.as_deref()).to_owned()),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_sm()
+                            .text_color(muted)
+                            .child(path.to_owned()),
+                    )
+                    .children(edited.then(|| {
+                        div()
+                            .flex_none()
+                            .text_sm()
+                            .text_color(muted)
+                            .child("edited")
+                    })),
             )
             .child(
                 ToggleGroup::new("view-mode")
@@ -168,7 +246,7 @@ impl EditorPage {
                         if let Some(next) = checked
                             .iter()
                             .position(|selected| *selected)
-                            .and_then(|index| modes_for_click.get(index))
+                            .and_then(|index| modes.get(index))
                         {
                             this.set_mode(*next, window, cx);
                         }
@@ -180,46 +258,86 @@ impl EditorPage {
                             ViewMode::Split => ("mode-split", IconName::Columns2),
                             ViewMode::Preview => ("mode-preview", IconName::Eye),
                         };
-                        Toggle::new(id)
-                            .icon(icon)
+                        // A window with room names the views in words; the
+                        // tooltip is where the control takes its name from.
+                        let toggle = if words {
+                            Toggle::new(id).label(candidate.label()).px_3()
+                        } else {
+                            Toggle::new(id).icon(icon)
+                        };
+                        toggle
                             .tooltip(candidate.label())
                             .checked(*candidate == mode)
                             .min_w(px(target_size()))
                             .min_h(px(target_size()))
                     })),
             )
-            .child(
-                icon_button("chapter-up", IconName::ArrowUp, "Move up")
-                    .disabled(index == 0)
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.move_chapter(&up_path, -1, window, cx);
-                    })),
-            )
-            .child(
-                icon_button("chapter-down", IconName::ArrowDown, "Move down")
-                    .disabled(index >= last)
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.move_chapter(&down_path, 1, window, cx);
-                    })),
-            )
-            .child(
-                icon_button("chapter-path", IconName::FilePenLine, "Change the path…").on_click(
-                    cx.listener(move |_, _, window, cx| {
-                        Self::change_path(rename_path.clone(), window, cx);
-                    }),
-                ),
-            )
-            .child(
-                icon_button("chapter-remove", IconName::Trash, "Remove").on_click(cx.listener(
-                    move |_, _, window, cx| {
-                        let path = remove_path.clone();
-                        confirm_remove(&path.clone(), window, cx, move |this, window, cx| {
-                            this.remove_chapter(path.clone(), window, cx);
-                        });
-                    },
-                )),
-            )
+            .child(Self::chapter_menu(path, index, last, cx))
             .into_any_element()
+    }
+
+    /// The menu of what changes the chapter itself: its place in the reading
+    /// order, the name of its file, and removing it.
+    fn chapter_menu(
+        path: &str,
+        index: usize,
+        last: usize,
+        cx: &mut Context<'_, Self>,
+    ) -> impl IntoElement + use<> {
+        let page = cx.weak_entity();
+        let path = path.to_owned();
+        icon_button("chapter-menu", IconName::Ellipsis, "Chapter actions").dropdown_menu(
+            move |menu, _, _| {
+                let step = |label: &'static str, by: isize, disabled: bool| {
+                    let (page, path) = (page.clone(), path.clone());
+                    PopupMenuItem::new(label)
+                        .disabled(disabled)
+                        .on_click(move |_, window, cx| {
+                            page.update(cx, |this, cx| this.move_chapter(&path, by, window, cx))
+                                .ok();
+                        })
+                };
+                let (rename_page, rename_path) = (page.clone(), path.clone());
+                let (remove_page, remove_path) = (page.clone(), path.clone());
+                menu.item(step("Move up", -1, index == 0))
+                    .item(step("Move down", 1, index >= last))
+                    .separator()
+                    .item(
+                        PopupMenuItem::new("Rename the file…").on_click(move |_, window, cx| {
+                            let path = rename_path.clone();
+                            rename_page
+                                .update(cx, |_, cx| Self::change_path(path, window, cx))
+                                .ok();
+                        }),
+                    )
+                    .item(PopupMenuItem::new("Remove the chapter…").on_click(
+                        move |_, window, cx| {
+                            let path = remove_path.clone();
+                            remove_page
+                                .update(cx, |this, cx| {
+                                    let question = removal_question(
+                                        &this.chapter_name(&path),
+                                        this.session.stored_entries_of(&path),
+                                        this.session.landmarks_into(&path),
+                                    );
+                                    confirm(question, window, cx, move |this, window, cx| {
+                                        this.remove_chapter(path.clone(), window, cx);
+                                    });
+                                })
+                                .ok();
+                        },
+                    ))
+            },
+        )
+    }
+
+    /// A chapter in words, for a question about it: its title in quotes, or
+    /// its file when it has no heading.
+    pub(super) fn chapter_name(&self, path: &str) -> String {
+        self.session
+            .chapter(path)
+            .and_then(|chapter| chapter.heading.as_deref())
+            .map_or_else(|| path.to_owned(), |heading| format!("“{heading}”"))
     }
 
     /// The Markdown editor of the chapter and the hint about leaving it.
@@ -254,22 +372,55 @@ impl EditorPage {
             )
             .into_any_element()
     }
+}
 
-    /// The chapters on the screen of a compact window: the list, and the
-    /// control that adds one.
-    pub(super) fn render_chapter_screen(&mut self, cx: &mut Context<'_, Self>) -> AnyElement {
-        v_flex()
-            .id("chapter-screen")
-            .gap_2()
-            .p_2()
-            .child(self.render_chapter_list(cx))
-            .children(self.session.error_text(&Control::Chapters).map(|message| {
-                status_line("chapters-error", message)
-                    .px_3()
-                    .text_sm()
-                    .text_color(cx.theme().danger)
-            }))
-            .child(div().h(px(1.0)))
-            .into_any_element()
+#[cfg(test)]
+mod tests {
+    use super::removal_question;
+
+    #[test]
+    fn the_question_about_a_chapter_names_it() {
+        let question = removal_question("“One”", 0, 0);
+        assert_eq!(question.title, "Remove “One”?");
+        assert_eq!(question.detail, "This cannot be undone.");
+        assert_eq!(question.ok, "Remove");
+    }
+
+    #[test]
+    fn the_question_counts_the_entries_that_go_with_the_chapter() {
+        assert_eq!(
+            removal_question("“One”", 1, 0).detail,
+            "Its entry of the contents is removed with it. This cannot be undone."
+        );
+        assert_eq!(
+            removal_question("“One”", 12, 0).detail,
+            "Its 12 entries of the contents are removed with it. This cannot be undone."
+        );
+    }
+
+    #[test]
+    fn the_question_counts_the_landmarks_that_go_with_the_chapter() {
+        assert_eq!(
+            removal_question("“One”", 0, 1).detail,
+            "The landmark that leads into it is removed with it. This cannot be undone."
+        );
+        assert_eq!(
+            removal_question("“One”", 0, 2).detail,
+            "The 2 landmarks that lead into it are removed with it. This cannot be undone."
+        );
+    }
+
+    #[test]
+    fn the_question_names_entries_and_landmarks_together() {
+        assert_eq!(
+            removal_question("“One”", 1, 1).detail,
+            "Its entry of the contents and the landmark that leads into it are removed with it. \
+             This cannot be undone."
+        );
+        assert_eq!(
+            removal_question("“One”", 3, 2).detail,
+            "Its 3 entries of the contents and the 2 landmarks that lead into it are removed \
+             with it. This cannot be undone."
+        );
     }
 }

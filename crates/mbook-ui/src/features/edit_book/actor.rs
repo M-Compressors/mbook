@@ -1,7 +1,8 @@
 //! The task that owns the book, and the handle that talks to it.
 
-use super::command::{Command, MetaChange, Reply, Request};
-use super::error::{EditError, OpenFailure};
+use super::command::{Command, ContentsChange, MetaChange, Reply, Request};
+use super::contents::{self, Places};
+use super::error::{ContentsError, EditError, OpenFailure};
 use super::outline::{Outline, ProblemOutline};
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
@@ -229,12 +230,9 @@ impl Session {
             Command::AddChapter { path, text } => {
                 book.add_chapter(path, text)?;
             }
-            Command::MoveChapter { path, index } => book.move_chapter(&path, index)?,
+            Command::MoveChapter { path, index } => move_chapter(book, &path, index)?,
             Command::MoveChapterPath { from, to } => move_chapter_path(book, &from, to)?,
-            Command::RemoveChapter { path } => {
-                book.remove_chapter(&path)
-                    .ok_or(EditError::NoSuchPath(path))?;
-            }
+            Command::RemoveChapter { path } => remove_chapter(book, &path)?,
             Command::AddPicture { path, avif } => {
                 book.add_picture(path, avif)?;
             }
@@ -246,6 +244,7 @@ impl Session {
                 book.set_cover(path, avif)?;
             }
             Command::ContentsFromHeadings => contents_from_headings(book)?,
+            Command::EditContents(change) => edit_contents(book, change)?,
             Command::Load | Command::Check | Command::Save => {}
         }
         Ok(())
@@ -258,6 +257,47 @@ fn contents_from_headings(book: &mut Book) -> mbook::Result<()> {
         book.meta_mut().set(CONTENTS_MODE, HEADINGS)?;
     }
     book.set_toc(Toc::default());
+    Ok(())
+}
+
+/// Changes the list of contents the book keeps. A list left without entries
+/// gives way to the headings, as an empty list does when a book is opened.
+fn edit_contents(book: &mut Book, change: ContentsChange) -> Result<(), EditError> {
+    let Toc::Explicit(items) = book.toc() else {
+        return Err(ContentsError::Automatic.into());
+    };
+    let mut items = items.clone();
+    contents::change(&mut items, change, &Places::of(book))?;
+    Ok(keep_list(book, items)?)
+}
+
+/// Stores a contents list, or selects automatic contents for an empty one.
+fn keep_list(book: &mut Book, items: Vec<mbook::TocItem>) -> mbook::Result<()> {
+    if items.is_empty() {
+        contents_from_headings(book)
+    } else {
+        book.set_toc(Toc::Explicit(items));
+        Ok(())
+    }
+}
+
+/// Removes a chapter, and with it what led into it and would lead nowhere:
+/// the landmarks, of every kind, and the entries of a contents list the book
+/// keeps.
+fn remove_chapter(book: &mut Book, path: &str) -> Result<(), EditError> {
+    if book.chapter(path).is_none() {
+        return Err(EditError::NoSuchPath(path.to_owned()));
+    }
+    let mut landmarks = book.landmarks().to_vec();
+    landmarks.retain(|landmark| landmark.chapter != path);
+    book.set_landmarks(landmarks)?;
+    if let Toc::Explicit(items) = book.toc() {
+        let mut items = items.clone();
+        if contents::forget_chapter(&mut items, path) > 0 {
+            keep_list(book, items)?;
+        }
+    }
+    drop(book.remove_chapter(path));
     Ok(())
 }
 
@@ -302,10 +342,29 @@ fn set_or_remove(meta: &mut Meta, key: &str, value: Option<String>) -> mbook::Re
     }
 }
 
+/// Moves a chapter in the reading order. A contents list the book keeps is
+/// sorted again when it was in the order of the book before, so that the
+/// entries of the chapter move with it; a list that was out of order already
+/// is left for the author to sort.
+fn move_chapter(book: &mut Book, path: &str, index: usize) -> Result<(), EditError> {
+    let followed = match book.toc() {
+        Toc::Explicit(items) if contents::in_order(items, &Places::of(book)) => Some(items.clone()),
+        _ => None,
+    };
+    book.move_chapter(path, index)?;
+    if let Some(mut items) = followed {
+        contents::put_in_order(&mut items, &Places::of(book));
+        book.set_toc(Toc::Explicit(items));
+    }
+    Ok(())
+}
+
 /// Gives a chapter another path at the same position with the same text.
 ///
 /// The chapter is taken out and put back under the new path; when the book
-/// refuses that, it is put back under the old one.
+/// refuses that, it is put back under the old one. The landmarks that led
+/// into the chapter, and the entries of a contents list the book keeps,
+/// follow it to its new path.
 fn move_chapter_path(book: &mut Book, from: &str, to: String) -> Result<(), EditError> {
     let index = book
         .chapters()
@@ -317,7 +376,22 @@ fn move_chapter_path(book: &mut Book, from: &str, to: String) -> Result<(), Edit
         .map(|chapter| chapter.text().to_owned())
         .ok_or_else(|| EditError::NoSuchPath(from.to_owned()))?;
     match book.insert_chapter(index, to, text.clone()) {
-        Ok(_) => Ok(()),
+        Ok(chapter) => {
+            let to = chapter.path().to_owned();
+            if let Toc::Explicit(items) = book.toc() {
+                let mut items = items.clone();
+                contents::follow_path(&mut items, from, &to);
+                book.set_toc(Toc::Explicit(items));
+            }
+            let mut landmarks = book.landmarks().to_vec();
+            for landmark in landmarks.iter_mut().filter(|l| l.chapter == from) {
+                landmark.chapter.clone_from(&to);
+            }
+            // The book took these kinds before, and a path is not checked
+            // here, so this cannot fail.
+            drop(book.set_landmarks(landmarks));
+            Ok(())
+        }
         Err(refusal) => {
             // The old path and text were accepted before, so this cannot fail;
             // the refusal is the answer either way.

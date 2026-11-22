@@ -29,7 +29,9 @@ pub(crate) enum Command {
         /// Its Markdown text.
         text: String,
     },
-    /// Moves a chapter to another position of the reading order.
+    /// Moves a chapter to another position of the reading order. The entries
+    /// of a contents list the book keeps move with their chapter, when the
+    /// list was in the order of the book.
     MoveChapter {
         /// The path of the chapter.
         path: String,
@@ -39,13 +41,17 @@ pub(crate) enum Command {
     /// Gives a chapter another path and keeps its position and text. `Book`
     /// has no rename, so the chapter is removed and inserted at the same
     /// position; when the new path is refused, the chapter stays as it was.
+    /// The landmarks that led into it, and the entries of a contents list
+    /// the book keeps, follow it to the new path.
     MoveChapterPath {
         /// The path the chapter has.
         from: String,
         /// The path it gets.
         to: String,
     },
-    /// Removes a chapter.
+    /// Removes a chapter, and with it the landmarks and the entries of a
+    /// contents list the book keeps that led into it. A list left without
+    /// entries follows the headings from then on.
     RemoveChapter {
         /// The path of the chapter.
         path: String,
@@ -75,6 +81,12 @@ pub(crate) enum Command {
     /// invalidate those entries, this command replaces the list and records
     /// the choice for future sessions.
     ContentsFromHeadings,
+    /// Changes the list of contents the book keeps.
+    ///
+    /// Contents that follow the headings have no list and refuse the change.
+    /// A list that loses its last entry follows the headings from then on,
+    /// as an empty list does when a book is opened.
+    EditContents(ContentsChange),
     /// Runs `Book::check`; the problems are in the outline. Nothing else
     /// changes.
     Check,
@@ -101,6 +113,48 @@ pub(crate) enum MetaChange {
     Date(Option<String>),
     /// The annotation; `None` removes it.
     Annotation(Option<String>),
+}
+
+/// One change of a contents list the book keeps. An entry is named by its
+/// position in the list of the last outline, counted from 0.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ContentsChange {
+    /// Adds an entry where its place is in the book, at the level of the
+    /// entry above it.
+    Add(EntryDraft),
+    /// Gives an entry another title or place. An entry that leads elsewhere
+    /// moves to where that place is in the book.
+    Set {
+        /// The position of the entry.
+        index: usize,
+        /// What it says and where it leads from now on.
+        entry: EntryDraft,
+    },
+    /// Moves an entry, and the entries under it, one level in or out.
+    Shift {
+        /// The position of the entry.
+        index: usize,
+        /// One level in, under the entry above; otherwise one level out.
+        deeper: bool,
+    },
+    /// Removes an entry. The entries under it move one level up.
+    Remove {
+        /// The position of the entry.
+        index: usize,
+    },
+    /// Sorts the entries by where they lead in the book.
+    InBookOrder,
+}
+
+/// What an entry of the contents says and where it leads.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct EntryDraft {
+    /// The title; it must not be empty.
+    pub(crate) title: String,
+    /// The path of the chapter.
+    pub(crate) chapter: String,
+    /// The name of a heading of that chapter; `None` is its start.
+    pub(crate) anchor: Option<String>,
 }
 
 /// The answer to a request: the value, or why there is none.

@@ -6,9 +6,10 @@ use std::time::Duration;
 use gpui_kit::component::RopeExt as _;
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::{Context, Window};
+use markdown_editor::{BlockKind, EditorCommand};
 
 use super::session::{
-    Control, MetaField, Phase, Section, edit_error_words, line_and_column, meta_change,
+    Control, MetaField, Phase, Section, ViewMode, edit_error_words, line_and_column, meta_change,
     unsaved_announcement,
 };
 use super::{EditorEvent, EditorPage};
@@ -64,7 +65,7 @@ pub(super) enum Origin {
     RemovePicture,
     /// The cover was set.
     SetCover,
-    /// The contents were rebuilt.
+    /// The contents were rebuilt, or their list was changed.
     Contents,
     /// A check.
     Check,
@@ -106,6 +107,7 @@ impl EditorPage {
         cx: &mut Context<'_, Self>,
     ) {
         let picture_applied = matches!(origin, Origin::AddPicture | Origin::SetCover);
+        let applied = result.is_ok();
         match (origin, result) {
             (Origin::Load, Err(error)) => {
                 self.session.fail(edit_error_words(&error));
@@ -144,6 +146,9 @@ impl EditorPage {
                 self.session.clear_error(&Control::Pictures);
                 self.take(seq, outline, window, cx);
             }
+            (Origin::AddPicture, Err(error)) if self.encoder.placing.is_some() => {
+                self.fail(Control::ChapterPicture, &error, cx);
+            }
             (Origin::AddPicture | Origin::RemovePicture, Err(error)) => {
                 self.fail(Control::Pictures, &error, cx);
             }
@@ -153,16 +158,22 @@ impl EditorPage {
                 self.take(seq, outline, window, cx);
             }
             (Origin::SetCover, Err(error)) => self.fail(Control::Cover, &error, cx),
-            (Origin::Contents, Ok(outline)) => {
-                self.session.clear_error(&Control::Contents);
-                self.take(seq, outline, window, cx);
+            (Origin::Contents, result) => {
+                self.session.contents_pending = false;
+                match result {
+                    Ok(outline) => {
+                        self.session.clear_error(&Control::Contents);
+                        self.take(seq, outline, window, cx);
+                        cx.notify();
+                    }
+                    Err(error) => self.fail(Control::Contents, &error, cx),
+                }
             }
-            (Origin::Contents, Err(error)) => self.fail(Control::Contents, &error, cx),
             (Origin::Check, Err(error)) => self.fail(Control::Save, &error, cx),
             (Origin::Save, result) => self.saved(seq, result, window, cx),
         }
         if picture_applied {
-            self.picture_applied(window, cx);
+            self.picture_applied(applied, window, cx);
         }
     }
 
@@ -223,6 +234,10 @@ impl EditorPage {
         }
         self.take(seq, outline, window, cx);
         if let ChapterOp::Add(path) = op {
+            // A new chapter is for writing: it opens in Visual, ready to be
+            // typed into under its heading.
+            self.set_mode(ViewMode::Visual, window, cx);
+            self.write_next = true;
             self.open_chapter(path, window, cx);
         }
     }
@@ -389,10 +404,29 @@ impl EditorPage {
                 if let Some(offset) = self.caret.take() {
                     self.move_caret(offset, window, cx);
                 }
+                if std::mem::take(&mut self.write_next) {
+                    self.start_writing(!text.is_empty(), window, cx);
+                }
             }
             Err(error) => self.fail(Control::ChapterText, &error, cx),
         }
         cx.notify();
+    }
+
+    /// Gives the focus to Visual with the caret where the writing goes on:
+    /// at the end, and under the heading when the chapter starts with one.
+    fn start_writing(
+        &mut self,
+        under_heading: bool,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.visual.input.update(cx, |state, cx| {
+            if state.select_end(cx).is_ok() && under_heading {
+                let _ = state.run(EditorCommand::InsertBlock(BlockKind::Paragraph), cx);
+            }
+        });
+        self.text_focus(cx).focus(window, cx);
     }
 
     /// Replaces the text of the editor without counting it as typing.

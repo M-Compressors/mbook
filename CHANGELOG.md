@@ -6,6 +6,44 @@
 
 - The book editor's Landmarks section can add, edit and remove `notes`
   landmarks with a chapter, an optional anchor and an optional title.
+- The book editor has a Contents section. It shows the contents a reader is
+  shown, says whether they follow the headings or are a list the book keeps,
+  and opens the chapter of an entry.
+- A contents list the book keeps is edited entry by entry in the Contents
+  section: an entry gets another title or place, moves one level in or out
+  with the entries under it, or is removed, and **Add an entry…** adds one.
+  The editor keeps the list in the order of the book. Entries that lead
+  nowhere or are out of order are marked, and one control sorts the list.
+  The Problems section has **Open Contents** beside the control that
+  rebuilds the contents.
+- The entries of a contents list the book keeps follow their chapter: they
+  move with it in the reading order, when the list was in the order of the
+  book, keep leading to it when its file is renamed, and are removed with
+  it. The question before a chapter is removed says how many entries go
+  with it. Each of the three used to block the save.
+- Landmarks follow their chapter in the same way: they keep leading to it
+  when its file is renamed and are removed with it, and the question counts
+  them.
+- **Picture** in a chapter opens one dialog: choose a picture of the book by
+  its thumbnail, or add one from a file, describe it, and it is put where
+  the caret is. Picture files can also be dropped on a chapter.
+- **Link** works without a selection: the dialog asks for the words too. A
+  link can lead to a chapter or to a heading inside it, chosen by title, and
+  is removed from the same dialog.
+
+### Changed
+
+- The editor lists chapters by number and title instead of by path, under
+  the sections about the whole book. A compact window shows both in one
+  list.
+- **New chapter…** asks for a title, which becomes the first heading of the
+  chapter, instead of a path.
+- The views of a chapter are named in words. Moving, renaming and removing
+  a chapter are in a menu at the end of the chapter bar.
+- The Visual toolbar is one row. The control that removed a link is now in
+  the link dialog.
+- A notes landmark is given its place by choosing a chapter and a heading,
+  not by typing an anchor name.
 
 ### Fixed
 

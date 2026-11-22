@@ -12,7 +12,7 @@ use std::error::Error as _;
 use crate::features::edit_book::command::MetaChange;
 use crate::features::edit_book::error::EditError;
 use crate::features::edit_book::outline::{
-    ChapterOutline, MetaOutline, Outline, PictureOutline, ProblemOutline,
+    ChapterOutline, ContentsOutline, MetaOutline, Outline, PictureOutline, ProblemOutline,
 };
 use crate::shared::layout::SizeClass;
 
@@ -23,25 +23,40 @@ pub(super) enum Section {
     Details,
     /// The cover picture.
     Cover,
-    /// The list of chapters and the chapter being edited.
-    Chapters,
-    /// Landmarks that lead to the book's notes.
-    Landmarks,
+    /// The contents a reader is shown, and where they come from.
+    Contents,
     /// The pictures of the book.
     Pictures,
+    /// Landmarks that lead to the book's notes.
+    Landmarks,
     /// What the last check or save found.
     Problems,
+    /// The chapter being edited.
+    Chapters,
 }
 
 impl Section {
-    /// Every section, in the order the list shows them.
-    pub(super) const ALL: [Self; 6] = [
+    /// The sections about the whole book, in the order the list shows them.
+    /// The chapters stand in a list of their own under them.
+    pub(super) const BOOK: [Self; 6] = [
         Self::Details,
         Self::Cover,
-        Self::Chapters,
-        Self::Landmarks,
+        Self::Contents,
         Self::Pictures,
+        Self::Landmarks,
         Self::Problems,
+    ];
+
+    /// Every section.
+    #[cfg(test)]
+    pub(super) const ALL: [Self; 7] = [
+        Self::Details,
+        Self::Cover,
+        Self::Contents,
+        Self::Pictures,
+        Self::Landmarks,
+        Self::Problems,
+        Self::Chapters,
     ];
 
     /// The name of the section.
@@ -49,6 +64,7 @@ impl Section {
         match self {
             Self::Details => "Details",
             Self::Cover => "Cover",
+            Self::Contents => "Contents",
             Self::Chapters => "Chapters",
             Self::Landmarks => "Landmarks",
             Self::Pictures => "Pictures",
@@ -61,6 +77,7 @@ impl Section {
         match self {
             Self::Details => "section-details",
             Self::Cover => "section-cover",
+            Self::Contents => "section-contents",
             Self::Chapters => "section-chapters",
             Self::Landmarks => "section-landmarks",
             Self::Pictures => "section-pictures",
@@ -114,11 +131,11 @@ impl ViewMode {
 /// Where a compact window is in its stack of screens.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Level {
-    /// The list of sections.
+    /// The list of sections and chapters.
     Sections,
-    /// One section.
+    /// One section about the whole book.
     Section,
-    /// One chapter, inside the section of chapters.
+    /// One chapter.
     Chapter,
 }
 
@@ -167,6 +184,8 @@ pub(super) enum Control {
     Landmarks,
     /// Adding or removing a picture.
     Pictures,
+    /// Adding a picture from a file into the chapter being edited.
+    ChapterPicture,
     /// Replacing the cover.
     Cover,
     /// The contents.
@@ -224,6 +243,9 @@ pub(super) struct Session {
     pub(super) encoding: usize,
     /// A replacement of the landmarks is waiting for its outline.
     pub(super) landmarks_pending: bool,
+    /// A change of the contents list is waiting for its outline; the
+    /// positions the list shows are those of the outline before it.
+    pub(super) contents_pending: bool,
     /// The request number of the outline that was taken last.
     applied: u64,
     /// The place of a problem in words, by chapter and offset.
@@ -246,6 +268,7 @@ impl Session {
             errors: HashMap::new(),
             encoding: 0,
             landmarks_pending: false,
+            contents_pending: false,
             applied: 0,
             places: HashMap::new(),
         }
@@ -304,6 +327,35 @@ impl Session {
             .map_or(&[], |outline| outline.landmarks.as_slice())
     }
 
+    /// How many landmarks, of every kind, lead into a chapter.
+    pub(super) fn landmarks_into(&self, path: &str) -> usize {
+        let landmarks = self.landmarks().iter();
+        landmarks
+            .filter(|landmark| landmark.chapter == path)
+            .count()
+    }
+
+    /// How many entries of a contents list the book keeps lead into a
+    /// chapter. Contents that follow the headings have no entries to lose.
+    pub(super) fn stored_entries_of(&self, path: &str) -> usize {
+        self.contents()
+            .filter(|contents| !contents.automatic)
+            .map_or(0, |contents| {
+                let entries = contents.entries.iter();
+                entries.filter(|entry| entry.chapter == path).count()
+            })
+    }
+
+    /// The contents of the book; `None` before the outline arrives.
+    pub(super) fn contents(&self) -> Option<&ContentsOutline> {
+        self.outline.as_ref().map(|outline| &outline.contents)
+    }
+
+    /// The chapter with this path.
+    pub(super) fn chapter(&self, path: &str) -> Option<&ChapterOutline> {
+        self.chapters().iter().find(|chapter| chapter.path == path)
+    }
+
     /// The pictures of the book.
     pub(super) fn pictures(&self) -> &[PictureOutline] {
         self.outline
@@ -344,6 +396,7 @@ impl Session {
             || !self.drafts.is_empty()
             || self.encoding > 0
             || self.landmarks_pending
+            || self.contents_pending
     }
 
     /// The words of the header about the state of the book.
@@ -440,7 +493,11 @@ impl Session {
     /// Shows the section, in a compact window as its own screen.
     pub(super) fn show_section(&mut self, section: Section) {
         self.section = section;
-        self.level = Level::Section;
+        self.level = if section == Section::Chapters {
+            Level::Chapter
+        } else {
+            Level::Section
+        };
     }
 
     /// Opens a chapter in the editor.
@@ -450,15 +507,11 @@ impl Session {
         self.open = Some(path.to_owned());
     }
 
-    /// Goes one screen back in a compact window; `false` when there is none
-    /// before the list of sections.
+    /// Goes one screen back in a compact window: from a chapter or a section
+    /// to the list that holds both; `false` when the list is in front.
     pub(super) fn step_back(&mut self) -> bool {
         match self.level {
-            Level::Chapter => {
-                self.level = Level::Section;
-                true
-            }
-            Level::Section => {
+            Level::Chapter | Level::Section => {
                 self.level = Level::Sections;
                 true
             }
@@ -494,6 +547,7 @@ pub(super) fn edit_error_words(error: &EditError) -> String {
         EditError::Open(_) => format!("The book could not be opened: {detail}."),
         EditError::Book(_) => format!("The book refused the change: {detail}."),
         EditError::Save(_) => format!("The book could not be saved: {detail}."),
+        EditError::Contents(_) => format!("The contents were not changed: {detail}."),
         EditError::NoSuchPath(path) => format!("Nothing in the book has the path {path}."),
         EditError::Ended => {
             "The editing session has ended. Go back and open the book again.".to_owned()
@@ -562,19 +616,31 @@ pub(super) fn unsaved_announcement(problems: usize) -> String {
     format!("The book has {problems} {noun} and was not saved")
 }
 
-/// The name of a chapter as its control says it: with the state that colour
-/// or a mark also shows.
+/// What a chapter without a heading is called.
+pub(super) const UNTITLED: &str = "Untitled chapter";
+
+/// The title of a chapter as the lists show it: its first heading, or
+/// [`UNTITLED`].
+pub(super) fn chapter_title(heading: Option<&str>) -> &str {
+    heading.unwrap_or(UNTITLED)
+}
+
+/// A chapter in a list of choices: its number in reading order and its title.
+pub(super) fn chapter_choice(number: usize, heading: Option<&str>) -> String {
+    format!("{number}. {}", chapter_title(heading))
+}
+
+/// The name of a chapter as its control says it: its number in reading
+/// order, its title, its file, and the state that colour or a mark also
+/// shows.
 pub(super) fn chapter_label(
+    number: usize,
     path: &str,
     heading: Option<&str>,
     current: bool,
     edited: bool,
 ) -> String {
-    let mut label = path.to_owned();
-    if let Some(heading) = heading {
-        label.push_str(", ");
-        label.push_str(heading);
-    }
+    let mut label = format!("Chapter {number}, {}, {path}", chapter_title(heading));
     if current {
         label.push_str(", current chapter");
     }
@@ -633,11 +699,20 @@ pub(super) fn propose_picture_path(file_name: &str, pictures: &[PictureOutline])
 ///
 /// The words that say what to enter, when nothing was.
 pub(super) fn clean_path(input: &str) -> Result<String, &'static str> {
-    let path = input.trim();
-    if path.is_empty() {
-        Err("Enter a path, such as ch01.md.")
+    required(input, "Enter a file name, such as img/pond.avif.")
+}
+
+/// What was typed without its edges, or `missing` when nothing is left.
+///
+/// # Errors
+///
+/// `missing`, the words that say what to enter.
+pub(super) fn required(input: &str, missing: &'static str) -> Result<String, &'static str> {
+    let value = input.trim();
+    if value.is_empty() {
+        Err(missing)
     } else {
-        Ok(path.to_owned())
+        Ok(value.to_owned())
     }
 }
 

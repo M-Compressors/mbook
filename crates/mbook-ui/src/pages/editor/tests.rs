@@ -16,13 +16,23 @@ use markdown_editor::{
 use mbook::{Book, BookReader, Landmark};
 
 use super::commands::{ChapterOp, Origin, TYPING_PAUSE};
+use super::contents::{
+    ADD_ENTRY, AUTOMATIC_HINT, FOLLOW_HEADINGS, IN_BOOK_ORDER, NEST, NO_HEADINGS, STORED_HINT,
+    UNNEST, nowhere_words, order_words,
+};
 use super::encode::Target;
-use super::files::record_save;
+use super::entry_prompt::{NO_PLACE, NO_TITLE, TITLE_LABEL};
+use super::files::PLACE_LATER;
+use super::files::{NEW_CHAPTER_LABEL, RENAME_LABEL, record_save};
+use super::link_prompt::{ADDRESS_LABEL, TEXT_LABEL};
+use super::panels::OPEN_CONTENTS;
+use super::picture_prompt::DESCRIPTION_LABEL;
 use super::session::{Control, Level, Phase, Section, ViewMode};
+use super::visual_pictures::{CHOOSE_FIRST, INSERT, NO_PICTURES};
 use super::{EditorEvent, EditorPage};
 use crate::entities::catalogue::{Library, Store};
 use crate::features::appearance::Appearance;
-use crate::features::edit_book::command::{Command, MetaChange};
+use crate::features::edit_book::command::{Command, ContentsChange, MetaChange};
 use crate::features::edit_book::error::EditError;
 use crate::shared::model::BookKey;
 use crate::shared::roots::Roots;
@@ -144,6 +154,22 @@ fn click_named(setup: &Setup, label: &str, cx: &mut TestAppContext) {
     cx.run_until_parked();
 }
 
+/// Chooses an item of the menu that is open by its words.
+fn choose(setup: &Setup, label: &str, cx: &mut TestAppContext) {
+    let label = label.to_owned();
+    frame(setup, cx, move |window, cx| {
+        let item = window
+            .find_all_by_label(&label)
+            .into_iter()
+            .find(|item| item.role() == Some(Role::MenuItem))
+            .unwrap_or_else(|| panic!("no menu item {label}"));
+        let point = item.bounds().center();
+        window.pointer_down(point, gpui_kit::MouseButton::Left, cx);
+        window.pointer_up(point, gpui_kit::MouseButton::Left, cx);
+    });
+    cx.run_until_parked();
+}
+
 fn select_visual(
     setup: &Setup,
     leaf_text: &str,
@@ -233,10 +259,10 @@ fn the_notes_dialog_saves_a_landmark_at_the_selected_chapter_and_anchor(cx: &mut
     frame(&setup, cx, |window, cx| {
         window.input("Explanatory notes", cx);
     });
-    click_named(&setup, "Chapter, ch01.md", cx);
-    click_named(&setup, "extras/end.md", cx);
-    click_named(&setup, "Anchor name (optional)", cx);
-    frame(&setup, cx, |window, cx| window.input("notes", cx));
+    click_named(&setup, "Chapter, 1. Start", cx);
+    choose(&setup, "2. Notes", cx);
+    click_named(&setup, "Place in the chapter, Start of the chapter", cx);
+    choose(&setup, "\u{2003}Notes", cx);
     click_named(&setup, "Add", cx);
     click(&setup, "save", cx);
     let mut reader = BookReader::open(setup.fixture.roots.book(setup.key)).unwrap();
@@ -272,9 +298,9 @@ fn retargeting_notes_preserves_the_order_and_targets_of_other_landmarks(cx: &mut
     let setup = editor_with_landmarks(cx, vec![start.clone(), notes, appendix.clone()]);
     let path = setup.fixture.roots.book(setup.key);
     click(&setup, "section-landmarks", cx);
-    click_named(&setup, "Edit Notes, ch02.md", cx);
-    click_named(&setup, "Chapter, ch02.md", cx);
-    click_named(&setup, "ch03.md", cx);
+    click_named(&setup, "Edit Notes, 2. Two, Start of the chapter", cx);
+    click_named(&setup, "Chapter, 2. Two", cx);
+    choose(&setup, "3. Three", cx);
     click_named(&setup, "Apply", cx);
     click(&setup, "save", cx);
     let edited = Book::open(&path).unwrap();
@@ -285,6 +311,60 @@ fn retargeting_notes_preserves_the_order_and_targets_of_other_landmarks(cx: &mut
 }
 
 #[gpui_kit::test]
+fn the_landmarks_of_a_removed_chapter_are_counted_and_removed_with_it(cx: &mut TestAppContext) {
+    let start = Landmark::new("start", "", "ch01.md");
+    let notes = Landmark::new("notes", "", "ch02.md");
+    let glossary = Landmark::new("glossary", "", "ch02.md");
+    let setup = editor_with_landmarks(cx, vec![start.clone(), notes, glossary]);
+    assert_eq!(
+        state(&setup, cx, |page| (
+            page.session.landmarks_into("ch01.md"),
+            page.session.landmarks_into("ch02.md"),
+            page.session.landmarks_into("ch03.md"),
+        )),
+        (1, 2, 0)
+    );
+    act(&setup, cx, |page, window, cx| {
+        page.remove_chapter("ch02.md".to_owned(), window, cx);
+    });
+    assert_eq!(
+        state(&setup, cx, |page| page.session.landmarks().to_vec()),
+        std::slice::from_ref(&start)
+    );
+    click(&setup, "save", cx);
+    let saved = Book::open(setup.fixture.roots.book(setup.key)).unwrap();
+    assert_eq!(saved.landmarks(), [start]);
+}
+
+#[gpui_kit::test]
+fn the_notes_of_a_chapter_that_got_another_path_still_lead_to_it(cx: &mut TestAppContext) {
+    let setup = editor_with_landmarks(cx, vec![Landmark::new("notes", "", "ch02.md")]);
+    act(&setup, cx, |page, window, cx| {
+        let (from, to) = ("ch02.md".to_owned(), "notes.md".to_owned());
+        page.send(
+            Command::MoveChapterPath {
+                from: from.clone(),
+                to: to.clone(),
+            },
+            Origin::Chapter(ChapterOp::Rename { from, to }),
+            window,
+            cx,
+        );
+    });
+    click(&setup, "section-landmarks", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Edit Notes, 2. Two, Start of the chapter")
+                .is_some()
+        );
+    });
+    click(&setup, "save", cx);
+    let saved = Book::open(setup.fixture.roots.book(setup.key)).unwrap();
+    assert_eq!(saved.landmarks(), [Landmark::new("notes", "", "notes.md")]);
+}
+
+#[gpui_kit::test]
 fn removing_one_notes_landmark_keeps_the_other_entries(cx: &mut TestAppContext) {
     let glossary = Landmark::new("glossary", "", "ch01.md");
     let notes = Landmark::new("notes", "", "ch02.md");
@@ -292,7 +372,7 @@ fn removing_one_notes_landmark_keeps_the_other_entries(cx: &mut TestAppContext) 
     let setup = editor_with_landmarks(cx, vec![glossary.clone(), notes, endnotes.clone()]);
     let path = setup.fixture.roots.book(setup.key);
     click(&setup, "section-landmarks", cx);
-    click_named(&setup, "Remove Notes, ch02.md", cx);
+    click_named(&setup, "Remove Notes, 2. Two, Start of the chapter", cx);
     click_named(&setup, "Remove", cx);
     click(&setup, "save", cx);
     assert_eq!(Book::open(&path).unwrap().landmarks(), [glossary, endnotes]);
@@ -302,10 +382,21 @@ fn removing_one_notes_landmark_keeps_the_other_entries(cx: &mut TestAppContext) 
 fn a_notes_landmark_with_a_missing_anchor_blocks_save(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
     click(&setup, "section-landmarks", cx);
-    click(&setup, "add-note", cx);
-    click_named(&setup, "Anchor name (optional)", cx);
-    frame(&setup, cx, |window, cx| window.input("missing", cx));
-    click_named(&setup, "Add", cx);
+    act(&setup, cx, |page, window, cx| {
+        page.send(
+            Command::SetLandmarks(vec![Landmark::new("notes", "", "ch01.md#missing")]),
+            Origin::Landmarks,
+            window,
+            cx,
+        );
+    });
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Edit Notes, 1. One, #missing (missing)")
+                .is_some()
+        );
+    });
     click(&setup, "save", cx);
     assert_eq!(
         state(&setup, cx, |page| page.session.section),
@@ -420,9 +511,10 @@ fn an_expanded_window_shows_the_sections_the_source_and_the_preview(cx: &mut Tes
     frame(&setup, cx, |window, _| {
         assert_eq!(window.find("editor-page").role(), Some(Role::Main));
         assert_eq!(window.find("page-heading").label(), Some("Dune"));
-        for section in Section::ALL {
+        for section in Section::BOOK {
             assert_eq!(window.find(section.id()).role(), Some(Role::Button));
         }
+        assert!(window.try_find(Section::Chapters.id()).is_none());
         for (path, _) in CHAPTERS {
             assert!(
                 window.try_find(format!("chapter-{path}")).is_some(),
@@ -668,9 +760,10 @@ fn the_visual_link_dialog_wraps_selected_text(cx: &mut TestAppContext) {
     select_visual(&setup, "See the book.", 4..12, cx);
     click(&setup, "visual-link", cx);
     frame(&setup, cx, |window, cx| {
+        assert!(window.try_find_by_label(TEXT_LABEL).is_none());
         window.input("https://example.com", cx);
     });
-    click_named(&setup, "Apply", cx);
+    click_named(&setup, "Add the link", cx);
     assert_eq!(
         editor_text(&setup, cx),
         "See [the book](https://example.com)."
@@ -691,19 +784,9 @@ fn a_link_can_use_a_chapter_from_the_picker(cx: &mut TestAppContext) {
     focus_editor(&setup, cx);
     select_visual(&setup, "Read more.", 0..9, cx);
     click(&setup, "visual-link", cx);
-    click_named(&setup, "Choose chapter", cx);
-    frame(&setup, cx, |window, cx| {
-        let item = window
-            .find_all_by_label("extras/next chapter.md")
-            .into_iter()
-            .find(|item| item.role() == Some(Role::MenuItem))
-            .unwrap();
-        let point = item.bounds().center();
-        window.pointer_down(point, gpui_kit::MouseButton::Left, cx);
-        window.pointer_up(point, gpui_kit::MouseButton::Left, cx);
-    });
-    cx.run_until_parked();
-    click_named(&setup, "Apply", cx);
+    click_named(&setup, "Chapter, Choose a chapter", cx);
+    choose(&setup, "2. Untitled chapter", cx);
+    click_named(&setup, "Add the link", cx);
     assert_eq!(
         editor_text(&setup, cx),
         "[Read more](../extras/next%20chapter.md)."
@@ -721,7 +804,16 @@ fn removing_a_visual_link_keeps_its_text(cx: &mut TestAppContext) {
     click(&setup, "mode-visual", cx);
     focus_editor(&setup, cx);
     select_visual(&setup, "See the book.", 6..6, cx);
-    click(&setup, "visual-unlink", cx);
+    click(&setup, "visual-link", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find_by_label("Apply").role(),
+            Some(Role::Button),
+            "a link at the caret is edited"
+        );
+    });
+    click(&setup, "link-remove", cx);
+    assert!(!dialog_is_open(&setup, cx));
     assert_eq!(editor_text(&setup, cx), "See the book.");
 }
 
@@ -751,6 +843,11 @@ fn visual_inserts_and_previews_a_picture_relative_to_the_chapter(cx: &mut TestAp
     click(&setup, "mode-visual", cx);
     click(&setup, "visual-image", cx);
     click_named(&setup, "img/sand.avif", cx);
+    frame(&setup, cx, |window, cx| {
+        assert!(window.try_find_by_label("img/sand.avif, chosen").is_some());
+        window.input("Sand & [dunes]", cx);
+    });
+    click_named(&setup, INSERT, cx);
     click(&setup, "visual-image-preview", cx);
     frame(&setup, cx, |_, _| ());
     cx.run_until_parked();
@@ -770,7 +867,8 @@ fn visual_inserts_and_previews_a_picture_relative_to_the_chapter(cx: &mut TestAp
     click(&setup, "save", cx);
     assert_eq!(
         saved_titles_and_texts(&setup).1,
-        ["![sand](../img/sand.avif)"]
+        ["![Sand & [dunes]](../img/sand.avif)"],
+        "the editor writes the description back in its own spelling"
     );
 }
 
@@ -904,11 +1002,13 @@ fn a_compact_window_is_a_stack_that_starts_in_visual(cx: &mut TestAppContext) {
         assert!(window.try_find("visual-viewport").is_some());
     });
     click(&setup, "back", cx);
-    click(&setup, "back", cx);
     frame(&setup, cx, |window, _| {
         assert!(window.try_find("sections").is_some());
         assert!(window.try_find("chapter-source").is_none());
-        assert!(window.try_find("chapter-ch01.md").is_none());
+        assert!(
+            window.try_find("chapter-ch01.md").is_some(),
+            "the list holds the chapters too"
+        );
     });
     click(&setup, "section-details", cx);
     frame(&setup, cx, |window, _| {
@@ -941,31 +1041,86 @@ fn a_compact_window_goes_from_the_chapters_to_a_chapter_and_back(cx: &mut TestAp
     });
     assert_eq!(editor_text(&setup, cx), CHAPTERS[1].1);
     click(&setup, "back", cx);
-    assert_eq!(state(&setup, cx, |page| page.session.level), Level::Section);
-    click(&setup, "back", cx);
+    assert_eq!(
+        state(&setup, cx, |page| page.session.level),
+        Level::Sections
+    );
     click(&setup, "back", cx);
     assert_eq!(setup.events.borrow().as_slice(), [EditorEvent::Close]);
 }
 
 #[gpui_kit::test]
-fn the_path_button_opens_the_rename_dialog(cx: &mut TestAppContext) {
+fn the_chapter_menu_opens_the_rename_dialog(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
-    click(&setup, "chapter-path", cx);
-    frame(&setup, cx, |window, _| {
-        assert!(
-            window
-                .try_find_by_label("New path of the chapter")
-                .is_some()
+    click(&setup, "chapter-menu", cx);
+    choose(&setup, "Rename the file…", cx);
+    frame(&setup, cx, |window, cx| {
+        assert_eq!(
+            window.find_by_label(RENAME_LABEL).role(),
+            Some(Role::TextInput)
         );
+        window.press("cmd-a", cx);
+        window.press("ctrl-a", cx);
     });
+    act(&setup, cx, |_, window, cx| {
+        window.dispatch_action(Box::new(gpui_kit::component::input::SelectAll), cx);
+    });
+    frame(&setup, cx, |window, cx| window.input("start.md", cx));
+    click_named(&setup, "Rename", cx);
+    assert_eq!(
+        state(&setup, cx, |page| page.session.open.clone()).as_deref(),
+        Some("start.md")
+    );
 }
 
 #[gpui_kit::test]
-fn the_remove_button_asks_before_removing_the_chapter(cx: &mut TestAppContext) {
+fn renaming_a_file_to_nothing_is_refused_in_the_dialog(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
-    click(&setup, "chapter-remove", cx);
+    act(&setup, cx, |_, window, cx| {
+        EditorPage::change_path(String::new(), window, cx);
+    });
+    click_named(&setup, "Rename", cx);
     assert!(dialog_is_open(&setup, cx));
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("path-error").label(),
+            Some("Enter a file name, such as ch01.md.")
+        );
+    });
+    click_named(&setup, "Cancel", cx);
     assert_eq!(state(&setup, cx, |page| page.session.chapters().len()), 3);
+}
+
+#[gpui_kit::test]
+fn the_chapter_menu_asks_before_removing_the_chapter(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "chapter-menu", cx);
+    choose(&setup, "Remove the chapter…", cx);
+    assert!(dialog_is_open(&setup, cx));
+    assert_eq!(
+        state(&setup, cx, |page| page.chapter_name("ch01.md")),
+        "“One”"
+    );
+    assert_eq!(state(&setup, cx, |page| page.session.chapters().len()), 3);
+    click_named(&setup, "Remove", cx);
+    assert_eq!(state(&setup, cx, |page| page.session.chapters().len()), 2);
+}
+
+#[gpui_kit::test]
+fn a_chapter_without_a_heading_is_asked_about_by_its_file(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("plain.md", "No heading.\n")]);
+    cx.run_until_parked();
+    assert_eq!(
+        state(&setup, cx, |page| page.chapter_name("plain.md")),
+        "plain.md"
+    );
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Chapter 1, Untitled chapter, plain.md, current chapter")
+                .is_some()
+        );
+    });
 }
 
 #[gpui_kit::test]
@@ -1018,14 +1173,17 @@ fn the_current_chapter_and_an_edited_one_are_told_in_words(cx: &mut TestAppConte
     frame(&setup, cx, |window, _| {
         assert!(
             window
-                .try_find_by_label("ch01.md, One, current chapter")
+                .try_find_by_label("Chapter 1, One, ch01.md, current chapter")
                 .is_some()
         );
-        assert!(window.try_find_by_label("ch02.md, Two").is_some());
         assert!(
             window
-                .try_find_by_label("Chapters, current section")
+                .try_find_by_label("Chapter 2, Two, ch02.md")
                 .is_some()
+        );
+        assert_eq!(
+            window.find("chapter-title").label(),
+            Some("Chapter 1, One, ch01.md")
         );
     });
     focus_editor(&setup, cx);
@@ -1034,7 +1192,7 @@ fn the_current_chapter_and_an_edited_one_are_told_in_words(cx: &mut TestAppConte
     frame(&setup, cx, |window, _| {
         assert!(
             window
-                .try_find_by_label("ch01.md, One, current chapter, edited")
+                .try_find_by_label("Chapter 1, One, ch01.md, current chapter, edited")
                 .is_some()
         );
         assert_eq!(
@@ -1389,24 +1547,11 @@ fn choosing_a_problem_opens_its_chapter_and_puts_the_caret_there(cx: &mut TestAp
 }
 
 #[gpui_kit::test]
-fn removing_a_chapter_of_a_book_with_contents_offers_to_rebuild_them(cx: &mut TestAppContext) {
-    let fixture = Fixture::new();
-    let key = BookKey::generate();
-    let mut book = Book::new("Dune", "en").unwrap();
-    book.add_chapter("ch01.md", "# One\n").unwrap();
-    book.add_chapter("ch02.md", "# Two\n").unwrap();
-    book.set_toc(mbook::Toc::Explicit(vec![
-        mbook::TocItem::new(1, "One", "ch01.md"),
-        mbook::TocItem::new(1, "Two", "ch02.md"),
-    ]));
-    book.save(fixture.roots.book(key)).unwrap();
-    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
-    let setup = open(cx, fixture, key, 1280.0);
-    cx.run_until_parked();
-    act(&setup, cx, |page, window, cx| {
-        page.remove_chapter("ch02.md".to_owned(), window, cx);
-    });
-    assert_eq!(state(&setup, cx, |page| page.session.chapters().len()), 1);
+fn a_contents_entry_whose_heading_was_removed_offers_to_rebuild_the_contents(
+    cx: &mut TestAppContext,
+) {
+    let setup = editor_with_three_entries(cx);
+    set_chapter_text(&setup, "ch01.md", "# One\n", cx);
     click(&setup, "save", cx);
     cx.run_until_parked();
     frame(&setup, cx, |window, _| {
@@ -1486,7 +1631,8 @@ fn a_refused_text_is_kept_when_another_chapter_is_opened_and_blocks_a_save(
 fn a_chapter_moves_up_and_down_with_its_controls(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
     click(&setup, "chapter-ch02.md", cx);
-    click(&setup, "chapter-down", cx);
+    click(&setup, "chapter-menu", cx);
+    choose(&setup, "Move down", cx);
     let order = |setup: &Setup, cx: &TestAppContext| {
         state(setup, cx, |page| {
             page.session
@@ -1497,8 +1643,10 @@ fn a_chapter_moves_up_and_down_with_its_controls(cx: &mut TestAppContext) {
         })
     };
     assert_eq!(order(&setup, cx), ["ch01.md", "ch03.md", "ch02.md"]);
-    click(&setup, "chapter-up", cx);
-    click(&setup, "chapter-up", cx);
+    for _ in 0..2 {
+        click(&setup, "chapter-menu", cx);
+        choose(&setup, "Move up", cx);
+    }
     assert_eq!(order(&setup, cx), ["ch02.md", "ch01.md", "ch03.md"]);
     assert_eq!(
         state(&setup, cx, |page| page.session.open.clone()).as_deref(),
@@ -1626,7 +1774,7 @@ fn a_book_without_chapters_offers_to_add_one(cx: &mut TestAppContext) {
     frame(&setup, cx, |window, _| {
         assert_eq!(
             window.find("empty-title").label(),
-            Some("This book has no chapters")
+            Some("This book has no chapters yet")
         );
         assert_eq!(window.find("add-first-chapter").role(), Some(Role::Button));
     });
@@ -1635,19 +1783,60 @@ fn a_book_without_chapters_offers_to_add_one(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn the_dialog_for_a_new_chapter_proposes_the_next_path(cx: &mut TestAppContext) {
+fn a_new_chapter_is_asked_for_by_its_title_and_starts_with_it_as_a_heading(
+    cx: &mut TestAppContext,
+) {
     let setup = started(cx, 1280.0);
+    click(&setup, "mode-source", cx);
     click(&setup, "add-chapter", cx);
     assert!(dialog_is_open(&setup, cx));
-    frame(&setup, cx, |window, _| {
+    frame(&setup, cx, |window, cx| {
         assert_eq!(
-            window
-                .find_by_label("Path of the chapter in the book")
-                .role(),
+            window.find_by_label(NEW_CHAPTER_LABEL).role(),
             Some(Role::TextInput)
         );
-        assert_eq!(window.find_by_label("Add").role(), Some(Role::Button));
         assert_eq!(window.find_by_label("Cancel").role(), Some(Role::Button));
+        window.input("Frost & *ice*", cx);
+    });
+    click_named(&setup, "Add the chapter", cx);
+    assert_eq!(
+        state(&setup, cx, |page| page.session.open.clone()).as_deref(),
+        Some("ch04.md")
+    );
+    assert_eq!(editor_text(&setup, cx), "# Frost \\& \\*ice\\*\n\n");
+    // The chapter is ready to be written: what is typed lands under its
+    // heading, in Visual, whatever view was in front before.
+    assert_eq!(
+        state(&setup, cx, |page| page.session.mode),
+        ViewMode::Visual
+    );
+    frame(&setup, cx, |window, cx| window.input("It came early.", cx));
+    cx.run_until_parked();
+    assert_eq!(
+        editor_text(&setup, cx),
+        "# Frost \\& \\*ice\\*\n\nIt came early."
+    );
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Chapter 4, Frost & *ice*, ch04.md, current chapter, edited")
+                .is_some()
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn a_new_chapter_without_a_title_is_empty_and_untitled(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "add-chapter", cx);
+    click_named(&setup, "Add the chapter", cx);
+    assert_eq!(editor_text(&setup, cx), "");
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Chapter 4, Untitled chapter, ch04.md, current chapter")
+                .is_some()
+        );
     });
 }
 
@@ -2063,4 +2252,908 @@ fn record_save_reports_a_file_that_is_gone(cx: &mut TestAppContext) {
     std::fs::remove_file(setup.fixture.roots.book(setup.key)).unwrap();
     let error = record_save(&setup.fixture.roots, &setup.fixture.catalogue, setup.key).unwrap_err();
     assert_eq!(error.to_string(), "the saved file could not be measured");
+}
+
+/// A book with one chapter in a folder and one picture.
+fn editor_with_a_picture(cx: &mut TestAppContext, text: &str) -> Setup {
+    let fixture = Fixture::new();
+    let key = BookKey::generate();
+    let mut book = Book::new("Dune", "en").unwrap();
+    book.add_chapter("part/ch01.md", text).unwrap();
+    book.add_picture("img/sand.avif", avif_of(8, 6)).unwrap();
+    book.save(fixture.roots.book(key)).unwrap();
+    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    let setup = open(cx, fixture, key, 1280.0);
+    cx.run_until_parked();
+    setup
+}
+
+#[gpui_kit::test]
+fn the_picture_dialog_asks_for_a_picture_before_it_inserts(cx: &mut TestAppContext) {
+    let setup = editor_with_a_picture(cx, "");
+    click(&setup, "visual-image", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find_by_label(DESCRIPTION_LABEL).role(),
+            Some(Role::TextInput)
+        );
+        assert_eq!(window.find("picture-upload").role(), Some(Role::Button));
+    });
+    click_named(&setup, INSERT, cx);
+    assert!(dialog_is_open(&setup, cx));
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("picture-choice-error").label(),
+            Some(CHOOSE_FIRST)
+        );
+    });
+    click_named(&setup, "img/sand.avif", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("picture-choice-error").is_none());
+    });
+    click_named(&setup, INSERT, cx);
+    assert!(!dialog_is_open(&setup, cx));
+    assert_eq!(editor_text(&setup, cx), "![](../img/sand.avif)");
+}
+
+#[gpui_kit::test]
+fn the_picture_dialog_of_a_book_without_pictures_offers_a_file(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "visual-image", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("no-book-pictures").label(), Some(NO_PICTURES));
+        assert!(window.try_find_by_label(DESCRIPTION_LABEL).is_none());
+        assert_eq!(window.find("picture-upload").role(), Some(Role::Button));
+    });
+    click_named(&setup, "Cancel", cx);
+    assert_eq!(editor_text(&setup, cx), CHAPTERS[0].1);
+}
+
+/// Writes a small PNG file and returns the folder that keeps it.
+fn png_file(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join(name);
+    image::RgbImage::from_pixel(16, 8, image::Rgb([1, 2, 3]))
+        .save(&file)
+        .unwrap();
+    (dir, file)
+}
+
+#[gpui_kit::test]
+fn a_picture_file_dropped_on_a_chapter_joins_the_book_and_the_text(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("part/ch01.md", "")]);
+    cx.run_until_parked();
+    let (_dir, file) = png_file("pond.png");
+    let book = std::path::PathBuf::from("/books/other.epub");
+    act(&setup, cx, |page, window, cx| {
+        page.drop_files(std::slice::from_ref(&book), window, cx);
+    });
+    assert!(!dialog_is_open(&setup, cx), "a book is not a picture");
+    act(&setup, cx, |page, window, cx| {
+        page.drop_files(&[book, file.clone()], window, cx);
+    });
+    assert!(dialog_is_open(&setup, cx));
+    frame(&setup, cx, |window, cx| {
+        assert_eq!(
+            window.find_by_label(DESCRIPTION_LABEL).role(),
+            Some(Role::TextInput)
+        );
+        window.input("A pond", cx);
+    });
+    click_named(&setup, "Add", cx);
+    assert_eq!(editor_text(&setup, cx), "![A pond](../pond.avif)");
+    assert_eq!(
+        state(&setup, cx, |page| page.session.pictures().len()),
+        1,
+        "the picture is one of the book"
+    );
+    click(&setup, "save", cx);
+    assert_eq!(
+        saved_titles_and_texts(&setup).1,
+        ["![A pond](../pond.avif)"]
+    );
+}
+
+#[gpui_kit::test]
+fn a_picture_that_arrives_after_its_chapter_was_left_is_kept_out_of_the_text(
+    cx: &mut TestAppContext,
+) {
+    let setup = started(cx, 1280.0);
+    let (_dir, file) = png_file("pond.png");
+    act(&setup, cx, |page, window, cx| {
+        page.encode_files(vec![file.clone()], Target::Chapter, window, cx);
+    });
+    // The chapter is left while the dialog is open: the picture belonged to
+    // the first one.
+    act(&setup, cx, |page, window, cx| {
+        page.open_chapter("ch02.md", window, cx);
+    });
+    click_named(&setup, "Add", cx);
+    assert_eq!(state(&setup, cx, |page| page.session.pictures().len()), 1);
+    assert_eq!(editor_text(&setup, cx), CHAPTERS[1].1);
+    assert!(state(&setup, cx, |page| page.encoder.placing.is_none()));
+    assert_ne!(PLACE_LATER, "");
+}
+
+#[gpui_kit::test]
+fn a_file_that_is_not_a_picture_is_reported_at_the_chapter_it_was_meant_for(
+    cx: &mut TestAppContext,
+) {
+    let setup = started(cx, 1280.0);
+    let file = setup.fixture.roots.data().join("notes.png");
+    std::fs::write(&file, b"not a picture").unwrap();
+    act(&setup, cx, |page, window, cx| {
+        page.encode_files(vec![file.clone()], Target::Chapter, window, cx);
+    });
+    click_named(&setup, "Add", cx);
+    frame(&setup, cx, |window, _| {
+        let message = window
+            .find("chapter-picture-error")
+            .label()
+            .unwrap()
+            .to_owned();
+        assert!(message.contains("notes.png was not added"), "{message}");
+    });
+    assert_eq!(editor_text(&setup, cx), CHAPTERS[0].1);
+}
+
+#[gpui_kit::test]
+fn a_picture_the_book_refuses_is_reported_at_the_chapter(cx: &mut TestAppContext) {
+    let setup = editor_with_a_picture(cx, "");
+    let (_dir, file) = png_file("sand.png");
+    act(&setup, cx, |page, window, cx| {
+        page.encode_files(vec![file.clone()], Target::Chapter, window, cx);
+    });
+    // The name the dialog proposes is free; the one typed here is taken.
+    click_named(&setup, super::picture_prompt::NAME_LABEL, cx);
+    act(&setup, cx, |_, window, cx| {
+        window.dispatch_action(Box::new(gpui_kit::component::input::SelectAll), cx);
+    });
+    frame(&setup, cx, |window, cx| window.input("img/sand.avif", cx));
+    click_named(&setup, "Add", cx);
+    frame(&setup, cx, |window, _| {
+        let message = window
+            .find("chapter-picture-error")
+            .label()
+            .unwrap()
+            .to_owned();
+        assert!(message.contains("already used"), "{message}");
+    });
+    assert_eq!(editor_text(&setup, cx), "");
+    assert!(state(&setup, cx, |page| page.encoder.placing.is_none()));
+}
+
+#[gpui_kit::test]
+fn a_link_without_a_selection_asks_for_its_words_and_inserts_them(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "See .")]);
+    cx.run_until_parked();
+    focus_editor(&setup, cx);
+    select_visual(&setup, "See .", 4..4, cx);
+    click(&setup, "visual-link", cx);
+    click_named(&setup, "Add the link", cx);
+    assert!(dialog_is_open(&setup, cx));
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("link-error").label(),
+            Some("Enter the text of the link.")
+        );
+    });
+    click_named(&setup, TEXT_LABEL, cx);
+    frame(&setup, cx, |window, cx| window.input("the *book*", cx));
+    click_named(&setup, ADDRESS_LABEL, cx);
+    frame(&setup, cx, |window, cx| {
+        window.input("https://example.com", cx);
+    });
+    click_named(&setup, "Add the link", cx);
+    assert!(!dialog_is_open(&setup, cx));
+    assert_eq!(
+        editor_text(&setup, cx),
+        "See [the \\*book\\*](https://example.com)."
+    );
+}
+
+#[gpui_kit::test]
+fn a_link_can_lead_to_a_heading_inside_a_chapter(cx: &mut TestAppContext) {
+    let setup = start_with(
+        cx,
+        1280.0,
+        &[
+            ("ch01.md", "Read more."),
+            ("ch02.md", "# Two\n\nText.\n\n## The pond\n"),
+        ],
+    );
+    cx.run_until_parked();
+    focus_editor(&setup, cx);
+    select_visual(&setup, "Read more.", 0..9, cx);
+    click(&setup, "visual-link", cx);
+    click_named(&setup, "Chapter, Choose a chapter", cx);
+    choose(&setup, "2. Two", cx);
+    click_named(&setup, "Place in the chapter, Start of the chapter", cx);
+    choose(&setup, "\u{2003}The pond", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Place in the chapter, The pond")
+                .is_some()
+        );
+    });
+    click_named(&setup, "Add the link", cx);
+    assert_eq!(editor_text(&setup, cx), "[Read more](ch02.md#the-pond).");
+}
+
+#[gpui_kit::test]
+fn the_contents_follow_the_headings_and_lead_to_their_chapters(cx: &mut TestAppContext) {
+    let setup = start_with(
+        cx,
+        1280.0,
+        &[("ch01.md", "# One\n\n## Inside\n"), ("ch02.md", "# Two\n")],
+    );
+    cx.run_until_parked();
+    // A book that was written keeps its contents as a list: this one is
+    // told to follow its headings.
+    act(&setup, cx, |page, window, cx| {
+        page.follow_headings(window, cx);
+    });
+    click(&setup, "section-contents", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("section-heading").label(), Some("Contents"));
+        assert_eq!(window.find("contents-hint").label(), Some(AUTOMATIC_HINT));
+        assert!(window.try_find("follow-headings").is_none());
+        assert!(window.try_find("no-contents").is_none());
+        for name in [
+            "One, level 1, in 1. One",
+            "Inside, level 2, in 1. One",
+            "Two, level 1, in 2. Two",
+        ] {
+            assert_eq!(
+                window.find_by_label(name).role(),
+                Some(Role::Button),
+                "{name}"
+            );
+        }
+    });
+    click_named(&setup, "Two, level 1, in 2. Two", cx);
+    assert_eq!(
+        state(&setup, cx, |page| (
+            page.session.section,
+            page.session.open.clone()
+        )),
+        (Section::Chapters, Some("ch02.md".to_owned()))
+    );
+}
+
+#[gpui_kit::test]
+fn what_went_wrong_with_the_contents_is_told_in_their_section(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-contents", cx);
+    act(&setup, cx, |page, _, cx| {
+        page.session
+            .set_error(Control::Contents, "The contents were refused.".to_owned());
+        cx.notify();
+    });
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("contents-error").label(),
+            Some("The contents were refused.")
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn a_book_without_headings_says_how_the_contents_are_made(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "No heading.\n")]);
+    cx.run_until_parked();
+    click(&setup, "section-contents", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("no-contents").label(), Some(NO_HEADINGS));
+    });
+}
+
+#[gpui_kit::test]
+fn stored_contents_are_shown_and_can_be_made_to_follow_the_headings(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let key = BookKey::generate();
+    let mut book = Book::new("Dune", "en").unwrap();
+    book.add_chapter("ch01.md", "# One\n").unwrap();
+    book.set_toc(mbook::Toc::Explicit(vec![mbook::TocItem::new(
+        1, "Opening", "ch01.md",
+    )]));
+    book.save(fixture.roots.book(key)).unwrap();
+    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    let setup = open(cx, fixture, key, 1280.0);
+    cx.run_until_parked();
+    click(&setup, "section-contents", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("contents-hint").label(), Some(STORED_HINT));
+        assert_eq!(
+            window.find_by_label("Opening, level 1, in 1. One").role(),
+            Some(Role::Button)
+        );
+        assert_eq!(
+            window.find_by_label(FOLLOW_HEADINGS).role(),
+            Some(Role::Button)
+        );
+    });
+    click(&setup, "follow-headings", cx);
+    assert!(dialog_is_open(&setup, cx));
+    click_named(&setup, "Replace", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("contents-hint").label(), Some(AUTOMATIC_HINT));
+        assert!(
+            window
+                .try_find_by_label("One, level 1, in 1. One")
+                .is_some()
+        );
+        assert!(window.try_find("follow-headings").is_none());
+    });
+    assert!(state(&setup, cx, |page| page.session.has_unsaved()));
+}
+
+#[gpui_kit::test]
+fn a_contents_entry_whose_heading_is_gone_says_so(cx: &mut TestAppContext) {
+    let setup = editor_with_three_entries(cx);
+    set_chapter_text(&setup, "ch01.md", "# One\n", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Inside, level 2, leads nowhere")
+                .is_some()
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn removing_a_chapter_removes_its_entries_of_the_contents(cx: &mut TestAppContext) {
+    let setup = editor_with_three_entries(cx);
+    assert_eq!(
+        state(&setup, cx, |page| (
+            page.session.stored_entries_of("ch01.md"),
+            page.session.stored_entries_of("ch02.md"),
+            page.session.stored_entries_of("gone.md"),
+        )),
+        (2, 1, 0)
+    );
+    act(&setup, cx, |page, window, cx| {
+        page.remove_chapter("ch01.md".to_owned(), window, cx);
+    });
+    assert_eq!(shown_entries(&setup, cx), ["1 Second -> ch02.md"]);
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("contents-nowhere").is_none());
+    });
+    click(&setup, "save", cx);
+    assert_eq!(saved_entries(&setup), ["1 Second"]);
+    assert_eq!(
+        setup.events.borrow().as_slice(),
+        [EditorEvent::Saved(setup.key)]
+    );
+}
+
+#[gpui_kit::test]
+fn contents_that_follow_the_headings_have_no_entries_to_lose(cx: &mut TestAppContext) {
+    let setup = editor_with_three_entries(cx);
+    act(&setup, cx, |page, window, cx| {
+        page.follow_headings(window, cx);
+    });
+    assert_eq!(
+        state(&setup, cx, |page| page.session.stored_entries_of("ch01.md")),
+        0
+    );
+}
+
+/// An editor that shows the Contents section of a book which keeps these
+/// entries as a list of its own.
+fn editor_with_contents(
+    cx: &mut TestAppContext,
+    chapters: &[(&str, &str)],
+    items: Vec<mbook::TocItem>,
+) -> Setup {
+    let fixture = Fixture::new();
+    let key = BookKey::generate();
+    let mut book = Book::new("Dune", "en").unwrap();
+    for (path, text) in chapters {
+        book.add_chapter(*path, *text).unwrap();
+    }
+    book.set_toc(mbook::Toc::Explicit(items));
+    book.save(fixture.roots.book(key)).unwrap();
+    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    let setup = open(cx, fixture, key, 1280.0);
+    cx.run_until_parked();
+    click(&setup, "section-contents", cx);
+    setup
+}
+
+/// Two chapters, the first with a heading inside, and an entry for each
+/// chapter.
+fn editor_with_two_entries(cx: &mut TestAppContext) -> Setup {
+    editor_with_contents(
+        cx,
+        &[("ch01.md", "# One\n\n## Inside\n"), ("ch02.md", "# Two\n")],
+        vec![
+            mbook::TocItem::new(1, "Opening", "ch01.md"),
+            mbook::TocItem::new(1, "Second", "ch02.md"),
+        ],
+    )
+}
+
+/// A chapter with a heading inside, another chapter, and an entry for each
+/// of the three places.
+fn editor_with_three_entries(cx: &mut TestAppContext) -> Setup {
+    editor_with_contents(
+        cx,
+        &[("ch01.md", "# One\n\n## Inside\n"), ("ch02.md", "# Two\n")],
+        vec![
+            mbook::TocItem::new(1, "Opening", "ch01.md"),
+            mbook::TocItem::new(2, "Inside", "ch01.md#inside"),
+            mbook::TocItem::new(1, "Second", "ch02.md"),
+        ],
+    )
+}
+
+/// Gives a chapter another text, as a pause in typing does.
+fn set_chapter_text(setup: &Setup, path: &str, text: &str, cx: &mut TestAppContext) {
+    let (path, text) = (path.to_owned(), text.to_owned());
+    act(setup, cx, move |page, window, cx| {
+        page.send(
+            Command::SetChapterText {
+                path: path.clone(),
+                text: text.clone(),
+            },
+            Origin::Text { path, text },
+            window,
+            cx,
+        );
+    });
+}
+
+/// The entries the section shows, as `level title -> destination`.
+fn shown_entries(setup: &Setup, cx: &TestAppContext) -> Vec<String> {
+    state(setup, cx, |page| {
+        let contents = page.session.contents().unwrap();
+        contents
+            .entries
+            .iter()
+            .map(|entry| {
+                let anchor = entry
+                    .anchor
+                    .as_ref()
+                    .map_or_else(String::new, |anchor| format!("#{anchor}"));
+                format!(
+                    "{} {} -> {}{anchor}",
+                    entry.level, entry.title, entry.chapter
+                )
+            })
+            .collect()
+    })
+}
+
+/// The contents of the saved file, as `level title`.
+fn saved_entries(setup: &Setup) -> Vec<String> {
+    let reader = BookReader::open(setup.fixture.roots.book(setup.key)).unwrap();
+    reader
+        .toc()
+        .iter()
+        .map(|entry| format!("{} {}", entry.level, entry.title))
+        .collect()
+}
+
+#[gpui_kit::test]
+fn an_entry_of_a_stored_list_gets_another_title_and_place_from_its_menu(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("contents-hint").label(), Some(STORED_HINT));
+        assert_eq!(
+            window.find_by_label("Entry actions, Second").role(),
+            Some(Role::Button)
+        );
+        assert!(window.try_find("contents-nowhere").is_none());
+        assert!(window.try_find("contents-order").is_none());
+    });
+    click_named(&setup, "Entry actions, Second", cx);
+    choose(&setup, "Edit…", cx);
+    assert!(dialog_is_open(&setup, cx));
+    click_named(&setup, TITLE_LABEL, cx);
+    press(&setup, "end", cx);
+    frame(&setup, cx, |window, cx| window.input(" part", cx));
+    click_named(&setup, "Chapter, 2. Two", cx);
+    choose(&setup, "1. One", cx);
+    click_named(&setup, "Place in the chapter, Start of the chapter", cx);
+    choose(&setup, "\u{2003}Inside", cx);
+    click_named(&setup, "Apply", cx);
+    assert!(!dialog_is_open(&setup, cx));
+    assert_eq!(
+        shown_entries(&setup, cx),
+        ["1 Opening -> ch01.md", "1 Second part -> ch01.md#inside"]
+    );
+    assert!(!state(&setup, cx, |page| page.session.contents_pending));
+    click(&setup, "save", cx);
+    assert_eq!(saved_entries(&setup), ["1 Opening", "1 Second part"]);
+}
+
+#[gpui_kit::test]
+fn a_new_entry_takes_the_title_of_the_heading_it_leads_to_and_its_place_in_the_list(
+    cx: &mut TestAppContext,
+) {
+    let setup = editor_with_two_entries(cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("add-entry").label(), Some(ADD_ENTRY));
+    });
+    click(&setup, "add-entry", cx);
+    assert!(dialog_is_open(&setup, cx));
+    // The dialog starts at the chapter being edited and offers its headings.
+    click_named(&setup, "Place in the chapter, Start of the chapter", cx);
+    choose(&setup, "\u{2003}Inside", cx);
+    click_named(&setup, "Add the entry", cx);
+    assert_eq!(
+        shown_entries(&setup, cx),
+        [
+            "1 Opening -> ch01.md",
+            "1 Inside -> ch01.md#inside",
+            "1 Second -> ch02.md"
+        ]
+    );
+    assert!(state(&setup, cx, |page| page.session.has_unsaved()));
+}
+
+#[gpui_kit::test]
+fn a_title_the_author_typed_is_kept_when_another_place_is_chosen(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    click(&setup, "add-entry", cx);
+    click_named(&setup, TITLE_LABEL, cx);
+    press(&setup, "end", cx);
+    frame(&setup, cx, |window, cx| window.input(" more", cx));
+    click_named(&setup, "Chapter, 1. One", cx);
+    choose(&setup, "2. Two", cx);
+    click_named(&setup, "Add the entry", cx);
+    assert_eq!(
+        shown_entries(&setup, cx),
+        [
+            "1 Opening -> ch01.md",
+            "1 Second -> ch02.md",
+            "1 One more -> ch02.md"
+        ]
+    );
+}
+
+#[gpui_kit::test]
+fn a_place_without_a_heading_takes_the_suggested_title_away(cx: &mut TestAppContext) {
+    let setup = editor_with_contents(
+        cx,
+        &[("ch01.md", "# One\n"), ("ch02.md", "No heading.\n")],
+        vec![mbook::TocItem::new(1, "Opening", "ch01.md")],
+    );
+    click(&setup, "add-entry", cx);
+    click_named(&setup, "Chapter, 1. One", cx);
+    choose(&setup, "2. Untitled chapter", cx);
+    click_named(&setup, "Add the entry", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("entry-error").label(), Some(NO_TITLE));
+    });
+    click_named(&setup, TITLE_LABEL, cx);
+    frame(&setup, cx, |window, cx| window.input("Loose pages", cx));
+    click_named(&setup, "Add the entry", cx);
+    assert_eq!(
+        shown_entries(&setup, cx),
+        ["1 Opening -> ch01.md", "1 Loose pages -> ch02.md"]
+    );
+}
+
+#[gpui_kit::test]
+fn an_entry_without_a_title_is_refused_in_the_dialog(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    click_named(&setup, "Entry actions, Opening", cx);
+    choose(&setup, "Edit…", cx);
+    act(&setup, cx, |_, window, cx| {
+        window.dispatch_action(Box::new(gpui_kit::component::input::SelectAll), cx);
+    });
+    press(&setup, "backspace", cx);
+    click_named(&setup, "Apply", cx);
+    assert!(dialog_is_open(&setup, cx));
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("entry-error").label(), Some(NO_TITLE));
+    });
+    assert_eq!(
+        shown_entries(&setup, cx),
+        ["1 Opening -> ch01.md", "1 Second -> ch02.md"]
+    );
+}
+
+#[gpui_kit::test]
+fn an_entry_moves_in_and_out_from_its_menu(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    click_named(&setup, "Entry actions, Second", cx);
+    choose(&setup, NEST, cx);
+    assert_eq!(
+        shown_entries(&setup, cx),
+        ["1 Opening -> ch01.md", "2 Second -> ch02.md"]
+    );
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Second, level 2, in 2. Two")
+                .is_some()
+        );
+    });
+    click_named(&setup, "Entry actions, Second", cx);
+    choose(&setup, UNNEST, cx);
+    assert_eq!(
+        shown_entries(&setup, cx),
+        ["1 Opening -> ch01.md", "1 Second -> ch02.md"]
+    );
+}
+
+#[gpui_kit::test]
+fn the_first_entry_cannot_move_in_or_out(cx: &mut TestAppContext) {
+    for item in [NEST, UNNEST] {
+        let setup = editor_with_two_entries(cx);
+        click_named(&setup, "Entry actions, Opening", cx);
+        choose(&setup, item, cx);
+        assert_eq!(
+            shown_entries(&setup, cx),
+            ["1 Opening -> ch01.md", "1 Second -> ch02.md"],
+            "{item}"
+        );
+        assert!(!state(&setup, cx, |page| page.session.has_unsaved()));
+    }
+}
+
+#[gpui_kit::test]
+fn an_entry_is_removed_after_a_question(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    click_named(&setup, "Entry actions, Opening", cx);
+    choose(&setup, "Remove…", cx);
+    assert!(dialog_is_open(&setup, cx));
+    assert_eq!(
+        shown_entries(&setup, cx),
+        ["1 Opening -> ch01.md", "1 Second -> ch02.md"]
+    );
+    click_named(&setup, "Remove", cx);
+    assert_eq!(shown_entries(&setup, cx), ["1 Second -> ch02.md"]);
+    assert!(!state(&setup, cx, |page| {
+        page.session.contents().unwrap().automatic
+    }));
+}
+
+#[gpui_kit::test]
+fn removing_the_last_entry_lets_the_contents_follow_the_headings(cx: &mut TestAppContext) {
+    let setup = editor_with_contents(
+        cx,
+        &[("ch01.md", "# One\n")],
+        vec![mbook::TocItem::new(1, "Opening", "ch01.md")],
+    );
+    click_named(&setup, "Entry actions, Opening", cx);
+    choose(&setup, "Remove…", cx);
+    click_named(&setup, "Remove", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("contents-hint").label(), Some(AUTOMATIC_HINT));
+        assert!(window.try_find("add-entry").is_none());
+        assert!(window.try_find_by_label("Entry actions, One").is_none());
+    });
+    assert_eq!(shown_entries(&setup, cx), ["1 One -> ch01.md#one"]);
+}
+
+#[gpui_kit::test]
+fn entries_whose_place_is_gone_are_counted_and_given_another_place(cx: &mut TestAppContext) {
+    let setup = editor_with_three_entries(cx);
+    set_chapter_text(&setup, "ch01.md", "# One\n", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("contents-nowhere").label(),
+            Some(nowhere_words(1).as_str())
+        );
+    });
+    click_named(&setup, "Entry actions, Inside", cx);
+    choose(&setup, "Edit…", cx);
+    // The place it had is told as missing, and is not taken.
+    click_named(&setup, "Apply", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("entry-error").label(), Some(NO_PLACE));
+    });
+    click_named(&setup, "Place in the chapter, #inside (missing)", cx);
+    choose(&setup, "Start of the chapter", cx);
+    click_named(&setup, "Apply", cx);
+    assert_eq!(
+        shown_entries(&setup, cx),
+        [
+            "1 Opening -> ch01.md",
+            "2 Inside -> ch01.md",
+            "1 Second -> ch02.md"
+        ]
+    );
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("contents-nowhere").is_none());
+    });
+    click(&setup, "save", cx);
+    assert_eq!(saved_entries(&setup), ["1 Opening", "2 Inside", "1 Second"]);
+}
+
+#[gpui_kit::test]
+fn the_entries_of_a_moved_chapter_move_with_it(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    act(&setup, cx, |page, window, cx| {
+        page.move_chapter("ch02.md", -1, window, cx);
+    });
+    assert_eq!(
+        shown_entries(&setup, cx),
+        ["1 Second -> ch02.md", "1 Opening -> ch01.md"]
+    );
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("contents-order").is_none());
+        assert!(
+            window
+                .try_find_by_label("Second, level 1, in 1. Two")
+                .is_some()
+        );
+    });
+    click(&setup, "save", cx);
+    assert_eq!(saved_entries(&setup), ["1 Second", "1 Opening"]);
+}
+
+#[gpui_kit::test]
+fn the_entries_of_a_chapter_that_got_another_path_still_lead_to_it(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    act(&setup, cx, |page, window, cx| {
+        let (from, to) = ("ch02.md".to_owned(), "second.md".to_owned());
+        page.send(
+            Command::MoveChapterPath {
+                from: from.clone(),
+                to: to.clone(),
+            },
+            Origin::Chapter(ChapterOp::Rename { from, to }),
+            window,
+            cx,
+        );
+    });
+    assert_eq!(
+        shown_entries(&setup, cx),
+        ["1 Opening -> ch01.md", "1 Second -> second.md"]
+    );
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("contents-nowhere").is_none());
+    });
+    click(&setup, "save", cx);
+    assert_eq!(saved_entries(&setup), ["1 Opening", "1 Second"]);
+}
+
+#[gpui_kit::test]
+fn entries_that_swapped_headings_left_out_of_order_are_sorted_by_one_control(
+    cx: &mut TestAppContext,
+) {
+    let setup = editor_with_contents(
+        cx,
+        &[("ch01.md", "# One\n\n## Early\n\n## Late\n")],
+        vec![
+            mbook::TocItem::new(1, "Opening", "ch01.md"),
+            mbook::TocItem::new(2, "Early", "ch01.md#early"),
+            mbook::TocItem::new(2, "Late", "ch01.md#late"),
+        ],
+    );
+    act(&setup, cx, |page, window, cx| {
+        let (path, text) = (
+            "ch01.md".to_owned(),
+            "# One\n\n## Late\n\n## Early\n".to_owned(),
+        );
+        page.send(
+            Command::SetChapterText {
+                path: path.clone(),
+                text: text.clone(),
+            },
+            Origin::Text { path, text },
+            window,
+            cx,
+        );
+    });
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("contents-order").label(),
+            Some(order_words(1).as_str())
+        );
+        assert_eq!(
+            window.find("contents-in-order").label(),
+            Some(IN_BOOK_ORDER)
+        );
+        assert!(
+            window
+                .try_find_by_label("Late, level 2, in 1. One, not in the order of the book")
+                .is_some()
+        );
+    });
+    click(&setup, "contents-in-order", cx);
+    assert_eq!(
+        shown_entries(&setup, cx),
+        [
+            "1 Opening -> ch01.md",
+            "2 Late -> ch01.md#late",
+            "2 Early -> ch01.md#early"
+        ]
+    );
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("contents-order").is_none());
+        assert!(window.try_find("contents-in-order").is_none());
+    });
+    click(&setup, "save", cx);
+    assert_eq!(saved_entries(&setup), ["1 Opening", "2 Late", "2 Early"]);
+}
+
+#[gpui_kit::test]
+fn a_change_of_the_list_waits_for_the_one_before_it(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    let page = setup.page.clone();
+    cx.update_window(setup.window, |_, window, cx| {
+        page.update(cx, |page, cx| {
+            page.edit_contents(ContentsChange::Remove { index: 0 }, window, cx);
+            assert!(page.session.contents_pending);
+            assert!(page.session.has_unsaved());
+            // The second names a position of a list that is about to change.
+            page.edit_contents(ContentsChange::Remove { index: 0 }, window, cx);
+        });
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert_eq!(shown_entries(&setup, cx), ["1 Second -> ch02.md"]);
+    assert!(!state(&setup, cx, |page| page.session.contents_pending));
+}
+
+#[gpui_kit::test]
+fn a_refused_change_of_the_list_is_told_in_the_section(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    act(&setup, cx, |page, window, cx| {
+        page.edit_contents(ContentsChange::Remove { index: 7 }, window, cx);
+    });
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("contents-error").label(),
+            Some("The contents were not changed: the list has no entry at position 7.")
+        );
+    });
+    assert!(!state(&setup, cx, |page| page.session.contents_pending));
+}
+
+#[gpui_kit::test]
+fn the_dialog_of_an_entry_that_is_gone_does_not_open(cx: &mut TestAppContext) {
+    let setup = editor_with_two_entries(cx);
+    act(&setup, cx, |page, window, cx| {
+        page.ask_contents_entry(Some(9), window, cx);
+    });
+    assert!(!dialog_is_open(&setup, cx));
+}
+
+#[gpui_kit::test]
+fn removing_the_only_chapter_takes_its_entries_and_the_list_away(cx: &mut TestAppContext) {
+    let setup = editor_with_contents(
+        cx,
+        &[("ch01.md", "# One\n")],
+        vec![mbook::TocItem::new(1, "Opening", "ch01.md")],
+    );
+    act(&setup, cx, |page, window, cx| {
+        page.remove_chapter("ch01.md".to_owned(), window, cx);
+    });
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("contents-hint").label(), Some(AUTOMATIC_HINT));
+        assert!(window.try_find("add-entry").is_none());
+    });
+    // Without a chapter there is nowhere for an entry to lead.
+    act(&setup, cx, |page, window, cx| {
+        page.ask_contents_entry(None, window, cx);
+    });
+    assert!(!dialog_is_open(&setup, cx));
+}
+
+#[gpui_kit::test]
+fn a_problem_of_the_contents_leads_to_their_section(cx: &mut TestAppContext) {
+    let setup = editor_with_three_entries(cx);
+    set_chapter_text(&setup, "ch01.md", "# One\n", cx);
+    click(&setup, "save", cx);
+    cx.run_until_parked();
+    assert_eq!(
+        state(&setup, cx, |page| page.session.section),
+        Section::Problems
+    );
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("open-contents").label(), Some(OPEN_CONTENTS));
+    });
+    click(&setup, "open-contents", cx);
+    assert_eq!(
+        state(&setup, cx, |page| page.session.section),
+        Section::Contents
+    );
 }

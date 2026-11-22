@@ -10,7 +10,8 @@ use gpui_kit::{AppContext as _, Context, RenderImage, Window};
 
 use super::EditorPage;
 use super::commands::{ChapterOp, Origin};
-use super::encode::{Job, Target, encode_file, words};
+use super::encode::{Job, Placement, Target, encode_file, words};
+use super::markup::{chapter_start, picture_markdown};
 use super::picture_prompt::ask_picture;
 use super::prompts::{PathRequest, ask_path};
 use super::session::{Control, line_and_column, propose_chapter_path, propose_picture_path};
@@ -40,28 +41,24 @@ impl EditorPage {
         self.chooser = Some(cx.spawn_in(window, async move |this, cx| {
             let title = match target {
                 Target::Cover => "Choose a cover",
-                Target::Picture => "Add pictures",
+                Target::Picture | Target::Chapter => "Add pictures",
             };
             let extensions = picture_file_extensions();
-            let paths = match file_picker::choose(
-                title,
-                "Pictures",
-                &extensions,
-                target == Target::Picture,
-            )
-            .await
-            {
-                Ok(Some(paths)) => paths,
-                Ok(None) => return,
-                Err(error) => {
-                    this.update_in(cx, |this, _, cx| {
-                        this.session.set_error(control, error.to_string());
-                        cx.notify();
-                    })
-                    .ok();
-                    return;
-                }
-            };
+            let paths =
+                match file_picker::choose(title, "Pictures", &extensions, target != Target::Cover)
+                    .await
+                {
+                    Ok(Some(paths)) => paths,
+                    Ok(None) => return,
+                    Err(error) => {
+                        this.update_in(cx, |this, _, cx| {
+                            this.session.set_error(control, error.to_string());
+                            cx.notify();
+                        })
+                        .ok();
+                        return;
+                    }
+                };
             this.update_in(cx, |this, window, cx| {
                 this.encode_files(paths, target, window, cx);
             })
@@ -120,8 +117,15 @@ impl EditorPage {
             Ok(avif) => {
                 self.encoder.waiting_for_book = true;
                 let path = job.path.clone();
+                self.encoder.placing = job.placement.as_ref().map(|placement| {
+                    let markdown =
+                        picture_markdown(&placement.chapter, &path, &placement.description);
+                    (placement.chapter.clone(), markdown)
+                });
                 let (command, origin) = match job.target {
-                    Target::Picture => (Command::AddPicture { path, avif }, Origin::AddPicture),
+                    Target::Picture | Target::Chapter => {
+                        (Command::AddPicture { path, avif }, Origin::AddPicture)
+                    }
                     Target::Cover => (Command::SetCover { path, avif }, Origin::SetCover),
                 };
                 self.send(command, origin, window, cx);
@@ -147,24 +151,33 @@ impl EditorPage {
         self.encoder.prompting = true;
         let name = name_of(&file);
         let proposal = propose_picture_path(&name, self.session.pictures());
-        let title = match target {
-            Target::Picture => "Add a picture",
-            Target::Cover => "Replace the cover",
+        // A picture for a chapter goes into the one that is open now.
+        let chapter = self.loaded.clone().filter(|_| target == Target::Chapter);
+        let title = match (target, &chapter) {
+            (Target::Cover, _) => "Replace the cover",
+            (_, Some(_)) => "Add a picture to the chapter",
+            (_, None) => "Add a picture",
         };
         ask_picture(
             title,
             name,
             proposal,
+            chapter.is_some(),
             window,
             cx,
             move |this, settings, window, cx| {
                 this.encoder.prompting = false;
+                let placement = chapter.clone().map(|chapter| Placement {
+                    chapter,
+                    description: settings.description,
+                });
                 this.encode_picture(
                     Job {
                         file: file.clone(),
                         target,
                         path: settings.path,
                         options: settings.options,
+                        placement,
                     },
                     window,
                     cx,
@@ -180,30 +193,46 @@ impl EditorPage {
         );
     }
 
-    pub(super) fn picture_applied(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+    /// The book answered about a picture that was encoded: the next file is
+    /// asked about. A picture that was added for a chapter is put where the
+    /// caret of Visual is, when that chapter is still the one being edited.
+    pub(super) fn picture_applied(
+        &mut self,
+        added: bool,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
         self.encoder.waiting_for_book = false;
+        if let Some((chapter, markdown)) = self.encoder.placing.take().filter(|_| added) {
+            if self.visual_is_editing(&chapter, cx) {
+                self.insert_markdown(markdown, window, cx);
+            } else {
+                announce(PLACE_LATER, window, cx);
+            }
+        }
         self.prompt_next_picture(window, cx);
     }
 
-    /// Asks for the path of a new chapter.
-    pub(super) fn add_chapter(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        let initial = propose_chapter_path(self.session.chapters());
+    /// Asks for the title of a new chapter and adds it after the last one.
+    /// The title becomes its first heading; the file gets the next free name.
+    pub(super) fn add_chapter(window: &mut Window, cx: &mut Context<'_, Self>) {
         ask_path(
             &PathRequest {
-                title: "Add a chapter",
-                label: "Path of the chapter in the book",
-                initial,
-                ok: "Add",
-                chapters: Vec::new(),
+                title: "New chapter",
+                label: NEW_CHAPTER_LABEL,
+                initial: String::new(),
+                ok: "Add the chapter",
+                required: None,
             },
             window,
             cx,
-            |this, path, window, cx| {
+            |this, title, window, cx| {
                 this.flush_text(window, cx);
+                let path = propose_chapter_path(this.session.chapters());
                 this.send(
                     Command::AddChapter {
                         path: path.clone(),
-                        text: String::new(),
+                        text: chapter_start(&title),
                     },
                     Origin::Chapter(ChapterOp::Add(path)),
                     window,
@@ -218,11 +247,11 @@ impl EditorPage {
     pub(super) fn change_path(from: String, window: &mut Window, cx: &mut Context<'_, Self>) {
         ask_path(
             &PathRequest {
-                title: "Change the path",
-                label: "New path of the chapter",
+                title: "Rename the file",
+                label: RENAME_LABEL,
                 initial: from.clone(),
-                ok: "Change",
-                chapters: Vec::new(),
+                ok: "Rename",
+                required: Some("Enter a file name, such as ch01.md."),
             },
             window,
             cx,
@@ -389,11 +418,20 @@ impl EditorPage {
     }
 }
 
+/// The label of the field that holds the title of a new chapter.
+pub(super) const NEW_CHAPTER_LABEL: &str = "Title of the chapter";
+/// The label of the field that holds the new file name of a chapter.
+pub(super) const RENAME_LABEL: &str = "File name of the chapter. Links to it use this name.";
+/// What is said when a picture arrives after its chapter was left.
+pub(super) const PLACE_LATER: &str =
+    "The picture was added to the book. Open the chapter and choose Picture to place it.";
+
 /// The control a picture of this kind belongs to.
-fn control_of(target: Target) -> Control {
+pub(super) fn control_of(target: Target) -> Control {
     match target {
         Target::Picture => Control::Pictures,
         Target::Cover => Control::Cover,
+        Target::Chapter => Control::ChapterPicture,
     }
 }
 

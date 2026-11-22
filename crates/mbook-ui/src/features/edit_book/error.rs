@@ -45,6 +45,9 @@ pub(crate) enum EditError {
     /// The book could not be written; the file on disk is as it was.
     #[error("the book could not be saved")]
     Save(#[source] mbook::Error),
+    /// The list of contents refused the change.
+    #[error("the contents were not changed")]
+    Contents(#[from] ContentsError),
     /// Neither a chapter nor a picture of the book has this path, or not the
     /// kind the command needs.
     #[error("nothing in the book has the path {0:?}")]
@@ -53,6 +56,35 @@ pub(crate) enum EditError {
     /// dropped or has ended.
     #[error("the editing session has ended")]
     Ended,
+}
+
+/// Why a change of the contents list was refused.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub(crate) enum ContentsError {
+    /// The contents follow the headings: the book keeps no list.
+    #[error("the contents follow the headings, so there is no list to change")]
+    Automatic,
+    /// The list has no entry at this position, counted from 0.
+    #[error("the list has no entry at position {0}")]
+    NoSuchEntry(usize),
+    /// The title is empty.
+    #[error("an entry needs a title")]
+    NoTitle,
+    /// The entry leads to something that is neither a chapter of the book
+    /// nor a heading of one.
+    #[error("the entry {title:?} leads to no chapter or heading of the book")]
+    NoSuchPlace {
+        /// The title of the entry.
+        title: String,
+    },
+    /// The entry is already one level under the entry above it, or it is
+    /// the first.
+    #[error("an entry can be only one level under the entry above it")]
+    TooDeep,
+    /// The entry is at the first level.
+    #[error("the entry is at the first level already")]
+    TopLevel,
 }
 
 impl EditError {
@@ -79,7 +111,7 @@ impl From<mbook::Error> for EditError {
 
 #[cfg(test)]
 mod tests {
-    use super::{EditError, OpenFailure};
+    use super::{ContentsError, EditError, OpenFailure};
     use std::error::Error as _;
     use std::io;
 
@@ -128,6 +160,44 @@ mod tests {
             error.source().map(ToString::to_string).as_deref(),
             Some("I/O failed")
         );
+    }
+
+    #[test]
+    fn a_refused_change_of_the_contents_keeps_the_reason_as_its_source() {
+        let error = EditError::from(ContentsError::NoSuchPlace {
+            title: "Lost".into(),
+        });
+        assert_eq!(error.to_string(), "the contents were not changed");
+        assert_eq!(
+            error.source().map(ToString::to_string).as_deref(),
+            Some("the entry \"Lost\" leads to no chapter or heading of the book")
+        );
+    }
+
+    #[test]
+    fn every_refusal_of_the_contents_says_what_is_wrong() {
+        let words = [
+            (
+                ContentsError::Automatic,
+                "the contents follow the headings, so there is no list to change",
+            ),
+            (
+                ContentsError::NoSuchEntry(3),
+                "the list has no entry at position 3",
+            ),
+            (ContentsError::NoTitle, "an entry needs a title"),
+            (
+                ContentsError::TooDeep,
+                "an entry can be only one level under the entry above it",
+            ),
+            (
+                ContentsError::TopLevel,
+                "the entry is at the first level already",
+            ),
+        ];
+        for (error, message) in words {
+            assert_eq!(error.to_string(), message);
+        }
     }
 
     #[test]

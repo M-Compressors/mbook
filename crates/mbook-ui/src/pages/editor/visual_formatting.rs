@@ -63,8 +63,7 @@ pub(super) fn formatting(input: &Entity<BlockEditorState>, cx: &App) -> impl Int
     h_flex()
         .id("visual-formatting")
         .role(Role::Toolbar)
-        .aria_label("Markdown formatting")
-        .px_2()
+        .aria_label("Text formatting")
         .gap_1()
         .flex_wrap()
         .child(style_menu(input.clone(), kind, enabled))
@@ -88,7 +87,6 @@ pub(super) fn formatting(input: &Entity<BlockEditorState>, cx: &App) -> impl Int
                         .on_click(move |_, window, cx| run(&input, command.clone(), window, cx))
                 }),
         )
-        .child(insert_menu(input.clone(), enabled))
 }
 
 fn style_menu(
@@ -131,7 +129,9 @@ fn style_menu(
         })
 }
 
-fn insert_menu(input: Entity<BlockEditorState>, enabled: bool) -> impl IntoElement {
+/// The menu of the blocks a chapter can get: a table, a code block, a rule
+/// and the lists.
+pub(super) fn insert_menu(input: Entity<BlockEditorState>, enabled: bool) -> impl IntoElement {
     Button::new("visual-insert")
         .ghost()
         .label("Insert")

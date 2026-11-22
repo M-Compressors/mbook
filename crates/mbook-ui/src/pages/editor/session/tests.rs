@@ -1,6 +1,7 @@
 //! The state of the page and the words it shows, without a window.
 
 use super::*;
+use crate::features::edit_book::error::ContentsError;
 use crate::features::edit_book::outline::SeriesOutline;
 
 fn chapter(path: &str) -> ChapterOutline {
@@ -8,6 +9,7 @@ fn chapter(path: &str) -> ChapterOutline {
         path: path.to_owned(),
         len: 10,
         heading: None,
+        places: Vec::new(),
     }
 }
 
@@ -28,6 +30,7 @@ fn outline(paths: &[&str], unsaved: bool) -> Outline {
     Outline {
         meta: meta(),
         chapters: paths.iter().map(|path| chapter(path)).collect(),
+        contents: ContentsOutline::default(),
         landmarks: Vec::new(),
         pictures: Vec::new(),
         problems: Vec::new(),
@@ -256,14 +259,23 @@ fn opening_a_chapter_shows_the_chapters_and_the_chapter_screen() {
 }
 
 #[test]
-fn stepping_back_goes_from_the_chapter_to_the_section_to_the_list() {
+fn stepping_back_goes_from_a_chapter_or_a_section_to_the_list() {
     let mut session = session_with(&["a.md"]);
     session.show_chapter("a.md");
     assert!(session.step_back());
-    assert_eq!(session.level, Level::Section);
-    assert!(session.step_back());
     assert_eq!(session.level, Level::Sections);
     assert!(!session.step_back());
+    session.show_section(Section::Pictures);
+    assert!(session.step_back());
+    assert_eq!(session.level, Level::Sections);
+}
+
+#[test]
+fn showing_the_chapters_is_the_screen_of_the_chapter() {
+    let mut session = session_with(&["a.md"]);
+    session.step_back();
+    session.show_section(Section::Chapters);
+    assert_eq!(session.level, Level::Chapter);
 }
 
 #[test]
@@ -375,8 +387,12 @@ fn a_picture_path_that_is_used_gets_a_number() {
 #[test]
 fn a_path_is_trimmed_and_an_empty_one_is_refused() {
     assert_eq!(clean_path("  ch01.md "), Ok("ch01.md".to_owned()));
-    assert_eq!(clean_path("   "), Err("Enter a path, such as ch01.md."));
-    assert_eq!(clean_path(""), Err("Enter a path, such as ch01.md."));
+    assert_eq!(
+        clean_path("   "),
+        Err("Enter a file name, such as img/pond.avif.")
+    );
+    assert_eq!(required("", "Enter it."), Err("Enter it."));
+    assert_eq!(required(" kept ", "Enter it."), Ok("kept".to_owned()));
 }
 
 #[test]
@@ -622,11 +638,37 @@ fn the_announcement_of_a_failed_save_counts_the_problems() {
 
 #[test]
 fn a_chapter_is_named_with_the_state_colour_also_shows() {
-    assert_eq!(chapter_label("a.md", None, false, false), "a.md");
     assert_eq!(
-        chapter_label("a.md", Some("One"), true, true),
-        "a.md, One, current chapter, edited"
+        chapter_label(2, "a.md", None, false, false),
+        "Chapter 2, Untitled chapter, a.md"
     );
+    assert_eq!(
+        chapter_label(1, "a.md", Some("One"), true, true),
+        "Chapter 1, One, a.md, current chapter, edited"
+    );
+}
+
+#[test]
+fn a_chapter_is_offered_by_its_number_and_its_title() {
+    assert_eq!(chapter_choice(3, Some("The pond")), "3. The pond");
+    assert_eq!(chapter_choice(4, None), "4. Untitled chapter");
+    assert_eq!(chapter_title(None), UNTITLED);
+}
+
+#[test]
+fn a_chapter_is_found_by_its_path_and_the_contents_come_with_the_outline() {
+    let session = session_with(&["a.md", "b.md"]);
+    assert_eq!(
+        session.chapter("b.md").map(|c| c.path.as_str()),
+        Some("b.md")
+    );
+    assert!(session.chapter("gone.md").is_none());
+    assert!(
+        session
+            .contents()
+            .is_some_and(|contents| contents.entries.is_empty())
+    );
+    assert!(Session::new().contents().is_none());
 }
 
 #[test]
@@ -645,6 +687,10 @@ fn a_command_error_says_what_went_wrong_and_what_to_do() {
         "Nothing in the book has the path a.md."
     );
     assert!(edit_error_words(&EditError::Ended).contains("open the book again"));
+    assert_eq!(
+        edit_error_words(&EditError::from(ContentsError::NoTitle)),
+        "The contents were not changed: an entry needs a title."
+    );
 }
 
 #[test]

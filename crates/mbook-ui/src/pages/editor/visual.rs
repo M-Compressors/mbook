@@ -3,29 +3,33 @@
 use std::sync::{Arc, Mutex};
 
 use gpui_kit::assets::IconName;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Copy, Cut, Redo, SelectAll, Undo};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
 use gpui_kit::{
-    AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, Focusable as _, Global,
-    InteractiveElement as _, IntoElement, ParentElement as _, Role, ScrollHandle, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, px, relative,
+    AnyElement, App, AppContext as _, ClipboardItem, Context, Entity, ExternalPaths,
+    Focusable as _, Global, InteractiveElement as _, IntoElement, ParentElement as _, Role,
+    ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _,
+    Window, div, px, relative,
 };
 use markdown_editor::{
     BlockEditor, BlockEditorEvent, BlockEditorState, BlockEditorStyle, BlockKind, BlockSelection,
     EditorCommand, ImagePolicy,
 };
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 
 use super::EditorPage;
+use super::encode::Target;
 use super::keys::VISUAL_CONTEXT;
-use super::prompts::{PathRequest, ask_path};
+use super::link_prompt::{LinkAnswer, LinkRequest, ask_link};
+use super::place_picker::chapter_choices;
 use super::session::ViewMode;
-use super::visual_formatting::formatting;
+use super::visual_formatting::{formatting, insert_menu};
 use super::visual_pictures::VisualPictures;
 use super::visual_source::VisualSource;
+use crate::entities::picture::picture_file_extensions;
 use crate::features::appearance::Appearance;
-use crate::shared::ui::{announce, empty_state, icon_button, page_colors, status_line};
+use crate::shared::ui::{empty_state, icon_button, page_colors, status_line, target_size};
 
 struct KeysInstalled;
 
@@ -178,6 +182,8 @@ impl EditorPage {
         }
     }
 
+    /// Opens the dialog of a link: for the link at the caret, for the words
+    /// that are selected, or, with nothing selected, for new words.
     fn edit_visual_link(
         &self,
         url: Option<&SharedString>,
@@ -185,53 +191,69 @@ impl EditorPage {
         cx: &mut Context<'_, Self>,
     ) {
         let editor = self.visual.input.read(cx);
-        if url.is_none()
-            && matches!(editor.selection(), BlockSelection::Text { anchor, head } if anchor == head)
-        {
-            announce("Select the text for the link first.", window, cx);
-            return;
-        }
+        let ask_text = url.is_none() && editor.selection().is_collapsed();
         let Ok(selection) = editor.capture_selection() else {
             return;
         };
         let Some(current) = &self.loaded else {
             return;
         };
-        let chapters = self
-            .session
-            .chapters()
-            .iter()
-            .map(|chapter| {
-                (
-                    chapter.path.clone(),
-                    relative_book_path(current, &chapter.path),
-                )
-            })
-            .collect();
-        ask_path(
-            &PathRequest {
-                title: if url.is_some() {
-                    "Edit link"
-                } else {
-                    "Insert link"
-                },
-                label: "Link destination",
-                initial: url.map_or_else(String::new, ToString::to_string),
-                ok: "Apply",
-                chapters,
+        ask_link(
+            LinkRequest {
+                current: url.map(ToString::to_string),
+                ask_text,
+                from: current.clone(),
+                choices: chapter_choices(self.session.chapters()),
             },
             window,
             cx,
-            move |this, value, window, cx| {
+            move |this, answer, window, cx| {
                 this.visual.input.update(cx, |state, cx| {
                     if state.is_capture_current(&selection) {
-                        state.set_link(Some(&value), cx);
+                        apply_link(state, answer, cx);
                     }
                     state.focus(window, cx);
                 });
             },
-            |_, _, _| {},
         );
+    }
+
+    /// Puts Markdown the editor wrote itself where the caret of Visual is.
+    pub(super) fn insert_markdown(
+        &self,
+        markdown: String,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.visual.input.update(cx, |state, cx| {
+            state.paste(ClipboardItem::new_string(markdown), false, cx);
+            state.focus(window, cx);
+        });
+    }
+
+    /// Files were dropped on the chapter: the pictures among them are added
+    /// to the book and put where the caret is.
+    pub(super) fn drop_files(
+        &mut self,
+        files: &[std::path::PathBuf],
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        let pictures: Vec<_> = files
+            .iter()
+            .filter(|file| is_picture(file))
+            .cloned()
+            .collect();
+        if !pictures.is_empty() {
+            self.encode_files(pictures, Target::Chapter, window, cx);
+        }
+    }
+
+    /// Whether Visual shows the open chapter and can be typed into.
+    pub(super) fn visual_is_editing(&self, chapter: &str, cx: &Context<'_, Self>) -> bool {
+        self.session.mode == ViewMode::Visual
+            && self.loaded.as_deref() == Some(chapter)
+            && !self.visual.input.read(cx).is_readonly()
     }
 
     pub(super) fn render_visual(
@@ -279,7 +301,7 @@ impl EditorPage {
             })
             .size_full()
             .min_h_0()
-            .child(self.visual_toolbar(path, cx))
+            .child(self.visual_toolbar(cx))
             .child(
                 div()
                     .id("visual-viewport")
@@ -295,6 +317,10 @@ impl EditorPage {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.visual.input.focus_handle(cx).focus(window, cx);
                     }))
+                    .can_drop(|dragged, _, _| holds_pictures(dragged))
+                    .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                        this.drop_files(paths.paths(), window, cx);
+                    }))
                     .child(
                         BlockEditor::new(&self.visual.input)
                             .min_h_full()
@@ -309,101 +335,88 @@ impl EditorPage {
             .into_any_element()
     }
 
-    fn visual_toolbar(&self, chapter: &str, cx: &mut Context<'_, Self>) -> impl IntoElement {
+    /// The one toolbar of Visual: history, the style of the text, then what
+    /// is put into the chapter: a link, a picture, a table and the rest.
+    fn visual_toolbar(&self, cx: &mut Context<'_, Self>) -> impl IntoElement {
         let editor = self.visual.input.read(cx);
         let enabled = !editor.is_readonly();
         let (undo, redo) = (editor.model().can_undo(), editor.model().can_redo());
-        let has_link = editor.link_at_caret().is_some();
         let code = editor.block_kind_at_caret() == Some(BlockKind::CodeBlock);
-        let pictures: Vec<_> = self
-            .session
-            .pictures()
-            .iter()
-            .map(|picture| {
-                let name = picture.path.clone();
-                let markdown = picture_markdown(chapter, &name);
-                (name, markdown)
-            })
-            .collect();
-        let has_pictures = !pictures.is_empty();
-        let input = self.visual.input.clone();
-        v_flex()
+        let divider = || {
+            div()
+                .flex_none()
+                .w(px(1.0))
+                .h(px(20.0))
+                .mx_1()
+                .bg(cx.theme().border)
+        };
+        let labelled = |id: &'static str, icon: IconName, label: &'static str| {
+            Button::new(id)
+                .ghost()
+                .icon(icon)
+                .label(label)
+                .min_h(px(target_size()))
+                .cursor_pointer()
+        };
+        h_flex()
+            .id("visual-toolbar")
+            .w_full()
+            .px_2()
+            .py_1()
+            .gap_1()
+            .flex_wrap()
+            .items_center()
             .border_b_1()
             .border_color(cx.theme().border)
-            .child(formatting(&self.visual.input, cx))
             .child(
-                h_flex()
-                    .px_2()
-                    .gap_1()
-                    .flex_wrap()
-                    .child(
-                        icon_button("visual-undo", IconName::Undo2, "Undo")
-                            .disabled(!enabled || !undo)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.run_visual_history(false, window, cx);
-                            })),
-                    )
-                    .child(
-                        icon_button("visual-redo", IconName::Redo2, "Redo")
-                            .disabled(!enabled || !redo)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.run_visual_history(true, window, cx);
-                            })),
-                    )
-                    .child(
-                        icon_button("visual-link", IconName::Link, "Insert or edit link")
-                            .disabled(!enabled)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.visual
-                                    .input
-                                    .update(cx, BlockEditorState::request_link_edit);
-                            })),
-                    )
-                    .child(
-                        icon_button("visual-unlink", IconName::Link2Off, "Remove link")
-                            .disabled(!enabled || !has_link)
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.visual.input.update(cx, |state, cx| {
-                                    state.set_link(None, cx);
-                                    state.focus(window, cx);
-                                });
-                            })),
-                    )
-                    .child(
-                        icon_button("visual-image", IconName::Image, "Insert a book picture")
-                            .disabled(!enabled || !has_pictures)
-                            .dropdown_menu(move |menu, _, _| {
-                                pictures.iter().fold(menu, |menu, (name, source)| {
-                                    let input = input.clone();
-                                    let source = source.clone();
-                                    menu.item(PopupMenuItem::new(name.clone()).on_click(
-                                        move |_, window, cx| {
-                                            input.update(cx, |state, cx| {
-                                                state.paste(
-                                                    ClipboardItem::new_string(source.clone()),
-                                                    false,
-                                                    cx,
-                                                );
-                                                state.focus(window, cx);
-                                            });
-                                        },
-                                    ))
-                                })
-                            }),
-                    )
-                    .child(
-                        icon_button(
-                            "visual-image-preview",
-                            IconName::Eye,
-                            "Preview chapter pictures",
-                        )
-                        .disabled(!enabled || !has_pictures)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.preview_chapter_pictures(window, cx);
-                        })),
-                    )
-                    .children(code.then(|| self.code_language())),
+                icon_button("visual-undo", IconName::Undo2, "Undo")
+                    .disabled(!enabled || !undo)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.run_visual_history(false, window, cx);
+                    })),
             )
+            .child(
+                icon_button("visual-redo", IconName::Redo2, "Redo")
+                    .disabled(!enabled || !redo)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.run_visual_history(true, window, cx);
+                    })),
+            )
+            .child(divider())
+            .child(formatting(&self.visual.input, cx))
+            .child(divider())
+            .child(
+                labelled("visual-link", IconName::Link, "Link")
+                    .tooltip("Add or edit a link")
+                    .disabled(!enabled)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.visual
+                            .input
+                            .update(cx, BlockEditorState::request_link_edit);
+                    })),
+            )
+            .child(
+                labelled("visual-image", IconName::ImagePlus, "Picture")
+                    .tooltip("Insert a picture")
+                    .disabled(!enabled)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.ask_chapter_picture(window, cx);
+                    })),
+            )
+            .child(insert_menu(self.visual.input.clone(), enabled))
+            .child(divider())
+            .child(
+                icon_button(
+                    "visual-image-preview",
+                    IconName::Images,
+                    "Pictures in this chapter",
+                )
+                .disabled(!enabled || self.session.pictures().is_empty())
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.preview_chapter_pictures(window, cx);
+                })),
+            )
+            .children(code.then(|| self.code_language()))
     }
 
     fn run_visual_history(&self, redo: bool, window: &mut Window, cx: &mut Context<'_, Self>) {
@@ -463,53 +476,82 @@ fn visual_clipboard_action(name: &str, window: &mut Window, cx: &mut App) {
     }
 }
 
-fn relative_book_path(from: &str, to: &str) -> String {
-    const ESCAPED: &AsciiSet = &NON_ALPHANUMERIC
-        .remove(b'/')
-        .remove(b'.')
-        .remove(b'-')
-        .remove(b'_');
-    let from = from.split('/').collect::<Vec<_>>();
-    let to = to.split('/').collect::<Vec<_>>();
-    let folders = &from[..from.len() - 1];
-    let common = folders
-        .iter()
-        .zip(&to[..to.len() - 1])
-        .take_while(|(left, right)| left == right)
-        .count();
-    let directory = "../".repeat(folders.len() - common);
-    let path = to[common..].join("/");
-    let encoded = utf8_percent_encode(&path, ESCAPED);
-    format!("{directory}{encoded}")
+/// Makes, changes or removes a link at the selection of the editor.
+fn apply_link(
+    state: &mut BlockEditorState,
+    answer: LinkAnswer,
+    cx: &mut Context<'_, BlockEditorState>,
+) {
+    match answer {
+        LinkAnswer::Remove => state.set_link(None, cx),
+        LinkAnswer::Set {
+            text: None,
+            destination,
+        } => state.set_link(Some(&destination), cx),
+        LinkAnswer::Set {
+            text: Some(text),
+            destination,
+        } => {
+            // The words are typed by the editor, which escapes them, and then
+            // selected from where the caret was to where it is.
+            let BlockSelection::Text { head: before, .. } = *state.selection() else {
+                return;
+            };
+            state.paste(ClipboardItem::new_string(text), true, cx);
+            let BlockSelection::Text { head: after, .. } = *state.selection() else {
+                return;
+            };
+            let linked = state.set_selection(
+                BlockSelection::Text {
+                    anchor: before,
+                    head: after,
+                },
+                cx,
+            );
+            if linked.is_ok() {
+                state.set_link(Some(&destination), cx);
+                let _ = state.set_selection(BlockSelection::caret(after), cx);
+            }
+        }
+    }
 }
 
-fn picture_markdown(chapter: &str, picture: &str) -> String {
-    let path = relative_book_path(chapter, picture);
-    let name = picture.rsplit('/').next().unwrap_or(picture);
-    let alt: String = name
-        .strip_suffix(".avif")
-        .unwrap_or(name)
-        .chars()
-        .map(|ch| {
-            if ch.is_alphanumeric() || matches!(ch, ' ' | '-' | '.') {
-                ch
-            } else {
-                ' '
-            }
+/// Whether what is dragged over the chapter is files with a picture among
+/// them. Other files are left to the window, which imports books.
+fn holds_pictures(dragged: &dyn std::any::Any) -> bool {
+    dragged
+        .downcast_ref::<ExternalPaths>()
+        .is_some_and(|paths| paths.paths().iter().any(|path| is_picture(path)))
+}
+
+/// Whether a file that was dropped has the extension of a picture the book
+/// can take.
+fn is_picture(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            picture_file_extensions()
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(extension))
         })
-        .collect();
-    format!("![{}]({path})", alt.trim())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::picture_markdown;
+    use std::path::Path;
+
+    use super::{holds_pictures, is_picture};
 
     #[test]
-    fn a_book_picture_uses_an_encoded_path_relative_to_the_chapter() {
-        assert_eq!(
-            picture_markdown("part/intro/ch.md", "img/cover #1.avif"),
-            "![cover  1](../../img/cover%20%231.avif)"
-        );
+    fn what_is_dragged_must_be_files_to_be_pictures() {
+        assert!(!holds_pictures(&"words"));
+    }
+
+    #[test]
+    fn a_dropped_file_is_a_picture_by_its_extension() {
+        assert!(is_picture(Path::new("/tmp/Pond.PNG")));
+        assert!(is_picture(Path::new("a.avif")));
+        assert!(!is_picture(Path::new("book.epub")));
+        assert!(!is_picture(Path::new("no-extension")));
     }
 }

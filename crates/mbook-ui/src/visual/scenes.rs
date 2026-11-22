@@ -55,8 +55,89 @@ const fn shot(name: &'static str, library: Library, run: fn(&mut Stage) -> Resul
     }
 }
 
-/// Every shot, in the order of their files.
+/// Every shot. The files are named so that they sort by screen.
 pub(super) fn all() -> Vec<Shot> {
+    let mut shots = other_shots();
+    shots.extend(editor_shots());
+    shots
+}
+
+/// The shots of the editor: its sections, the views of a chapter and its
+/// dialogs.
+fn editor_shots() -> Vec<Shot> {
+    vec![
+        shot("08a-editor-details", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_section(stage, "section-details")
+        }),
+        shot("08b-editor-split", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_chapter(stage)?;
+            let split = stage.has("mode-split")?;
+            stage.click_label(if split { "Split" } else { "Source" })
+        }),
+        shot("08c-editor-source", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_chapter(stage)?;
+            stage.click_label("Source")
+        }),
+        shot("08d-editor-preview", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_chapter(stage)?;
+            stage.click_label("Preview")
+        }),
+        shot("08e-editor-pictures", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_section(stage, "section-pictures")
+        }),
+        shot("08f-editor-problems", Library::Books, editor_problems),
+        shot("08g-editor-unsaved", Library::Books, editor_unsaved),
+        shot("08h-editor-visual", Library::Books, editor_visual),
+        shot("08i-editor-contents", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_section(stage, "section-contents")
+        }),
+        shot("08j-editor-landmarks", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_section(stage, "section-landmarks")
+        }),
+        shot("08k-editor-picture", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_chapter(stage)?;
+            stage.click("visual-viewport")?;
+            stage.click("visual-image")?;
+            stage.click_label("img/orchard.avif")?;
+            stage.type_text("The orchard at dusk")
+        }),
+        shot("08l-editor-link", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_chapter(stage)?;
+            stage.click("visual-viewport")?;
+            stage.click("visual-link")?;
+            stage.type_text("the harvest")
+        }),
+        shot("08m-editor-new-chapter", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_section(stage, "add-chapter")?;
+            stage.type_text("The first frost")
+        }),
+        shot("08n-editor-contents-menu", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_section(stage, "section-contents")?;
+            stage.click_label("Entry actions, The ledger")
+        }),
+        shot("08o-editor-contents-entry", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_section(stage, "section-contents")?;
+            stage.click_label("Entry actions, The ledger")?;
+            stage.click_label("Edit…")
+        }),
+    ]
+}
+
+/// The shots of the library, the reader, the settings and what stands over
+/// every page.
+fn other_shots() -> Vec<Shot> {
     vec![
         shot("01-library-empty", Library::Empty, |_| Ok(())),
         shot("02-library-books", Library::Books, seed_imports),
@@ -93,33 +174,6 @@ pub(super) fn all() -> Vec<Shot> {
             })
         },
         shot("07-reader-error", Library::Books, reader_error),
-        shot("08a-editor-details", Library::Books, |stage| {
-            open_editor(stage)?;
-            open_section(stage, "section-details")
-        }),
-        shot("08b-editor-split", Library::Books, |stage| {
-            open_editor(stage)?;
-            open_chapter(stage)?;
-            let split = stage.has("mode-split")?;
-            stage.click_label(if split { "Split" } else { "Source" })
-        }),
-        shot("08c-editor-source", Library::Books, |stage| {
-            open_editor(stage)?;
-            open_chapter(stage)?;
-            stage.click_label("Source")
-        }),
-        shot("08d-editor-preview", Library::Books, |stage| {
-            open_editor(stage)?;
-            open_chapter(stage)?;
-            stage.click_label("Preview")
-        }),
-        shot("08e-editor-pictures", Library::Books, |stage| {
-            open_editor(stage)?;
-            open_section(stage, "section-pictures")
-        }),
-        shot("08f-editor-problems", Library::Books, editor_problems),
-        shot("08g-editor-unsaved", Library::Books, editor_unsaved),
-        shot("08h-editor-visual", Library::Books, editor_visual),
         Shot {
             calm: false,
             ..shot("09a-settings-top", Library::Books, open_settings)
@@ -290,10 +344,7 @@ fn open_chapter(stage: &mut Stage) -> Result<()> {
     if stage.has("visual-viewport")? || stage.has("chapter-source")? || stage.has("chapter-text")? {
         return Ok(());
     }
-    if !stage.has("chapter-ch02.md")? {
-        open_section(stage, "section-chapters")?;
-    }
-    stage.click("chapter-ch02.md")
+    open_section(stage, "chapter-ch02.md")
 }
 
 /// Types in a chapter and asks to leave the editor.

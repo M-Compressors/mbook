@@ -10,11 +10,16 @@ use gpui_kit::{
 };
 
 use super::EditorPage;
+use super::contents::FOLLOW_HEADINGS;
 use super::encode::Target;
 use super::prompts::confirm_remove;
 use super::sections::{control, list_item};
-use super::session::{Control, ViewMode, is_contents_problem, problem_words, size_label};
+use super::session::{Control, Section, ViewMode, is_contents_problem, problem_words, size_label};
 use crate::shared::ui::{icon_button, status_line};
+
+/// The control of the Problems section that leads to the entries of the
+/// contents, where each can be given another place or removed.
+pub(super) const OPEN_CONTENTS: &str = "Open Contents";
 
 impl EditorPage {
     /// The Cover section: the picture, and the control that replaces it.
@@ -251,10 +256,18 @@ impl EditorPage {
                             .on_click(cx.listener(|this, _, window, cx| this.check(window, cx))),
                     )
                     .children(contents.then(|| {
-                        control("rebuild-contents", "Rebuild the contents from the headings")
-                            .on_click(cx.listener(|this, _, window, cx| {
+                        control("open-contents", OPEN_CONTENTS).on_click(cx.listener(
+                            |this, _, window, cx| {
+                                this.choose_section(Section::Contents, window, cx);
+                            },
+                        ))
+                    }))
+                    .children(contents.then(|| {
+                        control("rebuild-contents", FOLLOW_HEADINGS).on_click(cx.listener(
+                            |this, _, window, cx| {
                                 this.rebuild_contents(window, cx);
-                            }))
+                            },
+                        ))
                     })),
             )
             .children(

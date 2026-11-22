@@ -17,6 +17,18 @@ pub(super) enum Target {
     Picture,
     /// The cover, which is a picture too.
     Cover,
+    /// A picture of the book that is also put into the chapter being edited,
+    /// where the caret is.
+    Chapter,
+}
+
+/// Where a picture that is being added goes in the text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Placement {
+    /// The path of the chapter that was open when the picture was chosen.
+    pub(super) chapter: String,
+    /// What is read to those who cannot see the picture.
+    pub(super) description: String,
 }
 
 /// A picture file waiting to be encoded.
@@ -30,6 +42,9 @@ pub(super) struct Job {
     pub(super) path: String,
     /// The output options selected for this file.
     pub(super) options: EncodeOptions,
+    /// The chapter the picture is put into; `None` for one that only joins
+    /// the pictures of the book.
+    pub(super) placement: Option<Placement>,
 }
 
 impl Job {
