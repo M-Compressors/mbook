@@ -1419,3 +1419,128 @@ fn the_pointer_moving_brings_the_controls_back(cx: &mut TestAppContext) {
     settle(&started, cx);
     assert!(has(&started, "back", cx));
 }
+
+fn enter_book_query(started: &Started, query: &str, cx: &mut TestAppContext) {
+    testing::frame(cx, started.window, |window, cx| window.input(query, cx));
+    cx.run_until_parked();
+    cx.executor()
+        .advance_clock(crate::shared::ui::search_bar::TYPING_PAUSE);
+    settle(started, cx);
+}
+
+#[gpui_kit::test]
+fn book_search_reaches_other_chapters_and_wraps_in_both_directions(cx: &mut TestAppContext) {
+    let chapters = [
+        (
+            "one.md",
+            "# First\n\nHere is the first **needle**.\n".to_owned(),
+        ),
+        ("two.md", "# Middle\n\nNothing here.\n".to_owned()),
+        (
+            "three.md",
+            "# Last\n\nHere is the last **needle**.\n".to_owned(),
+        ),
+    ];
+    let started = start_with(cx, 900.0, &chapters, None).unwrap();
+    settle(&started, cx);
+    click(&started, "find-book", cx);
+    enter_book_query(&started, "NEEDLE", cx);
+    assert_eq!(chapter_of(&started, cx), 0);
+    press(&started, "enter", cx);
+    assert_eq!(chapter_of(&started, cx), 2);
+    click(&started, "find-next", cx);
+    assert_eq!(chapter_of(&started, cx), 0);
+    click(&started, "find-previous", cx);
+    assert_eq!(chapter_of(&started, cx), 2);
+    click(&started, "find-close", cx);
+    assert!(!has(&started, "find-status", cx));
+}
+
+#[gpui_kit::test]
+fn the_find_shortcut_brings_back_hidden_reader_controls(cx: &mut TestAppContext) {
+    cx.update(crate::app::bind_keys);
+    let started = start(cx, 900.0).unwrap();
+    settle(&started, cx);
+    rest_the_pointer(&started, cx);
+    cx.executor().advance_clock(HIDE_AFTER * 2);
+    settle(&started, cx);
+    assert!(!has(&started, "find-book", cx));
+
+    press(&started, &secondary("f"), cx);
+    assert!(has(&started, "find-book", cx));
+    enter_book_query(&started, "not in this book", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert_eq!(window.find("find-status").label(), Some("No matches"));
+    });
+    press(&started, "escape", cx);
+    assert!(!has(&started, "find-status", cx));
+    assert_eq!(seen(&started, cx), []);
+}
+
+#[gpui_kit::test]
+fn clearing_a_book_query_discards_the_pending_search(cx: &mut TestAppContext) {
+    let started = start(cx, 900.0).unwrap();
+    settle(&started, cx);
+    click(&started, "find-book", cx);
+    testing::frame(cx, started.window, |window, cx| {
+        window.input("More", cx);
+    });
+    click(&started, "find-close", cx);
+    click(&started, "find-book", cx);
+    press(&started, "backspace", cx);
+    cx.executor()
+        .advance_clock(crate::shared::ui::search_bar::TYPING_PAUSE);
+    settle(&started, cx);
+    assert_eq!(chapter_of(&started, cx), 0);
+    assert!(!has(&started, "find-status", cx));
+}
+
+#[gpui_kit::test]
+fn unreadable_chapters_leave_book_search_incomplete(cx: &mut TestAppContext) {
+    let started = start(cx, 900.0).unwrap();
+    settle(&started, cx);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(started.fixture.roots.book(started.key))
+        .unwrap()
+        .set_len(1)
+        .unwrap();
+    click(&started, "find-book", cx);
+    enter_book_query(&started, "More", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(
+            window
+                .find("find-status")
+                .label()
+                .unwrap()
+                .starts_with("Search incomplete.")
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn a_book_match_opens_a_page_deep_in_another_chapter(cx: &mut TestAppContext) {
+    let started = start(cx, 900.0).unwrap();
+    settle(&started, cx);
+    click(&started, "find-book", cx);
+    enter_book_query(&started, "Second", cx);
+    assert_eq!(chapter_of(&started, cx), 1);
+    assert!(top(&started, cx) > 0);
+}
+
+#[gpui_kit::test]
+fn the_compact_reader_title_has_room_between_the_controls(cx: &mut TestAppContext) {
+    let started = start(cx, 390.0).unwrap();
+    started.page.update(cx, |page, cx| {
+        page.title = "The Quiet Orchard".into();
+        cx.notify();
+    });
+    settle(&started, cx);
+    testing::frame(cx, started.window, |window, _| {
+        let heading = window.find("page-heading").bounds();
+        let appearance = window.find("appearance").bounds();
+        assert!(heading.right() <= appearance.left());
+        assert!(window.find("edit").bounds().right() <= window.viewport_size().width);
+        assert!(window.find("find-book").visible());
+    });
+}

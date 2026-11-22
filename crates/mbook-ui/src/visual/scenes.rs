@@ -12,8 +12,8 @@ use crate::app::show_about;
 use crate::entities::catalogue::Settings;
 use crate::error::{Error, Result};
 use crate::features::import_book::{ImportQueue, ImportStatus};
-use crate::pages::library::{FindBooks, LibraryEvent};
-use crate::shared::actions::About;
+use crate::pages::library::LibraryEvent;
+use crate::shared::actions::{About, Find};
 
 /// Which library a shot is taken over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -248,7 +248,7 @@ fn seed_imports(stage: &mut Stage) -> Result<()> {
 
 /// Types words in the search field.
 fn type_in_search(stage: &mut Stage, words: &str) -> Result<()> {
-    stage.with_window(|window, cx| window.dispatch_action(FindBooks.boxed_clone(), cx))?;
+    stage.with_window(|window, cx| window.dispatch_action(Find.boxed_clone(), cx))?;
     stage.settle()?;
     stage.type_text(words)
 }

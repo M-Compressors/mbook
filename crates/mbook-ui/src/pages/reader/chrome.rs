@@ -25,7 +25,7 @@ use super::keys::{
 use super::pagination::Layout;
 use super::{Panel, Phase, ReaderEvent, ReaderPage};
 use crate::features::appearance::Appearance;
-use crate::shared::actions::GoBack;
+use crate::shared::actions::{Find, GoBack};
 use crate::shared::layout::SizeClass;
 use crate::shared::ui::{
     BAR_HEIGHT, empty_state, icon_button, page_colors, page_header, status_line, target_size,
@@ -51,7 +51,7 @@ impl Render for ReaderPage {
         let keep = appearance.settings().keep_controls;
         let (page, ink) = page_colors(tone);
         let ready = matches!(&self.phase, Phase::Ready(reading) if reading.error.is_none());
-        let show = self.controls.shown || keep || !ready;
+        let show = self.controls.shown || self.search.open || keep || !ready;
         let presence = Presence::new("reader-controls", show)
             .transition(Transition::new(FADE))
             .sample(window, cx);
@@ -101,6 +101,7 @@ impl Render for ReaderPage {
                 this.touch(cx);
                 this.handles.back.focus(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &Find, window, cx| this.show_search(window, cx)))
             .on_action(cx.listener(|this, _: &GoBack, window, cx| {
                 if let Some(panel) = this.panel {
                     this.close_panel(window, cx);
@@ -109,6 +110,8 @@ impl Render for ReaderPage {
                         Panel::Appearance => &this.handles.appearance,
                     }
                     .focus(window, cx);
+                } else if this.search.open {
+                    this.close_search(window, cx);
                 } else if !this.back(cx) {
                     cx.propagate();
                 }
@@ -120,6 +123,10 @@ impl Render for ReaderPage {
             )
             .child(Self::pointer_activity(cx))
             .child(self.header(class, (page, ink), presence, cx))
+            .children(
+                self.search
+                    .render(Self::step_search, Self::close_search, cx),
+            )
             .child(
                 div()
                     .id("reader-body")
@@ -220,6 +227,14 @@ impl ReaderPage {
         if reading {
             leading = leading.child(self.contents_control(class, cx));
             trailing = trailing.child(self.appearance_control(class, cx));
+        }
+        if matches!(self.phase, Phase::Ready(_)) {
+            trailing = trailing.child(
+                icon_button("find-book", IconName::Search, "Find in book")
+                    .rounded_full()
+                    .track_focus(&self.handles.search)
+                    .on_click(cx.listener(|this, _, window, cx| this.show_search(window, cx))),
+            );
         }
         if ready {
             trailing = trailing.child(

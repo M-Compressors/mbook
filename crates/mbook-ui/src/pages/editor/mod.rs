@@ -35,6 +35,7 @@ mod picture_prompt;
 mod place_picker;
 mod preview;
 mod prompts;
+mod search;
 mod sections;
 mod session;
 #[cfg(test)]
@@ -59,10 +60,12 @@ use crate::features::appearance::Appearance;
 use crate::features::edit_book::actor::{self, EditHandle};
 use crate::features::edit_book::command::Command;
 use crate::shared::model::BookKey;
+use crate::shared::ui::search_bar::SearchBar;
 use crate::widgets::chapter_view::ChapterView;
 
 use self::details::Fields;
 use self::encode::{Job, Target};
+use self::search::ChapterMatch;
 use self::session::{MetaField, Session, ViewMode};
 use self::visual::VisualEditor;
 
@@ -151,6 +154,8 @@ pub(crate) struct EditorPage {
     /// The Markdown editor, which holds the text of the open chapter.
     text: Entity<EditorState>,
     visual: VisualEditor,
+    search: SearchBar<ChapterMatch>,
+    search_button: FocusHandle,
     /// The preview of the text of the editor.
     preview: Entity<ChapterView>,
     /// The preview request for the current chapter text.
@@ -207,7 +212,9 @@ impl EditorPage {
         // Our Escape + Tab bindings take precedence over the block editor's Tab.
         keys::bind(cx);
         let fields = Fields::new(window, cx);
+        let search = SearchBar::new("Find in chapter", window, cx);
         let mut subscriptions = vec![
+            cx.subscribe(&search.input, Self::on_search_input),
             cx.subscribe_in(&text, window, |this, _, event: &InputEvent, window, cx| {
                 this.on_text_event(event, window, cx);
             }),
@@ -231,6 +238,8 @@ impl EditorPage {
             requests: HashMap::new(),
             text,
             visual,
+            search,
+            search_button: cx.focus_handle(),
             preview: preview::new_preview(window, cx),
             preview_figures: None,
             figure_edit: None,

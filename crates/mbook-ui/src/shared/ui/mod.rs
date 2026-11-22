@@ -11,6 +11,7 @@ mod empty_state;
 mod focus;
 mod icon_button;
 mod page_header;
+pub(crate) mod search_bar;
 mod status_line;
 
 pub(crate) use colors::{ChromeColors, page_colors};

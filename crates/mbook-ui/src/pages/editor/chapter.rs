@@ -5,7 +5,7 @@ use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{ButtonVariants as _, Toggle, ToggleGroup};
 use gpui_kit::component::input::Editor;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
 use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div, px, relative,
@@ -130,6 +130,10 @@ impl EditorPage {
             .size_full()
             .min_h_0()
             .child(self.render_chapter_bar(&path, class, cx))
+            .children(
+                self.search
+                    .render(Self::step_search, Self::close_search, cx),
+            )
             .children(self.session.error_text(&Control::Chapters).map(|message| {
                 status_line("chapters-error", message)
                     .px_3()
@@ -272,8 +276,20 @@ impl EditorPage {
                             .min_h(px(target_size()))
                     })),
             )
+            .child(self.chapter_search_button(path, cx))
             .child(Self::chapter_menu(path, index, last, cx))
             .into_any_element()
+    }
+
+    fn chapter_search_button(
+        &self,
+        path: &str,
+        cx: &mut Context<'_, Self>,
+    ) -> impl IntoElement + use<> {
+        icon_button("find-chapter", IconName::Search, "Find in chapter")
+            .track_focus(&self.search_button)
+            .disabled(self.loaded.as_deref() != Some(path))
+            .on_click(cx.listener(|this, _, window, cx| this.show_search(window, cx)))
     }
 
     /// The menu of what changes the chapter itself: its place in the reading

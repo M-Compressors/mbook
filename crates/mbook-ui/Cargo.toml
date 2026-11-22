@@ -51,6 +51,8 @@ mbook-converter = { path = "../mbook-converter", version = "0.2.0" }
 image.workspace = true
 markdown.workspace = true
 percent-encoding.workspace = true
+regex = "1"
+unicode-segmentation = "1"
 tempfile.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

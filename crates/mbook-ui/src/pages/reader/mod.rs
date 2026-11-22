@@ -20,6 +20,7 @@ mod keys;
 mod pagination;
 mod pictures;
 mod scrubber;
+mod search;
 #[cfg(test)]
 mod support;
 #[cfg(test)]
@@ -42,6 +43,7 @@ use self::controls::{HIDE_AFTER, Plan};
 use self::pagination::BookPages;
 use self::pictures::{CONCURRENCY, Job, Pictures};
 use self::scrubber::Scrubber;
+use self::search::BookMatch;
 use self::typography::TypographyPanel;
 use crate::entities::book::chapter::{PreparedChapter, Target};
 use crate::entities::book::error::BookError;
@@ -52,6 +54,7 @@ use crate::features::appearance::Appearance;
 use crate::features::reading_position::{PositionKeeper, now_ms, reading_state};
 use crate::shared::layout::SizeClass;
 use crate::shared::model::{BookKey, Place};
+use crate::shared::ui::search_bar::SearchBar;
 use crate::widgets::chapter_view::{ChapterView, ChapterViewEvent, Direction};
 
 /// How many places the "back" of the reader remembers.
@@ -136,6 +139,7 @@ struct Controls {
 struct Handles {
     back: FocusHandle,
     contents: FocusHandle,
+    search: FocusHandle,
     appearance: FocusHandle,
     edit: FocusHandle,
     previous: FocusHandle,
@@ -148,6 +152,7 @@ impl Handles {
         Self {
             back: cx.focus_handle(),
             contents: cx.focus_handle(),
+            search: cx.focus_handle(),
             appearance: cx.focus_handle(),
             edit: cx.focus_handle(),
             previous: cx.focus_handle(),
@@ -161,6 +166,7 @@ impl Handles {
         [
             &self.back,
             &self.contents,
+            &self.search,
             &self.appearance,
             &self.edit,
             &self.previous,
@@ -183,6 +189,7 @@ pub(crate) struct ReaderPage {
     view: Entity<ChapterView>,
     keeper: Entity<PositionKeeper>,
     contents: Entity<ContentsPanel>,
+    search: SearchBar<BookMatch>,
     typography: Entity<TypographyPanel>,
     pictures: Arc<Pictures>,
     /// The size class the cache of pictures was sized for.
@@ -246,7 +253,9 @@ impl ReaderPage {
         });
         let handles = Handles::new(cx);
         let scrubber = Scrubber::new(cx);
+        let search = SearchBar::new("Find in book", window, cx);
         let subscriptions = vec![
+            cx.subscribe(&search.input, Self::on_search_input),
             cx.observe(&appearance, |_, _, cx| cx.notify()),
             cx.subscribe(&scrubber.slider, |this, _, event, cx| {
                 this.on_scrub(event, cx);
@@ -273,6 +282,7 @@ impl ReaderPage {
             view,
             keeper: PositionKeeper::entity(key, cx),
             contents: cx.new(|_| ContentsPanel::new(page)),
+            search,
             typography: TypographyPanel::entity(cx),
             pictures,
             class,
@@ -318,6 +328,7 @@ impl ReaderPage {
         // Dropping the tasks stops the ones that have not started; the ones
         // that have hold the file only for the length of one read.
         self.picture_tasks.clear();
+        self.search.hide();
         drop(self.opening.take());
         drop(self.chapter_task.take());
         drop(self.follow_task.take());

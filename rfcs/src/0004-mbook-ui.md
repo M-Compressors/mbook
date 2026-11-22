@@ -179,6 +179,11 @@ Pointer over the slider                  Controls hidden
   technology can operate the slider while its track is hidden.
 - Move the pointer, press a key or tap in the middle of the text to show the
   controls. They fade away after a few seconds of inactivity.
+- Choose **Find in book**, or press Command+F on macOS or Control+F on
+  Windows and Linux. Search matches text without regard to case and opens
+  the page of the match. The bar shows the chapter and surrounding text.
+  Use the arrow buttons, or Return and Shift+Return in the search field, to
+  move between matches. Search wraps across the book. Escape closes the bar.
 - **Contents** lists the entries of the book and marks the current one.
   Contents and appearance open as popovers in an expanded window and as
   bottom sheets in a medium or compact window.
@@ -241,6 +246,11 @@ book under *Book*, then the chapters in reading order under *Chapters*.
   medium window and by icon in a compact one. Split is available in expanded
   windows. Editing opens the first chapter in Visual for both new and
   existing books.
+- **Find in chapter** and the platform's Find shortcut search the open
+  chapter, including unsaved edits. Visual selects the matching text.
+  Source and Split search the Markdown source and select the match on the
+  source side. Preview opens the matching block. The same navigation keys
+  and buttons as in the reader move between matches.
 - **Visual** edits Markdown as blocks. One toolbar holds undo and redo, the
   heading level and inline formatting, quotes and list indents, then what is
   put into the text: **Link**, **Picture** and the **Insert** menu with
@@ -468,7 +478,7 @@ the layers below it.
 | `app` | `run`, the window, the root view, menus and keys |
 | `pages` | `library`, `reader`, `editor`, `settings` |
 | `widgets` | `chapter_view`, the text of a chapter, which the reader and the preview of the editor share. Every other part of a screen belongs to its page until a second page needs it. |
-| `features` | `import_book`, `reading_position`, `appearance`, `edit_book`, `search_library`, `auto_update` |
+| `features` | `import_book`, `reading_position`, `appearance`, `edit_book`, `search_library`, `search_text`, `auto_update` |
 | `entities` | `book` (an open book), `catalogue` (the store), `picture` (decoding and its cache), `figure` (diagram and formula rendering) |
 | `shared` | `roots` (directories), `model` (the key of a book, a place in one), `layout` (size classes), `theme` (colour tokens), `actions`, `ui` (presets over Kit components), `assets` |
 
@@ -492,6 +502,7 @@ methods. A view holds no `BookReader`, no `Book` and no path.
 | `Book::open`, every change of a `Book`, `check`, `save` | Background, by the task that owns the book | Medium |
 | Decoding a picture added in the editor and encoding it as AVIF | Background, one at a time | Low |
 | Filtering the library | Background | High |
+| Matching text in the reader and chapter editor | Background | |
 | Checking for an update; downloading it | Background | Low |
 
 - Code on the main thread **MUST NOT** call a `read_` method of
@@ -648,6 +659,11 @@ An open book is an entity with two parts.
   that begins inside a block, the reader estimates the byte offset from
   the vertical fraction of that block. It writes the position at most once
   a second and when the book closes.
+- Find starts with the current chapter and reads one chapter at a time on the
+  background. It searches words shown by Markdown, including headings, link
+  labels, code and alternative text. It keeps the current match and its source
+  offset for navigation. Only the chapter shown by a match is laid out.
+  Changing the query or closing the bar cancels the remaining chapter reads.
 - After a change to the window or typography, the reader recalculates the
   pages and keeps the page containing the reading anchor. A contents
   entry, link or saved place does the same with its destination offset.
@@ -1147,8 +1163,8 @@ can break in its middle.
 | --- | --- |
 | Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
-| Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures and diagrams scale to fit a page. Mermaid diagrams and KaTeX formulas use the page tone and display alternative text when rendering fails. Other tall blocks can be clipped through a line. |
-| Editor | Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Diagrams and Formulas have syntax-highlighted source dialogs, a preview and removal controls. Visual inserts figure references, and Preview and Split render them. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
+| Reader | Whole-book text search, single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures and diagrams scale to fit a page. Mermaid diagrams and KaTeX formulas use the page tone and display alternative text when rendering fails. Other tall blocks can be clipped through a line. |
+| Editor | Chapter search works on the current draft in Visual, Source, Split and Preview. Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Diagrams and Formulas have syntax-highlighted source dialogs, a preview and removal controls. Visual inserts figure references, and Preview and Split render them. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. The installer is compiled on macOS and Windows. |
 | Release workflow | The workflow produced installers and update archives for v0.1.0. The Trusted Publishing step awaits its first run. The macOS and Windows x64 jobs make NASM available before building. |
@@ -1215,6 +1231,7 @@ asks:
 | Where CPU-bound work runs | The background executor of GPUI | A separate thread pool | Decided by the format author. One scheduler, with priorities, whose tasks are cancelled by dropping them. |
 | What decides a layout | The width of the window | The platform | A narrow desktop window and a phone need the same layout; a platform test gives two code paths that drift apart. |
 | Reading | `BookReader`, lazily | `Book` for everything | A `Book` decodes every chapter and picture before the first line is shown. |
+| Finding text in a book | Scan chapter text on demand | Index the whole book at open | Opening a book stays lazy. Search retains its current match and reads no pictures, with a chapter scan for each step. |
 | Access to the reader | A snapshot on the main thread; the source behind a mutex for background tasks | Table lookups on the main thread | A lookup would wait for a mutex that a read holds during I/O. |
 | Rendering Markdown | The Markdown view of GPUI Kit | A renderer of this crate | It virtualises, selects text, parses off the main thread, and is built on the same `markdown` crate as `mbook`. |
 | Paginating a chapter | Break the chapter using the measured GPUI Kit blocks | A custom Markdown renderer or a fixed `max_lines` value | Measurements include proportional wrapping, headings and images while chapter-wide references stay with the Kit. |
@@ -1295,7 +1312,6 @@ application.
 - **Two-page spreads**, which need two independently positioned columns.
 - **Scrolling from one chapter into the next.**
 - **Shells for iOS and Android.**
-- **Search inside a book**, chapter by chapter on the background.
 - **Highlights, notes and bookmarks**, stored beside the reading place.
 - **Collections** in the library.
 - **A journal of unsaved edits**, replayed after a crash.

@@ -84,6 +84,7 @@ impl EditorPage {
             if mode == ViewMode::Visual && self.loaded.is_some() {
                 self.sync_visual(window, cx);
             }
+            self.refresh_search(true, cx);
             cx.notify();
         }
     }

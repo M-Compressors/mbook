@@ -77,6 +77,17 @@ pub(crate) fn open(path: &Path) -> Result<(BookSnapshot, BookSource), BookError>
 }
 
 impl BookSource {
+    /// Reads the Markdown of one chapter.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the index is absent, the file cannot be read, or
+    /// its lock is poisoned.
+    pub(crate) fn read_chapter(&self, index: usize) -> Result<String, BookError> {
+        let id = self.id(index)?;
+        self.lock()?.read_chapter(id).map_err(BookError::Read)
+    }
+
     /// Reads one chapter and everything the view needs to show it without
     /// touching the file again.
     ///
@@ -93,7 +104,7 @@ impl BookSource {
     /// [`BookError::Unusable`] when the file was poisoned.
     pub(crate) fn prepare_chapter(&self, index: usize) -> Result<PreparedChapter, BookError> {
         let id = self.id(index)?;
-        let text = self.lock()?.read_chapter(id).map_err(BookError::Read)?;
+        let text = self.read_chapter(index)?;
         let analysis = analyse(&text);
         let mut reader = self.lock()?;
         let links = analysis

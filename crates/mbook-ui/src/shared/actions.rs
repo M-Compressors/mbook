@@ -16,6 +16,8 @@ actions!(
         OpenFile,
         /// Saves the book open in the editor.
         Save,
+        /// Looks for text on the current screen.
+        Find,
         /// Goes to the settings.
         OpenSettings,
         /// Goes back to the previous screen. The root handles it unless the

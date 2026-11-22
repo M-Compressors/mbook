@@ -7,3 +7,4 @@ pub(crate) mod edit_book;
 pub(crate) mod import_book;
 pub(crate) mod reading_position;
 pub(crate) mod search_library;
+pub(crate) mod search_text;

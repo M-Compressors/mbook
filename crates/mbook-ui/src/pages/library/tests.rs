@@ -14,7 +14,7 @@ use gpui_kit::{
 use super::*;
 use crate::entities::catalogue::ReadingState;
 use crate::features::appearance::Appearance;
-use crate::shared::actions::OpenFile;
+use crate::shared::actions::{Find, OpenFile};
 use crate::testing::{self, Fixture};
 
 /// Holds the page, as the root does.
@@ -481,8 +481,10 @@ fn the_shelf_shows_every_book_in_the_order_last_added_first(cx: &mut TestAppCont
 #[gpui_kit::test]
 fn words_typed_in_the_search_field_filter_the_shelf(cx: &mut TestAppContext) {
     let harness = start(cx, 1280.0, &["Dune", "Emma", "Dune Messiah"]);
+    cx.update(crate::app::bind_keys);
     harness.frame(cx, |window, cx| {
-        window.dispatch_action(FindBooks.boxed_clone(), cx);
+        let mac = cx.platform_info().os == gpui_kit::OperatingSystem::Mac;
+        window.press(if mac { "cmd-f" } else { "ctrl-f" }, cx);
     });
     cx.run_until_parked();
     harness.frame(cx, |window, cx| window.input("dune", cx));
@@ -502,7 +504,7 @@ fn words_typed_in_the_search_field_filter_the_shelf(cx: &mut TestAppContext) {
 fn escape_in_the_search_field_clears_it(cx: &mut TestAppContext) {
     let harness = start(cx, 1280.0, &["Dune", "Emma"]);
     harness.frame(cx, |window, cx| {
-        window.dispatch_action(FindBooks.boxed_clone(), cx);
+        window.dispatch_action(Find.boxed_clone(), cx);
     });
     cx.run_until_parked();
     harness.frame(cx, |window, cx| window.input("emma", cx));
@@ -522,7 +524,7 @@ fn escape_in_the_search_field_clears_it(cx: &mut TestAppContext) {
 fn the_find_action_puts_the_focus_in_the_search_field(cx: &mut TestAppContext) {
     let harness = start(cx, 1280.0, &["Dune"]);
     harness.frame(cx, |window, cx| {
-        window.dispatch_action(FindBooks.boxed_clone(), cx);
+        window.dispatch_action(Find.boxed_clone(), cx);
     });
     cx.run_until_parked();
     harness.frame(cx, |window, _| {
@@ -978,7 +980,7 @@ fn the_search_tab_shows_the_field_and_leaving_it_drops_the_words(cx: &mut TestAp
 fn the_find_action_opens_the_search_tab_of_a_compact_window(cx: &mut TestAppContext) {
     let harness = start(cx, 390.0, &["Dune"]);
     harness.frame(cx, |window, cx| {
-        window.dispatch_action(FindBooks.boxed_clone(), cx);
+        window.dispatch_action(Find.boxed_clone(), cx);
     });
     cx.run_until_parked();
     assert_eq!(

@@ -4,6 +4,8 @@ use std::rc::Rc;
 
 use gpui_kit::{Action, App, Global, KeyBinding, KeyBindingContextPredicate, actions};
 
+use crate::shared::ui::search_bar::KEY_CONTEXT as FIND_BAR;
+
 /// The key context of the reader.
 pub(super) const CONTEXT: &str = "Reader";
 /// Added to the key context while the controls are hidden, so that Tab can
@@ -64,9 +66,10 @@ pub(crate) fn bind(cx: &mut App) {
         ("secondary-[", Box::new(PreviousChapter)),
         ("secondary-]", Box::new(NextChapter)),
     ];
-    let context = KeyBindingContextPredicate::parse(&format!("{CONTEXT} && !{SCRUBBER}"))
-        .ok()
-        .map(Rc::new);
+    let context =
+        KeyBindingContextPredicate::parse(&format!("{CONTEXT} && !{SCRUBBER} && !{FIND_BAR}"))
+            .ok()
+            .map(Rc::new);
     // A key the platform cannot parse is left out; the controls still reach
     // every action.
     let bindings: Vec<KeyBinding> = keys

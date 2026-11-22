@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The reader searches all chapters of the book, and the editor searches the
+  current chapter including unsaved edits. Open search with the magnifying
+  glass, Command+F on macOS or Control+F on Windows and Linux.
 - The release workflow publishes `mbook` and `mbook-converter` to crates.io
   through Trusted Publishing before building the application installers.
 - A manual release run uses the selected Git tag as its ref.

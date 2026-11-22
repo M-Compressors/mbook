@@ -18,11 +18,11 @@ use gpui_kit::{
 use super::imports::imports_panel;
 use super::shelf::{gap, side};
 use super::sidebar::{WIDTH, search_field};
-use super::{FindBooks, LibraryEvent, LibraryPage, Tab, error_words};
+use super::{LibraryEvent, LibraryPage, Tab, error_words};
 use crate::entities::catalogue::{Library, ShelfBook};
 use crate::features::appearance::Appearance;
 use crate::features::search_library::{Progress, Section, Sort, continue_reading};
-use crate::shared::actions::OpenFile;
+use crate::shared::actions::{Find, OpenFile};
 use crate::shared::layout::{SizeClass, shelf_columns};
 use crate::shared::ui::{empty_state, icon_button, page_header, status_line, target_size};
 
@@ -464,7 +464,7 @@ impl Render for LibraryPage {
             .test_support()
             .key_context("Library")
             .track_focus(&self.focus_handle)
-            .on_action(cx.listener(|this, _: &FindBooks, window, cx| this.find(window, cx)))
+            .on_action(cx.listener(|this, _: &Find, window, cx| this.find(window, cx)))
             .on_key_down(
                 cx.listener(|this, event: &gpui_kit::KeyDownEvent, window, cx| {
                     // Only when the page itself holds the focus: the arrows of a

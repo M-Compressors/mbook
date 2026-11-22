@@ -330,6 +330,7 @@ impl EditorPage {
         self.session.text_typed(&path);
         let text = self.text.read(cx).value();
         self.update_preview(&text, window, cx);
+        self.refresh_search(false, cx);
         self.escaped = false;
         self.flush_timer = Some(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(TYPING_PAUSE).await;
@@ -376,6 +377,7 @@ impl EditorPage {
     /// Loads the text of the open chapter into the editor, unless it is there.
     pub(super) fn load_open_text(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let Some(path) = self.session.open.clone() else {
+            self.search.hide();
             self.loaded = None;
             self.load_task = None;
             self.set_editor_text("", false, window, cx);
@@ -385,6 +387,7 @@ impl EditorPage {
         if self.loaded.as_deref() == Some(path.as_str()) {
             return;
         }
+        self.search.hide();
         self.load_generation += 1;
         let generation = self.load_generation;
         self.loaded = None;
@@ -614,6 +617,7 @@ impl EditorPage {
                 self.saving.leave_after = false;
                 let count = outline.problems.len();
                 self.take(seq, outline, window, cx);
+                self.search.hide();
                 self.session.show_section(Section::Problems);
                 announce(unsaved_announcement(count), window, cx);
             }
@@ -641,6 +645,7 @@ impl EditorPage {
     pub(super) fn back(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         let compact = Self::class(window, cx) == crate::shared::layout::SizeClass::Compact;
         if compact && self.session.step_back() {
+            self.search.hide();
             cx.notify();
         } else {
             self.request_leave(window, cx);

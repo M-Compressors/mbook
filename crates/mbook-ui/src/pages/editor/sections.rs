@@ -207,6 +207,9 @@ impl EditorPage {
     ) {
         use gpui_kit::component::WindowExt as _;
         self.flush_text(window, cx);
+        if section != Section::Chapters {
+            self.search.hide();
+        }
         self.session.show_section(section);
         if section == Section::Chapters && self.session.open.is_none() {
             if let Some(first) = self

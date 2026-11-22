@@ -4953,6 +4953,7 @@ dependencies = [
  "ratex-types",
  "ratex-unicode-font",
  "redb",
+ "regex",
  "rfd",
  "self_update",
  "serde_json",
@@ -4960,6 +4961,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tree-sitter-mermaid",
+ "unicode-segmentation",
  "uuid",
  "winresource",
 ]

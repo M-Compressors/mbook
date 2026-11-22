@@ -126,7 +126,6 @@ impl RenderOnce for PageHeader {
             (self.leading, self.trailing)
         };
         let row = h_flex()
-            .w_full()
             .h_full()
             .items_center()
             .gap_2()
@@ -134,17 +133,24 @@ impl RenderOnce for PageHeader {
             .opacity(self.opacity);
         let content = if self.centred && !self.bare {
             let rail = px(2.0 * target_size() + 10.0);
-            row.child(h_flex().w(rail).flex_none().children(leading))
+            // Fit the row inside the space left by the native window controls.
+            row.w(px(0.0))
+                .flex_1()
+                .min_w_0()
+                .child(h_flex().min_w(rail).flex_none().children(leading))
                 .child(heading)
                 .child(
                     h_flex()
-                        .w(rail)
+                        .min_w(rail)
                         .flex_none()
                         .justify_end()
                         .children(trailing),
                 )
         } else {
-            row.children(leading).child(heading).children(trailing)
+            row.w_full()
+                .children(leading)
+                .child(heading)
+                .children(trailing)
         };
         TitleBar::new()
             .h(px(BAR_HEIGHT) + top)

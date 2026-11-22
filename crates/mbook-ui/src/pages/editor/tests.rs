@@ -3285,3 +3285,79 @@ fn inserting_figures_with_empty_descriptions_uses_the_resource_kind(cx: &mut Tes
         assert_eq!(editor_text(&setup, cx), expected);
     }
 }
+
+fn enter_chapter_query(setup: &Setup, query: &str, cx: &mut TestAppContext) {
+    frame(setup, cx, |window, cx| window.input(query, cx));
+    cx.run_until_parked();
+    finish_chapter_search(cx);
+}
+
+fn finish_chapter_search(cx: &mut TestAppContext) {
+    cx.executor()
+        .advance_clock(crate::shared::ui::search_bar::TYPING_PAUSE);
+    cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn the_chapter_find_shortcut_searches_unsaved_visual_text(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    select_visual(&setup, "First text.", 0..0, cx);
+    focus_editor(&setup, cx);
+    frame(&setup, cx, |window, cx| window.input("Café ", cx));
+    cx.run_until_parked();
+    let mac = cx.update(|cx| cx.platform_info().os == gpui_kit::OperatingSystem::Mac);
+    press(&setup, if mac { "cmd-f" } else { "ctrl-f" }, cx);
+    assert!(state(&setup, cx, |page| page.search.open));
+    enter_chapter_query(&setup, "CAFÉ", cx);
+    setup.page.read_with(cx, |page, cx| {
+        let visual = page.visual.input.read(cx);
+        assert!(
+            matches!(visual.selection(), BlockSelection::Text { anchor, head }
+            if anchor.offset == 0 && head.offset == "Café".len())
+        );
+        assert!(page.search.current.is_some());
+    });
+    press(&setup, "escape", cx);
+    assert!(!state(&setup, cx, |page| page.search.open));
+    assert!(setup.events.borrow().is_empty());
+}
+
+#[gpui_kit::test]
+fn source_search_selects_the_markdown_match(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "mode-source", cx);
+    focus_editor(&setup, cx);
+    let mac = cx.update(|cx| cx.platform_info().os == gpui_kit::OperatingSystem::Mac);
+    press(&setup, if mac { "cmd-f" } else { "ctrl-f" }, cx);
+    assert!(state(&setup, cx, |page| page.search.open));
+    enter_chapter_query(&setup, "# One", cx);
+    setup.page.read_with(cx, |page, cx| {
+        assert_eq!(page.text.read(cx).selected_range(), 0..5);
+    });
+}
+
+#[gpui_kit::test]
+fn chapter_search_does_not_find_text_from_another_chapter(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "find-chapter", cx);
+    enter_chapter_query(&setup, "Second text", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("find-status").label(), Some("No matches"));
+    });
+}
+
+#[gpui_kit::test]
+fn chapter_find_tracks_the_current_view_and_closes_on_chapter_change(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "find-chapter", cx);
+    enter_chapter_query(&setup, "First", cx);
+    click(&setup, "mode-preview", cx);
+    finish_chapter_search(cx);
+    assert!(state(&setup, cx, |page| page.search.current.is_some()));
+    click(&setup, "find-next", cx);
+    assert!(state(&setup, cx, |page| page.search.current.is_some()));
+    act(&setup, cx, |page, window, cx| {
+        page.open_chapter("ch02.md", window, cx);
+    });
+    assert!(!state(&setup, cx, |page| page.search.open));
+}

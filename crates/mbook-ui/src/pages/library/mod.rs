@@ -28,8 +28,8 @@ use std::sync::Arc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{
-    App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, Global,
-    SharedString, Subscription, Task, Window, actions,
+    App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, SharedString,
+    Subscription, Task, Window,
 };
 
 use self::shelf::Shelf;
@@ -40,14 +40,6 @@ use crate::features::search_library::{Counts, Section, Sort, counts, select};
 use crate::shared::layout::SizeClass;
 use crate::shared::model::BookKey;
 use crate::shared::ui::announce;
-
-actions!(
-    library,
-    [
-        /// Moves the keyboard focus to the search field of the library.
-        FindBooks
-    ]
-);
 
 /// What the library asks the root to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,12 +64,6 @@ pub(crate) enum Tab {
     /// Every book, with the search field above them.
     Search,
 }
-
-/// Marks that the keys of the page are bound, so that a second page does not
-/// bind them again.
-struct KeysBound;
-
-impl Global for KeysBound {}
 
 /// The page of the library.
 pub(crate) struct LibraryPage {
@@ -126,7 +112,6 @@ impl LibraryPage {
     /// The first page also installs the queue of imports, which outlives the
     /// page.
     pub(crate) fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
-        bind_keys(cx);
         let library = Library::global(cx);
         let queue = ImportQueue::install(window, cx);
         let search = cx.new(|cx| {
@@ -402,19 +387,6 @@ pub(super) fn error_words(error: &crate::entities::catalogue::LibraryError) -> S
         "The library could not be read or changed: {}.",
         crate::features::import_book::error_chain(error)
     )
-}
-
-/// Binds the key of the search field, once for the application.
-fn bind_keys(cx: &mut App) {
-    if cx.has_global::<KeysBound>() {
-        return;
-    }
-    cx.set_global(KeysBound);
-    if let Ok(binding) =
-        gpui_kit::KeyBinding::load("secondary-f", Box::new(FindBooks), None, false, None, cx)
-    {
-        cx.bind_keys([binding]);
-    }
 }
 
 impl Focusable for LibraryPage {

@@ -16,7 +16,7 @@ use super::sections::control;
 use super::session::{Level, Phase, Section};
 use crate::entities::catalogue::Library;
 use crate::features::appearance::Appearance;
-use crate::shared::actions::{GoBack, Save};
+use crate::shared::actions::{Find, GoBack, Save};
 use crate::shared::layout::SizeClass;
 use crate::shared::ui::{back_button, empty_state, page_header, status_line};
 
@@ -241,6 +241,7 @@ impl Render for EditorPage {
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|this, _: &GoBack, window, cx| this.on_go_back(window, cx)))
             .on_action(cx.listener(|this, _: &Save, window, cx| this.save(window, cx)))
+            .on_action(cx.listener(|this, _: &Find, window, cx| this.show_search(window, cx)))
             .on_action(cx.listener(|this, _: &LeaveEditor, window, cx| {
                 this.leave_editor(false, window, cx);
             }))
@@ -266,7 +267,9 @@ impl EditorPage {
     /// Escape, or the key that goes back: in the Markdown editor it only
     /// arms Tab to leave it; anywhere else it leaves the page.
     fn on_go_back(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if !self.escaped && self.text_focus(cx).contains_focused(window, cx) {
+        if self.search.open {
+            self.close_search(window, cx);
+        } else if !self.escaped && self.text_focus(cx).contains_focused(window, cx) {
             self.escaped = true;
             cx.notify();
         } else {

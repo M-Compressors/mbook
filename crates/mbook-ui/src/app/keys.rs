@@ -9,7 +9,7 @@ use gpui_kit::{
     Action, App, KeyBinding, Menu, MenuItem, OperatingSystem, OsAction, SystemMenuType,
 };
 
-use crate::shared::actions::{About, GoBack, OpenFile, OpenSettings, Quit, Save};
+use crate::shared::actions::{About, Find, GoBack, OpenFile, OpenSettings, Quit, Save};
 
 /// The name of the application in its menus.
 const NAME: &str = "mbook";
@@ -35,6 +35,14 @@ fn table(os: OperatingSystem) -> Vec<(&'static str, Box<dyn Action>)> {
         ("secondary-q", Box::new(Quit)),
         ("secondary-o", Box::new(OpenFile)),
         (save, Box::new(Save)),
+        (
+            if os == OperatingSystem::Mac {
+                "cmd-f"
+            } else {
+                "ctrl-f"
+            },
+            Box::new(Find),
+        ),
         ("secondary-,", Box::new(OpenSettings)),
         ("escape", Box::new(GoBack)),
         (back, Box::new(GoBack)),
@@ -80,6 +88,8 @@ fn menus() -> Vec<Menu> {
             MenuItem::os_action("Copy", Copy, OsAction::Copy),
             MenuItem::os_action("Paste", Paste, OsAction::Paste),
             MenuItem::os_action("Select all", SelectAll, OsAction::SelectAll),
+            MenuItem::separator(),
+            MenuItem::action("Find…", Find),
         ]),
     ]
 }
@@ -134,6 +144,21 @@ mod tests {
     }
 
     #[test]
+    fn find_uses_command_on_mac_and_control_on_windows_and_linux() {
+        for (os, expected) in [
+            (OperatingSystem::Mac, "cmd-f"),
+            (OperatingSystem::Windows, "ctrl-f"),
+            (OperatingSystem::Linux, "ctrl-f"),
+        ] {
+            let binding = table(os)
+                .into_iter()
+                .find(|(_, action)| action.partial_eq(&Find))
+                .map(|(key, _)| key);
+            assert_eq!(binding, Some(expected), "{os:?}");
+        }
+    }
+
+    #[test]
     fn the_menu_bar_has_the_application_file_and_edit() {
         let names: Vec<_> = menus().into_iter().map(|menu| menu.name).collect();
         assert_eq!(names, ["mbook", "File", "Edit"]);
@@ -176,6 +201,7 @@ mod tests {
             assert!(find(Keystroke::parse("escape").unwrap(), &GoBack, cx));
             assert!(find(key("cmd-o", "ctrl-o"), &OpenFile, cx));
             assert!(find(key("cmd-s", "ctrl-s"), &Save, cx));
+            assert!(find(key("cmd-f", "ctrl-f"), &Find, cx));
             assert!(find(key("cmd-,", "ctrl-,"), &OpenSettings, cx));
             assert!(find(key("cmd-q", "ctrl-q"), &Quit, cx));
         });
