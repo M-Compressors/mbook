@@ -11,8 +11,8 @@
 //! * **a page at a time**, when the reader enables pagination.
 //!   The Kit lays the chapter out as one column and tells the height of every
 //!   block; [`pages`] divides that column into pages that end between two
-//!   lines. The view puts the start of a page at the top of the window and
-//!   covers what follows its end. Optional page-turn motion uses the motion
+//!   lines. The list viewport fits the page’s visible content, leaving the
+//!   rest of the sheet blank. Optional page-turn motion uses the motion
 //!   of the Kit: the page slides out towards where it came from and the next
 //!   one slides in.
 //!
@@ -67,6 +67,7 @@ use gpui_kit::base::text::{
     MarkdownExtensions, RangeHighlight, TextView, TextViewState, TextViewStyle,
 };
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, DispatchPhase, ElementId, Entity,
     EventEmitter, FontWeight, HitboxBehavior, Hsla, ImageCacheError, ImageSource,
@@ -157,6 +158,8 @@ struct Turn {
 /// The pages of a text that is shown a page at a time.
 #[derive(Default)]
 struct Paging {
+    /// Available sheet height, independent of the visible page's extent.
+    height: Rc<Cell<Pixels>>,
     /// The heights of the list items the pages were made from.
     heights: Vec<f32>,
     /// What the pages were divided by; `None` until they are made.
@@ -955,7 +958,7 @@ impl ChapterView {
             return;
         }
         let list = self.state.read(cx).list_state().clone();
-        let page = list.viewport_bounds().size.height.as_f32();
+        let page = paging.height.get().as_f32();
         let Some(heights) = measured_heights(&list) else {
             return;
         };
@@ -1181,9 +1184,11 @@ impl ChapterView {
             self.geometry = Some(geometry);
             self.state.read(cx).list_state().remeasure();
         }
-        if self.paging.is_some() && (self.pictures.is_some() || !self.figure_sources.is_empty()) {
+        if let Some(paging) = &self.paging
+            && (self.pictures.is_some() || !self.figure_sources.is_empty())
+        {
             let list = self.state.read(cx).list_state();
-            let page = list.viewport_bounds().size.height.as_f32();
+            let page = paging.height.get().as_f32();
             // Leave room for the paragraph gap and the line that can precede an inline image.
             let height = if page >= 1.0 {
                 (page - gap - line).max(1.0)
@@ -1289,7 +1294,7 @@ impl Render for ChapterView {
             .relative()
             .child(Self::wheel_catcher(cx))
             .child(Self::margin(Direction::Back, hints, ink, cx))
-            .child(self.sheet(view, column, page, window, cx))
+            .child(self.sheet(view, column, window, cx))
             .child(Self::margin(Direction::Forward, hints, ink, cx))
     }
 }
@@ -1372,13 +1377,11 @@ impl ChapterView {
         .size_0()
     }
 
-    /// The page of a paged text: the column of the Kit with the start of the
-    /// page at its top, and what follows the end of the page covered.
+    /// Shows one page at the top of a sheet of the available height.
     fn sheet(
         &mut self,
         view: TextView,
         column: f32,
-        paper: Hsla,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
@@ -1410,26 +1413,21 @@ impl ChapterView {
                 list.scroll_to(top);
             }
         }
-        // What the frame was drawn from. When the layout of the frame gives
-        // another height, the pages are divided again in the next.
-        let seen = (
-            list.viewport_bounds().size.height,
-            list.max_offset_for_scrollbar().y,
-        );
+        let height = self.paging.as_ref().map(|paging| paging.height.clone());
+        let seen_offset = list.max_offset_for_scrollbar().y;
         let watch = canvas(
-            move |_, window, _| {
-                let now = (
-                    list.viewport_bounds().size.height,
-                    list.max_offset_for_scrollbar().y,
-                );
-                if now != seen {
+            move |bounds, window, _| {
+                let resized = height
+                    .as_ref()
+                    .is_some_and(|height| height.replace(bounds.size.height) != bounds.size.height);
+                if resized || list.max_offset_for_scrollbar().y != seen_offset {
                     window.request_animation_frame();
                 }
             },
             |_, (), _, _| {},
         )
         .absolute()
-        .size_0();
+        .inset_0();
         let visible = ready && page.is_some();
         div()
             .relative()
@@ -1441,21 +1439,14 @@ impl ChapterView {
             .child(
                 div()
                     .size_full()
+                    // The list backfills a viewport taller than the remaining
+                    // text, pulling in the preceding page near chapter end.
+                    .when_some(page.filter(|page| page.extent > 0.0), |view, page| {
+                        view.h(px(page.extent))
+                    })
                     .overflow_hidden()
                     .child(view.w(px(column + SCROLLBAR_ROOM)).pr(px(SCROLLBAR_ROOM))),
             )
-            .children(page.map(|page| {
-                // The lines after the end of the page, which belong to the
-                // next one.
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .top(px(page.extent))
-                    .bottom_0()
-                    .bg(paper)
-                    .block_mouse_except_scroll()
-            }))
             .child(watch)
             .into_any_element()
     }

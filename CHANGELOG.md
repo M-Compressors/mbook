@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Paged reading keeps the final page aligned with its starting block, so a
+  short final page shows the whole illustration without carrying over a
+  strip of the preceding page.
+
 - The reader defaults to scrolling, with optional pagination, five page tones,
   bundled Literata and Noto Sans, and locally saved controls for enlarged text,
   column width, paragraph spacing, motion and reading progress. It keeps the

@@ -325,6 +325,67 @@ fn a_square_picture_taller_than_the_page_stays_on_one_page(cx: &mut TestAppConte
 }
 
 #[gpui_kit::test]
+fn a_picture_on_the_last_page_stays_inside_the_visible_page(cx: &mut TestAppContext) {
+    let started = start_paged(cx, 1000.0, 400.0);
+    started.view.update(cx, |view, cx| {
+        view.set_pictures(
+            picture_resolver(|| Some(PictureState::Pending((1024, 1024)))),
+            cx,
+        );
+        view.set_text("Before.\n\nMore.\n\n![A grey cat](cat.avif)\n", cx);
+    });
+    settle(&started, cx);
+    started.view.update(cx, ChapterView::reveal_end);
+    settle(&started, cx);
+    started.view.read_with(cx, |view, cx| {
+        let paging = view.paging.as_ref().unwrap();
+        let page = paging.pages[paging.page];
+        assert_eq!(page.item, 2, "{:?}", paging.pages);
+        let list = view.state.read(cx).list_state();
+        let picture = list.bounds_for_item(2).unwrap();
+        let origin = list.viewport_bounds().top();
+        assert!(
+            picture.bottom() <= origin + px(page.extent),
+            "{picture:?}, {page:?}"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn adjacent_full_page_pictures_are_shown_on_separate_pages(cx: &mut TestAppContext) {
+    let started = start_paged(cx, 1000.0, 400.0);
+    started.view.update(cx, |view, cx| {
+        view.set_pictures(
+            picture_resolver(|| Some(PictureState::Pending((1024, 1024)))),
+            cx,
+        );
+        view.set_text(
+            "# Chapter\n\nBefore the pictures.\n\n![First](first.avif)\n\n![Second](second.avif)\n",
+            cx,
+        );
+    });
+    settle(&started, cx);
+    for picture in [2, 3] {
+        started
+            .view
+            .update(cx, |view, cx| view.turn_page(Direction::Forward, cx));
+        settle(&started, cx);
+        started.view.read_with(cx, |view, cx| {
+            let list = view.state.read(cx).list_state();
+            assert_eq!(
+                list.logical_scroll_top(),
+                ListOffset {
+                    item_ix: picture,
+                    offset_in_item: px(0.0)
+                },
+            );
+            let image_block = list.bounds_for_item(picture).unwrap();
+            assert!(image_block.bottom() <= list.viewport_bounds().bottom());
+        });
+    }
+}
+
+#[gpui_kit::test]
 fn a_ready_picture_is_drawn_without_a_placeholder(cx: &mut TestAppContext) {
     let started = start(cx, 800.0, 600.0);
     let image = crate::entities::picture::Bitmap::from_rgba(4, 2, vec![255; 32])

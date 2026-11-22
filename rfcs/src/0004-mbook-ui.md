@@ -631,8 +631,10 @@ An open book is an entity with two parts.
   destination to `Destination`, the figure sources, and the offsets.
 - The reader and editor preview use the Markdown view of GPUI Kit.
   The scrolling reader lets the list handle wheel and touchpad events.
-  The optional paged reader measures the top-level blocks, moves the list
-  to the selected page's start, and masks the content below its end.
+  The optional paged reader measures the top-level blocks and gives the
+  list a viewport exactly as tall as the selected page's content. A short
+  last page leaves blank space below it. Page breaks and picture sizes
+  are calculated from the full available sheet height.
 - Paragraphs split at rendered line boundaries, avoiding a single line at
   either end of a break when there is room. A heading stays with the content
   that follows when they fit together. Other blocks move intact to the next
