@@ -21,7 +21,7 @@ them.
 [![Tests](https://github.com/M-Compressors/mbook/actions/workflows/ci.yml/badge.svg?branch=main)][ci]
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
-**[Design documents][site]** · [File format][format] · [Library API][api] · [Decisions][adr] · [Changelog](CHANGELOG.md)
+**[Documentation][site]** · [File format][format] · [Library][lib] · [Converter][converter] · [Application][app] · [Changelog](CHANGELOG.md)
 
 ## Why mbook
 
@@ -97,13 +97,10 @@ The format and APIs are drafts and may still change.
 
 | Part | State |
 | --- | --- |
-| File format, version 1.0 | Draft: [RFC 0001][format] |
-| Library API | Draft: [RFC 0002][api] |
-| Converter API | Draft: [RFC 0003][converter] |
-| Application | Draft: [RFC 0004][app] |
-| `mbook` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including chapter anchor tables and diagram and formula sources. Tested against files built by hand and against real AVIF pictures. Available on [crates.io](https://crates.io/crates/mbook). |
-| `mbook-ui` | A first version of RFC 0004: library and book creation, filtered import and export from the book menu, a scrolling reader with optional pagination and page-fitted pictures, local appearance settings, bundled offline fonts, and whole-book search, an editor with chapter search and a chapter list by title, with a default Visual view for tables, lists and code, dialogs that link to a place of the book and put a picture into a chapter, a Contents section that shows the contents and edits a stored list entry by entry, a Landmarks section for notes, a picture gallery with encoding controls, syntax-highlighted diagram and formula editing and previews, settings, and release updates with a banner below the title bar. Building for x86 or x86-64 requires NASM. Tested in headless windows and on macOS with an imported book. Remaining platform and accessibility checks are listed in [RFC 0004][app-status]. Installers are available from [GitHub Releases](https://github.com/M-Compressors/mbook/releases). |
-| `mbook-converter` | Implements RFC 0003: Imports EPUB, FB2, PDF, comic archives, Word, HTML, Markdown and plain text. Imported pictures are encoded as AVIF. The optional `export` feature writes all eight formats and is enabled in the app. Importing Mermaid fences and math markup as resources is pending. The limits of each format are listed in [RFC 0003][converter-status]. Tested against sources its tests build in memory; not yet against a collection of real books. Available on [crates.io](https://crates.io/crates/mbook-converter). |
+| File format, version 1.0 | Draft: [RFC 0001][format], with its [decision records][adr] |
+| `mbook` | Implements the whole of RFC 0001 and of [its API][lib-api]: lazy reading, loading into memory, creating, editing, checking and writing, including chapter anchor tables and diagram and formula sources. Tested against files built by hand and against real AVIF pictures. Available on [crates.io](https://crates.io/crates/mbook). |
+| `mbook-ui` | A first version of [the application][app]: library and book creation, filtered import and export from the book menu, a scrolling reader with optional pagination and page-fitted pictures, local appearance settings, bundled offline fonts, and whole-book search, an editor with chapter search and a chapter list by title, with a default Visual view for tables, lists and code, dialogs that link to a place of the book and put a picture into a chapter, a Contents section that shows the contents and edits a stored list entry by entry, a Landmarks section for notes, a picture gallery with encoding controls, syntax-highlighted diagram and formula editing and previews, settings, and release updates with a banner below the title bar. Building for x86 or x86-64 requires NASM. Tested in headless windows and on macOS with an imported book. Remaining platform and accessibility checks are listed in [its status page][app-status]. Installers are available from [GitHub Releases](https://github.com/M-Compressors/mbook/releases). |
+| `mbook-converter` | Implements [its API][converter-api]: imports EPUB, FB2, PDF, comic archives, Word, HTML, Markdown and plain text. Imported pictures are encoded as AVIF. The optional `export` feature writes all eight formats and is enabled in the app. Importing Mermaid fences and math markup as resources is pending. The limits of each format are listed in [its conversion rules][converter-status]. Tested against sources its tests build in memory; not yet against a collection of real books. Available on [crates.io](https://crates.io/crates/mbook-converter). |
 
 ## What is in a file
 
@@ -125,7 +122,9 @@ The complete rules are in [RFC 0001][format].
 
 `mbook` has two central types. `BookReader` reads a book lazily from
 anything that can seek; `Book` is a whole book in memory that can be changed
-and written out. The API is described in [RFC 0002][api].
+and written out. More examples are in its [README](crates/mbook/README.md)
+and its [guide][lib-guide]; every type and call is in the
+[API reference][lib-api].
 
 ```rust
 use mbook::BookReader;
@@ -136,7 +135,8 @@ println!("{}", book.meta().title());
 for entry in book.toc() {
     println!("{}{}", "  ".repeat(usize::from(entry.level) - 1), entry.title);
 }
-if let Some(first) = book.chapters().next().map(|chapter| chapter.id) {
+let first = book.chapters().next().map(|chapter| chapter.id);
+if let Some(first) = first {
     let markdown = book.read_chapter(first)?;
 }
 ```
@@ -161,8 +161,10 @@ Requires **Rust 1.89 or later**.
 ## The converter
 
 `mbook-converter` takes a book as any `Read` or as a byte slice and writes an
-mbook file, or hands back a `Book` that can still be changed. Its design is
-[RFC 0003][converter].
+mbook file, or hands back a `Book` that can still be changed. More examples
+are in its [README](crates/mbook-converter/README.md) and its
+[guide][converter-guide]; what a conversion keeps and drops is in the
+[conversion rules][converter-rules].
 
 ```rust
 use mbook_converter::Converter;
@@ -178,15 +180,39 @@ for warning in &report.warnings {
 ```
 
 Every source format is one Cargo feature, all on by default: `epub`, `fb2`,
-`pdf`, `cbz`, `docx`, `html`, `md`, `txt`.
+`pdf`, `cbz`, `docx`, `html`, `md`, `txt`. The optional `export` feature
+writes a `Book` in any of the same eight formats.
+
+## The application
+
+`mbook-ui` is a library of books, a reader and an editor in one window.
+Install it from [GitHub Releases](https://github.com/M-Compressors/mbook/releases)
+or run it from source; its [README](crates/mbook-ui/README.md) and its
+[guide][app-guide] say what each screen does.
+
+```sh
+cargo run -p mbook-ui
+```
+
+## Documentation
+
+The [site] is built from [`docs/`](docs/). It keeps two kinds of document
+apart:
+
+| | Where | What it is |
+| --- | --- | --- |
+| **The format** | [RFC 0001][format] and its [decision records][adr] | The specification: what a file must contain, and why. It binds every implementation. |
+| **The crates** | [`mbook`][lib], [`mbook-converter`][converter], [`mbook-ui`][app] | A guide, a reference and the design of each crate. They describe this code and change with it. |
+
+The README of each crate holds its examples and a summary of those pages.
 
 ## Repository layout
 
 | Path | Contents |
 | --- | --- |
-| [`rfcs/`](rfcs/) | The design documents, an mdBook published at the [site]. |
+| [`docs/`](docs/) | The documentation, an mdBook published at the [site]: the format under [`rfcs/`](docs/src/rfcs/), and one folder of pages per crate. |
 | [`crates/mbook/`](crates/mbook/) | The library. |
-| [`crates/mbook-converter/`](crates/mbook-converter/) | The converter from EPUB, FB2, PDF and other formats. |
+| [`crates/mbook-converter/`](crates/mbook-converter/) | The converter from and to EPUB, FB2, PDF and other formats. |
 | [`crates/mbook-ui/`](crates/mbook-ui/) | The reading application, built with GPUI Kit. |
 
 ## Development
@@ -195,11 +221,11 @@ Every source format is one Cargo feature, all on by default: `epub`, `fb2`,
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
-mdbook serve rfcs --open
+mdbook serve docs --open
 ```
 
-The design documents need [mdBook] and [mdbook-mermaid]; run
-`mdbook-mermaid install rfcs` once before the first build.
+The documentation needs [mdBook] and [mdbook-mermaid]; run
+`mdbook-mermaid install docs` once before the first build.
 
 ## Contributing
 
@@ -224,14 +250,20 @@ conditions.
 
 [ci]: https://github.com/M-Compressors/mbook/actions/workflows/ci.yml
 [site]: https://m-compressors.github.io/mbook/
-[format]: https://m-compressors.github.io/mbook/0001-mbook-format.html
-[api]: https://m-compressors.github.io/mbook/0002-mbook-api.html
-[converter]: https://m-compressors.github.io/mbook/0003-mbook-converter-api.html
-[app]: https://m-compressors.github.io/mbook/0004-mbook-ui.html
-[app-status]: https://m-compressors.github.io/mbook/0004-mbook-ui.html#what-is-implemented
-[converter-status]: https://m-compressors.github.io/mbook/0003-mbook-converter-api.html#what-is-implemented
-[adr]: https://m-compressors.github.io/mbook/adr/overview.html
-[measured]: https://m-compressors.github.io/mbook/0001-mbook-format.html#a-converted-book
+[format]: https://m-compressors.github.io/mbook/rfcs/0001-mbook-format.html
+[adr]: https://m-compressors.github.io/mbook/rfcs/adr/overview.html
+[measured]: https://m-compressors.github.io/mbook/rfcs/0001-mbook-format.html#a-converted-book
+[lib]: https://m-compressors.github.io/mbook/mbook/index.html
+[lib-guide]: https://m-compressors.github.io/mbook/mbook/guide.html
+[lib-api]: https://m-compressors.github.io/mbook/mbook/api.html
+[converter]: https://m-compressors.github.io/mbook/mbook-converter/index.html
+[converter-guide]: https://m-compressors.github.io/mbook/mbook-converter/guide.html
+[converter-api]: https://m-compressors.github.io/mbook/mbook-converter/api.html
+[converter-rules]: https://m-compressors.github.io/mbook/mbook-converter/conversion.html
+[converter-status]: https://m-compressors.github.io/mbook/mbook-converter/conversion.html#what-is-implemented
+[app]: https://m-compressors.github.io/mbook/mbook-ui/index.html
+[app-guide]: https://m-compressors.github.io/mbook/mbook-ui/guide.html
+[app-status]: https://m-compressors.github.io/mbook/mbook-ui/status.html#what-is-implemented
 [mopenzl]: https://github.com/M-Compressors/mopenzl
 [OpenZL]: https://github.com/facebook/openzl
 [mdBook]: https://github.com/rust-lang/mdBook

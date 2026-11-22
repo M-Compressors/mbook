@@ -1,7 +1,7 @@
 //! The rows of the `books` and `state` tables, and how they are encoded.
 //!
 //! Both are encoded with the value types `redb` supports itself: tuples,
-//! strings, integers, booleans and options of them (RFC 0004, "The
+//! strings, integers, booleans and options of them (mbook-ui docs, "The
 //! catalogue"). Nothing is serialised by a second library.
 //!
 //! `books`, keyed by the `u128` of the [`BookKey`]:

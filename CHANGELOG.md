@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Changed
+
+- The documentation is one site with two kinds of document. RFC 0001 and
+  its decision records specify the format and nothing else. RFC 0002,
+  RFC 0003 and RFC 0004 are retired: what they said about `mbook`,
+  `mbook-converter` and `mbook-ui` is now a section of pages per crate,
+  with an overview, a guide, reference pages and the design. The pages of a
+  crate describe the code and are not normative.
+- The book moved from `rfcs/` to `docs/`, with the format under
+  `docs/src/rfcs/`, and is built with `mdbook build docs`. The addresses the
+  site had before lead to the new pages.
+- The README of each crate holds more examples and a summary of its pages:
+  the two types, limits and features of `mbook`; the formats, the losses a
+  conversion reports and the defaults of `mbook-converter`; the screens,
+  keys and storage of `mbook-ui`.
+- The site shows the icon of the application, links every page to its
+  source for editing, and gives tables the width of the column.
+
+### Fixed
+
+- The reading example of the README compiles: it kept the iterator of
+  chapters borrowed while it read a chapter.
+- The pages of `mbook-ui` no longer list conversion from mbook among the
+  non-goals, nor export among the future possibilities: the application
+  exports since v0.3.0.
+
 ## [v0.3.0](https://github.com/M-Compressors/mbook/releases/tag/v0.3.0) - 2026-11-23
 
 - Export a saved book from the library’s book menu as EPUB, DOCX, PDF, FB2,

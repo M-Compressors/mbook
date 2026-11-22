@@ -5,7 +5,7 @@
 //! and `false`, a page tone by its name. A setting that is not stored has its
 //! default; a page tone that follows the system has no row. A stored value
 //! that cannot be read, or is out of range, never fails a read: it is
-//! replaced by the default or brought into range (RFC 0004, "Settings").
+//! replaced by the default or brought into range (mbook-ui docs, "Settings").
 
 use std::collections::HashMap;
 

@@ -4,7 +4,7 @@
 //! [`ChapterView`]: the Markdown
 //! view of GPUI Kit set in the typeface, size, line height and page tone of
 //! the settings, so that the preview and the reader are the same view with the
-//! same style (RFC 0004, "Editing").
+//! same style (mbook-ui docs, "Editing").
 //!
 //! Diagrams and formulas come from the editing session. Pictures show their
 //! alternative text. Links do nothing.

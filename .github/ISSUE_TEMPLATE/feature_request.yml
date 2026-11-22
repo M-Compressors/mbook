@@ -5,17 +5,19 @@ body:
   - type: markdown
     attributes:
       value: |
-        The format and the library API are specified by the
-        [design documents](https://m-compressors.github.io/mbook/). A proposal
-        that changes either ends as an update to an RFC, so it helps to say
-        which section it touches.
+        The format is specified by RFC 0001, and each crate is described by
+        its pages of the [documentation](https://m-compressors.github.io/mbook/).
+        A proposal ends as an update to one of them, so it helps to say which
+        section it touches.
   - type: dropdown
     id: scope
     attributes:
       label: What it changes
       options:
         - The file format (RFC 0001)
-        - The library API (RFC 0002)
+        - The library (`mbook`)
+        - The converter (`mbook-converter`)
+        - The application (`mbook-ui`)
         - Tooling, documentation or something else
     validations:
       required: true

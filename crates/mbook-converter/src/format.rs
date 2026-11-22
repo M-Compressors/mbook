@@ -44,7 +44,7 @@ pub enum Format {
 const PICTURE_EXTENSIONS: [&str; 7] = ["avif", "bmp", "gif", "jpeg", "jpg", "png", "webp"];
 
 impl Format {
-    /// Every format, in the order of the table of RFC 0003.
+    /// Every format, in the order of "Formats and features" in the docs.
     pub const ALL: &'static [Self] = &[
         Self::Epub,
         Self::Fb2,
@@ -98,8 +98,8 @@ impl Format {
     }
 
     /// Recognises a format from the content of a source, by the rules of
-    /// "Detection" in RFC 0003. Markdown and plain text are never
-    /// recognised.
+    /// "Detection" in the conversion rules of the docs. Markdown and plain
+    /// text are never recognised.
     pub(crate) fn detect(source: &[u8]) -> Option<Self> {
         let head = source.get(..source.len().min(1024)).unwrap_or_default();
         if head.windows(5).any(|window| window == b"%PDF-") {

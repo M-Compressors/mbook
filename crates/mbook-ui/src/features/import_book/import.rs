@@ -1,7 +1,7 @@
 //! One import, from a file to a row of the catalogue.
 //!
 //! Everything here reads files, converts and encodes: it runs on the
-//! background executor (RFC 0004, "Threads").
+//! background executor (mbook-ui docs, "Threads").
 
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read as _, Write as _};

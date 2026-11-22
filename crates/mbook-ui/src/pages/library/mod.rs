@@ -1,6 +1,6 @@
 //! The library: the books on a shelf.
 //!
-//! One page for the three size classes (RFC 0004, "Library" and "Layout"):
+//! One page for the three size classes (mbook-ui docs, "Library" and "Layout"):
 //!
 //! - **Expanded**: a docked sidebar (search, sections, imports) beside the
 //!   shelf, with the card "Continue reading" above it.

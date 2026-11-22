@@ -4,7 +4,7 @@
 //! ([`EditHandle`](actor::EditHandle)) that sends it [`Command`](command::Command)s. The future is spawned on a
 //! background executor; commands are applied in the order they were sent and
 //! each answers with an [`Outline`](outline::Outline) of the book, which is all the main thread
-//! knows of it (RFC 0004, "Editing").
+//! knows of it (mbook-ui docs, "Editing").
 //!
 //! The future uses only channels, so it runs on any executor.
 

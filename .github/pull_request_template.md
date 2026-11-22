@@ -2,10 +2,12 @@
 
 <!-- What does this change and why? Link the issue it addresses (Fixes #...). -->
 
-## Design documents
+## Documentation
 
-<!-- For a change to the file format or to the public API: which RFC or
-     decision record under `rfcs/` was updated. Otherwise write "N/A". -->
+<!-- For a change to the file format: which section of the RFC or which
+     decision record under `docs/src/rfcs/` was updated. For a change to a
+     crate: which page under `docs/src/<crate>/`, and its README if an
+     example or the summary changed. Otherwise write "N/A". -->
 
 ## Checklist
 
@@ -15,7 +17,7 @@
 - [ ] `cargo test --workspace --all-features --locked`
 - [ ] `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked`
 - [ ] New and changed functions are covered by tests (`cargo llvm-cov`); bug fixes include a regression test
-- [ ] RFCs and decision records updated, and `mdbook build rfcs` passes, if behaviour or the format changed
+- [ ] The RFC and decision records updated if the format changed; the pages and the README of the crate updated if its behaviour changed; `mdbook build docs` passes
 - [ ] The status table in `README.md` is still true
 - [ ] `CHANGELOG.md` updated for user-visible changes
 - [ ] No new `#[allow(..)]`; any `#[expect(..)]` has a reason

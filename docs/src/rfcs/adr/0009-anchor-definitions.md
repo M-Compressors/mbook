@@ -88,11 +88,11 @@ chapter, as link reference definitions. Written into RFC 0001 as proposals:
 
 - Easier: an editing library computes every offset from the text again, and
   an edit keeps the names it does not delete
-  ([RFC 0002](../0002-mbook-api.md#extra-anchors)).
+  ([`mbook`, Extra anchors](../../mbook/api.md#extra-anchors)).
 - Easier: unpacking a book into a folder and packing it again keeps every
   link target.
 - Easier: a converter writes one line of Markdown per link target instead of
-  tracking byte offsets ([RFC 0003](../0003-mbook-converter-api.md#links-and-footnotes)).
+  tracking byte offsets ([`mbook-converter`, Links and footnotes](../../mbook-converter/conversion.md#links-and-footnotes)).
 - Harder: a writer must know two rules of CommonMark. A definition cannot
   interrupt a paragraph, so it needs an empty line or the start of a block
   before it; and a following line that is only a quoted or parenthesised

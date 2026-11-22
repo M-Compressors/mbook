@@ -1,5 +1,5 @@
-//! Building a book from a draft: the rules of "Assembling the book" in
-//! RFC 0003, the same for every source format.
+//! Building a book from a draft: the rules of "Assembling the book" in the
+//! conversion rules of the docs, the same for every source format.
 
 mod meta;
 #[cfg(pictures)]

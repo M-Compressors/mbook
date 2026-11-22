@@ -1,5 +1,5 @@
 //! Offering an update: the entity that checks, installs and shows the bar
-//! below the page header (RFC 0004, "Updates").
+//! below the page header (mbook-ui docs, "Updates").
 //!
 //! One [`UpdateBanner`] serves the whole application. Each page shows it below
 //! its header. The settings ask it to check now, so that there is one check at

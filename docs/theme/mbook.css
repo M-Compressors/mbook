@@ -1,0 +1,47 @@
+/* Additions to the stock mdBook theme. Colours come from its variables, so
+   every theme of the picker keeps working. */
+
+:root {
+    /* The pages are mostly tables; give them room. */
+    --content-max-width: 880px;
+}
+
+/* A table fills the column, and a long cell wraps instead of stretching
+   the page sideways. */
+.content table {
+    width: 100%;
+    margin: 1.2em 0;
+    font-size: 0.95em;
+}
+
+.content table td,
+.content table th {
+    vertical-align: top;
+    padding: 6px 12px;
+}
+
+.content table th {
+    text-align: start;
+}
+
+
+/* The two-column table under a page title lists facts about the page: no
+   header row to show. */
+.content table thead:has(th:empty:first-child:nth-last-child(2)) {
+    display: none;
+}
+
+/* Code in a table cell breaks only where it has to. */
+.content table code {
+    overflow-wrap: anywhere;
+}
+
+/* Signatures and ASCII layouts are wider than prose; scroll them. */
+.content pre > code {
+    font-size: 0.85em;
+}
+
+.content .mermaid {
+    text-align: center;
+    margin: 1.5em 0;
+}

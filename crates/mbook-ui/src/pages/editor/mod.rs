@@ -3,9 +3,9 @@
 //! The whole `mbook::Book` is owned by one background task, the actor of
 //! [`crate::features::edit_book`]. The page holds an
 //! [`Outline`](crate::features::edit_book::outline::Outline) of the book,
-//! sends commands and shows what comes back; it never holds a `Book` (RFC 0004,
-//! "Editing"). The state that has no window in it is [`session::Session`], and
-//! the views render it:
+//! sends commands and shows what comes back; it never holds a `Book`
+//! (mbook-ui docs, "Editing"). The state that has no window in it is
+//! [`session::Session`], and the views render it:
 //!
 //! - `view` composes the page for each size class,
 //! - `sections` is the list of sections and chapters,

@@ -4,7 +4,7 @@
 //! every change goes through [`Appearance::update`], so it shows at once: in
 //! the sample at the end of the reading settings, in an open book, in the
 //! interface itself. On a compact window the form is one column of the full
-//! width; on a larger one it is a column of at most 640 px (RFC 0004,
+//! width; on a larger one it is a column of at most 640 px (mbook-ui docs,
 //! "Settings").
 
 mod choices;

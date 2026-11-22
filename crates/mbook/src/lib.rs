@@ -2,8 +2,9 @@
 //!
 //! An mbook file holds a book as Markdown chapters and AVIF pictures, with
 //! diagrams in Mermaid notation, formulas in the notation of `KaTeX`, and
-//! small tables that describe it. The format is specified by RFC 0001 and this
-//! API by RFC 0002, both in the `rfcs` folder of the repository.
+//! small tables that describe it. The format is specified by RFC 0001, in the
+//! `docs/src/rfcs` folder of the repository, and this API is described in
+//! `docs/src/mbook`.
 //!
 //! Two types do the work:
 //!

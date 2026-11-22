@@ -3,7 +3,7 @@
 /// How much room a window gives its content.
 ///
 /// A view takes its layout from the size class of its window and from nothing
-/// else; it never tests the operating system (RFC 0004, "Layout").
+/// else; it never tests the operating system (mbook-ui docs, "Layout").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum SizeClass {
     /// Below 600 px: a stack of screens with a bar at the bottom.

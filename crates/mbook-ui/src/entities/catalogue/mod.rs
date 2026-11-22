@@ -1,7 +1,7 @@
 //! The catalogue: the store of the library.
 //!
 //! One `redb` database with three tables, `books`, `state` and `settings`,
-//! and a schema version (RFC 0004, "The catalogue"). The store is
+//! and a schema version (mbook-ui docs, "The catalogue"). The store is
 //! synchronous and knows nothing of the interface; it is shared as an
 //! `Arc<Catalogue>` and called from background tasks.
 

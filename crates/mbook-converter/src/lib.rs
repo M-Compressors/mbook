@@ -22,7 +22,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! The design is described by RFC 0003 in the `rfcs` folder of the
+//! The design is described in the `docs/src/mbook-converter` folder of the
 //! repository.
 //!
 //! # Features

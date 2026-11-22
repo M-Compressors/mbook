@@ -2,25 +2,47 @@
 
 These instructions apply to all repository-owned code and documents.
 
-## Design documents come first
+## Documents come first
 
-- The file format is specified by `rfcs/src/0001-mbook-format.md` and the API
-  of `mbook` by `rfcs/src/0002-mbook-api.md`. Read them, and the
-  decision records in `rfcs/src/adr/`, before changing behaviour.
-- A change to the format or to a public API updates its RFC in the same
-  change. Code that disagrees with an RFC is an incomplete change.
+- The documentation is one mdBook in `docs/`, published to GitHub Pages. It
+  keeps two kinds of document apart:
+  - **The format** is specified by `docs/src/rfcs/0001-mbook-format.md` and
+    explained by the decision records in `docs/src/rfcs/adr/`. An RFC
+    describes the format only: a type, a dependency or any other detail of
+    the crates of this repository does not belong in it.
+  - **A crate** is described by its own pages in `docs/src/<crate>/`
+    (`mbook`, `mbook-converter`, `mbook-ui`): `index.md` says what it is and
+    what it is for, `guide.md` shows each task, the reference pages
+    (`api.md`, `conversion.md`, `architecture.md` and the like) say what
+    exactly it does, and `design.md` holds its dependencies, drawbacks,
+    rationale and open questions.
+
+  Read the RFC, the decision records and the pages of the crate before
+  changing behaviour.
+- A change to the format updates the RFC, and a change to the public API or
+  the behaviour of a crate updates the pages of that crate, in the same
+  change. Code that disagrees with either is an incomplete change.
+- The `README.md` of a crate holds usage examples and a summary of its
+  pages. Update it when an example, a feature, a default or a limit it
+  quotes changes, and compile its examples against the crate before
+  finishing. It links to the published site, not to files of the
+  repository, because crates.io shows it too.
 - A choice between alternatives is recorded: as a decision record
-  (`rfcs/src/adr/NNNN-title.md`, listed in `adr/overview.md` and
+  (`docs/src/rfcs/adr/NNNN-title.md`, listed in `adr/overview.md` and
   `SUMMARY.md`) for the format, and in the "Rationale and alternatives" table
-  of the RFC for the library.
+  of the crate's `design.md` for a crate.
 - A detail the format author has not confirmed is marked *proposed* in its
   record. Ask before building on one.
-- Documents are written in English. Normative text uses the key words of
-  RFC 2119 in capitals, and only inside "Reference-level explanation".
+- Documents are written in English. The key words of RFC 2119 in capitals
+  are used only inside "Reference-level explanation" of an RFC. The pages of
+  a crate are descriptive: an invariant of the code is stated with a plain
+  "must".
 - Describe what exists. Mark unimplemented paths explicitly instead of
   documenting intended behaviour as if it were there; the status table in
   `README.md` is kept current.
-- Build the book with `mdbook build rfcs` after editing it.
+- A new page is listed in `docs/src/SUMMARY.md`. A page that moves keeps its
+  old address through `[output.html.redirect]` in `docs/book.toml`.
+- Build the book with `mdbook build docs` after editing it.
 
 ## Architecture and API boundaries
 
@@ -52,7 +74,8 @@ These instructions apply to all repository-owned code and documents.
   `github-slugger`. Before writing a helper, look for a crate, and read its
   source for what it actually does. Keep own code only when no crate meets
   the rule of the RFC, the minimum Rust version and the license, and record
-  the crates that were ruled out in RFC 0002, as is done for the AVIF size.
+  the crates that were ruled out in the `design.md` of the crate, as
+  `docs/src/mbook/design.md` does for the AVIF size.
 - Every crate carries the licenses as symbolic links to the files at the
   repository root, so a published package contains them without a second
   copy to keep in sync:
@@ -123,7 +146,9 @@ After changing Rust code:
 4. `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features --locked`,
    and with each feature alone.
 5. Check coverage for every changed function.
-6. Update the RFCs, the status table in `README.md`, and `CHANGELOG.md`.
+6. Update the documentation (the RFC for the format; the pages and the
+   `README.md` of the crate for its API and behaviour), the status table in
+   `README.md`, and `CHANGELOG.md`.
 
-After changing a document under `rfcs/`: `mdbook build rfcs`, and check that
+After changing a document under `docs/`: `mdbook build docs`, and check that
 new links resolve.

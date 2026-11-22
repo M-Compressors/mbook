@@ -4,11 +4,15 @@ on:
   push:
     branches: [main]
     paths:
-      - 'rfcs/**'
+      - 'docs/**'
+      # The favicon of the site is the icon of the application.
+      - 'crates/mbook-ui/assets/icon.*'
       - '.github/workflows/pages.yml'
   pull_request:
     paths:
-      - 'rfcs/**'
+      - 'docs/**'
+      # The favicon of the site is the icon of the application.
+      - 'crates/mbook-ui/assets/icon.*'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -41,12 +45,12 @@ jobs:
           cargo install mdbook-mermaid --version "$MDBOOK_MERMAID_VERSION" --locked
       # The diagram scripts are not kept in version control.
       - name: Extract diagram scripts
-        run: mdbook-mermaid install rfcs
+        run: mdbook-mermaid install docs
       - name: Build book
-        run: mdbook build rfcs
+        run: mdbook build docs
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: target/rfcs-book
+          path: target/book
 
   deploy:
     name: Publish GitHub Pages

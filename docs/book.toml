@@ -1,0 +1,69 @@
+[book]
+title = "mbook"
+description = "The mbook book format: its specification, and the documentation of the mbook, mbook-converter and mbook-ui crates."
+language = "en"
+src = "src"
+
+[build]
+# Keep generated HTML next to Cargo's own build output.
+build-dir = "../target/book"
+create-missing = false
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+# Specifications quote exact bytes and ASCII punctuation; never rewrite them.
+smart-punctuation = false
+mathjax-support = false
+no-section-label = true
+git-repository-url = "https://github.com/M-Compressors/mbook"
+edit-url-template = "https://github.com/M-Compressors/mbook/edit/main/docs/{path}"
+# The book is published at https://m-compressors.github.io/mbook/.
+site-url = "/mbook/"
+additional-css = ["theme/mbook.css"]
+# Extracted by `mdbook-mermaid install docs`; not kept in version control.
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
+
+[output.html.playground]
+# The Rust playground does not provide mopenzl.
+runnable = false
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 20
+use-boolean-and = true
+
+# Addresses this site had before the format and the crates got sections of
+# their own. A fragment is carried over to the new page; the ones listed are
+# sections that moved to another page than the overview of their crate.
+[output.html.redirect]
+"/0001-mbook-format.html" = "rfcs/0001-mbook-format.html"
+"/adr/overview.html" = "../rfcs/adr/overview.html"
+"/adr/0001-independent-frames.html" = "../rfcs/adr/0001-independent-frames.html"
+"/adr/0002-stored-avif.html" = "../rfcs/adr/0002-stored-avif.html"
+"/adr/0003-format-header.html" = "../rfcs/adr/0003-format-header.html"
+"/adr/0004-typed-columns.html" = "../rfcs/adr/0004-typed-columns.html"
+"/adr/0005-paths-and-resource-table.html" = "../rfcs/adr/0005-paths-and-resource-table.html"
+"/adr/0006-markdown-dialect.html" = "../rfcs/adr/0006-markdown-dialect.html"
+"/adr/0007-positions-and-anchors.html" = "../rfcs/adr/0007-positions-and-anchors.html"
+"/adr/0008-chapter-anchor-tables.html" = "../rfcs/adr/0008-chapter-anchor-tables.html"
+"/adr/0009-anchor-definitions.html" = "../rfcs/adr/0009-anchor-definitions.html"
+"/adr/0010-landmarks.html" = "../rfcs/adr/0010-landmarks.html"
+"/adr/0011-diagrams-and-formulas.html" = "../rfcs/adr/0011-diagrams-and-formulas.html"
+"/0002-mbook-api.html" = "mbook/index.html"
+"/0002-mbook-api.html#guide-level-explanation" = "mbook/guide.html"
+"/0002-mbook-api.html#reference-level-explanation" = "mbook/api.html"
+"/0003-mbook-converter-api.html" = "mbook-converter/index.html"
+"/0003-mbook-converter-api.html#guide-level-explanation" = "mbook-converter/guide.html"
+"/0003-mbook-converter-api.html#export" = "mbook-converter/api.html#export"
+"/0003-mbook-converter-api.html#what-is-implemented" = "mbook-converter/conversion.html#what-is-implemented"
+"/0004-mbook-ui.html" = "mbook-ui/index.html"
+"/0004-mbook-ui.html#guide-level-explanation" = "mbook-ui/guide.html"
+"/0004-mbook-ui.html#what-is-implemented" = "mbook-ui/status.html#what-is-implemented"

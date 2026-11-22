@@ -12,7 +12,7 @@ formats link to more than headings: EPUB and FB2 let any element carry an
 identifier, and cross-references such as "see figure 3" or an index entry
 lead to a paragraph, a figure or a row of a table.
 
-A converter ([RFC 0003](../0003-mbook-converter-api.md)) could only send such
+A converter ([`mbook-converter`](../../mbook-converter/index.md)) could only send such
 a link to the nearest heading above its target. The format itself did not
 forbid other rows in resource 4, but that table is decoded whenever a file is
 opened: a reference work with a name on every paragraph would pay for all of
@@ -95,4 +95,4 @@ RFC 0001 as proposals:
 2. [x] Writer: emit the table before a chapter that has such anchors, and
    none otherwise.
 3. [ ] Converter: name the targets of internal links
-   ([RFC 0003](../0003-mbook-converter-api.md#links-and-footnotes)).
+   ([`mbook-converter`, Links and footnotes](../../mbook-converter/conversion.md#links-and-footnotes)).

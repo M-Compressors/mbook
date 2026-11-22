@@ -3,8 +3,8 @@
 //!
 //! Nothing here blocks the main thread. Every read of the catalogue and every
 //! write to it, and every removal of a file, runs on the background executor
-//! of GPUI (RFC 0004, "Threads"). The entity keeps its tasks, so that dropping
-//! it cancels what has not started.
+//! of GPUI (mbook-ui docs, "Threads"). The entity keeps its tasks, so that
+//! dropping it cancels what has not started.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;

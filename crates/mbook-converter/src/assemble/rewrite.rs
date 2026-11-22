@@ -127,7 +127,7 @@ pub(crate) struct Rules<'a> {
     pub(crate) warnings: &'a mut Vec<Warning>,
 }
 
-/// Rewrites a chapter by the rules of "Assembling the book" in RFC 0003.
+/// Rewrites a chapter by the rules of "Assembling the book" in the docs.
 pub(crate) fn rewrite(text: &str, tree: &Node, scan: &Scan, rules: Rules<'_>) -> String {
     let mut rewriter = Rewriter {
         text,

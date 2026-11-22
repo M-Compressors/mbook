@@ -1,4 +1,4 @@
-//! Updates from the releases of the repository (RFC 0004, "Updates").
+//! Updates from the releases of the repository (mbook-ui docs, "Updates").
 //!
 //! [`check`] asks the releases for a version newer than the running one;
 //! [`install`] downloads its archive, verifies the signature against the key

@@ -1,6 +1,6 @@
 //! The colours of the application, and the rule they are held to.
 //!
-//! The values are the tokens of RFC 0004, "Visual direction". Views take
+//! The values are the tokens of mbook-ui docs, "Visual direction". Views take
 //! colours from here and write no colour of their own.
 
 /// A colour as red, green and blue, each from 0 to 255.

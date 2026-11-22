@@ -21,7 +21,7 @@ especially welcome. Please report privately anything that lets a file cause:
 - content that silently differs from what was written, without an error.
 
 A flaw in the format itself, such as a rule of
-[RFC 0001](rfcs/src/0001-mbook-format.md) that cannot be implemented safely,
+[RFC 0001](docs/src/rfcs/0001-mbook-format.md) that cannot be implemented safely,
 is in scope as well.
 
 Not vulnerabilities:

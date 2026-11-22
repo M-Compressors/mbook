@@ -195,7 +195,7 @@ impl Appearance {
     }
 
     /// The size class of the window: its width over the size of the
-    /// interface. Layouts take it and nothing else (RFC 0004, "Layout").
+    /// interface. Layouts take it and nothing else (mbook-ui docs, "Layout").
     pub(crate) fn size_class(&self, window: &Window) -> SizeClass {
         SizeClass::of(
             window.viewport_size().width.as_f32(),

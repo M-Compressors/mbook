@@ -12,7 +12,7 @@ does not answer "where is the index": it lists titles, in the order of the
 text, and an application cannot tell which entry is which. EPUB solves this
 with a second list next to the contents, the *landmarks*, in which every
 entry has a kind from a fixed vocabulary. A converter
-([RFC 0003](../0003-mbook-converter-api.md)) had nowhere to put that list.
+([`mbook-converter`](../../mbook-converter/index.md)) had nowhere to put that list.
 
 ## Decision
 

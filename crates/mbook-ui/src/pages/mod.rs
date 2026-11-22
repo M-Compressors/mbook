@@ -3,7 +3,7 @@
 //! A page is an entity that renders, emits an event for the navigation it asks
 //! for, and keeps a focus handle, so that the root can move the keyboard focus
 //! into it. A page never opens another page: it emits an event and the root,
-//! in `app`, decides (RFC 0004, "Guide-level explanation").
+//! in `app`, decides (mbook-ui docs, "The three screens").
 
 pub(crate) mod editor;
 pub(crate) mod library;

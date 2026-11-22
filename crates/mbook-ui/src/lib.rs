@@ -1,8 +1,9 @@
 //! The mbook application: a library of books, a reader and an editor.
 //!
-//! The design is RFC 0004 of the repository. This library holds every model
-//! and view and names no platform; a shell, such as the binary of this
-//! package, supplies the platform and the directories and calls [`run`].
+//! The design is described in the `docs/src/mbook-ui` folder of the
+//! repository. This library holds every model and view and names no platform;
+//! a shell, such as the binary of this package, supplies the platform and the
+//! directories and calls [`run`].
 //!
 //! The modules are the layers of Feature-Sliced Design. A layer uses only the
 //! layers below it: `app`, `pages`, `widgets`, `features`, `entities`,

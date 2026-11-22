@@ -507,8 +507,8 @@ fn the_current_entry_of_an_opened_book_follows_its_headings() -> TestResult {
     Ok(())
 }
 
-// Reading is lazy: RFC 0004, "Reading". A reader that decoded the whole book
-// would meet the damage below when it opens the file.
+// Reading is lazy: mbook-ui docs, "Reading". A reader that decoded the whole
+// book would meet the damage below when it opens the file.
 
 /// The sample book with one byte of its figure changed on disk.
 fn write_sample_with_a_damaged_figure(dir: &TempDir) -> TestResult<PathBuf> {
@@ -578,7 +578,7 @@ fn a_damaged_picture_fails_only_when_it_is_read() -> TestResult {
     Ok(())
 }
 
-// Diagrams and formulas: RFC 0004, "Diagrams and formulas".
+// Diagrams and formulas: mbook-ui docs, "Diagrams and formulas".
 
 const FLOW: &str = "flowchart LR\n  A --> B\n";
 const SPEED: &str = r"v = \frac{s}{t}";

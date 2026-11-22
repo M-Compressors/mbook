@@ -50,7 +50,7 @@ const DAMAGED_EXTENSION: &str = "damaged";
 /// When the catalogue holds no book but the folder of the books holds files of
 /// books, the catalogue was lost: the rows are made again from the files
 /// ([`Catalogue::rebuild`]), and the reading places and settings are lost with
-/// it (RFC 0004, "The catalogue").
+/// it (mbook-ui docs, "The catalogue").
 ///
 /// When the file cannot be opened, it is moved aside to `catalog.redb.damaged`
 /// (replacing an older one), a new catalogue is made and rebuilt from the

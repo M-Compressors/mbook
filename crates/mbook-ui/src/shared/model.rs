@@ -53,7 +53,7 @@ impl FromStr for BookKey {
 /// A place in a book that survives the book being saved again.
 ///
 /// The chapter is named by its path, not by its resource number: numbers
-/// change when a book is written again, paths do not (RFC 0004, "The
+/// change when a book is written again, paths do not (mbook-ui docs, "The
 /// catalogue").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Place {

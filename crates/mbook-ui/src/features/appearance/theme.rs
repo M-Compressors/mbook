@@ -1,4 +1,5 @@
-//! The tokens of RFC 0004 projected onto the theme of GPUI Kit.
+//! The tokens of "Visual direction" in the docs projected onto the theme of
+//! GPUI Kit.
 //!
 //! The Kit has one global `Theme` with about two hundred colours; the design
 //! has eight tokens. Every Kit colour is derived from a token, so that no

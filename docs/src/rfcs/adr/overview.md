@@ -4,6 +4,12 @@ Each record explains one choice made by
 [RFC 0001](../0001-mbook-format.md): the situation, the options compared, the
 trade-off, and the consequences.
 
+The records are about the format only. A choice made by one of the crates is
+in the "Rationale and alternatives" table of its Design page:
+[mbook](../../mbook/design.md#rationale-and-alternatives),
+[mbook-converter](../../mbook-converter/design.md#rationale-and-alternatives),
+[mbook-ui](../../mbook-ui/design.md#rationale-and-alternatives).
+
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-independent-frames.md) | One mopenzl framed container; one OpenZL frame per resource | Accepted |

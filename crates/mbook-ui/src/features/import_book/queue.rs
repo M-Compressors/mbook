@@ -1,7 +1,8 @@
 //! The imports that are running or have finished.
 //!
-//! Files are imported one at a time (RFC 0004, "Threads": a conversion holds
-//! its source and its book in memory, and the AVIF encoder uses every core).
+//! Files are imported one at a time (mbook-ui docs, "Threads": a conversion
+//! holds its source and its book in memory, and the AVIF encoder uses every
+//! core).
 //! Each import runs inside a task on the background executor and tells the
 //! entity its steps over a channel, so the main thread neither waits nor polls.
 //! The entity keeps its task: dropping the queue cancels what has not started,

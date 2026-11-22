@@ -55,7 +55,7 @@ no parsing to apply and are the value a parser already reports for a heading.
 - Easier: a contents row with a non-zero offset must match an anchor row
   (decided 2026-11-21), so a contents target is a path and an optional anchor
   name, and an editing library never handles raw offsets
-  ([RFC 0002](../0002-mbook-api.md#navigation)).
+  ([`mbook`, Navigation](../../mbook/api.md#navigation)).
 - Harder: editing a chapter invalidates saved positions and requires
   rebuilding `toc` and `anchors`.
 - To revisit: whether the GitHub naming rule should be specified exactly for

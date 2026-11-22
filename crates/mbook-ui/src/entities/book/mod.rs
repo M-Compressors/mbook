@@ -2,7 +2,7 @@
 //!
 //! The main thread holds a [`snapshot::BookSnapshot`], which is immutable. Background
 //! tasks call the [`source::BookSource`], which owns the file: it prepares chapters,
-//! reads pictures and completes links (RFC 0004, "Reading" and "Threads").
+//! reads pictures and completes links (mbook-ui docs, "Reading" and "Threads").
 //! Nothing here depends on GPUI.
 
 pub(crate) mod chapter;
