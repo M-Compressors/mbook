@@ -269,11 +269,12 @@ book under *Book*, then the chapters in reading order under *Chapters*.
 - **Pictures in this chapter** previews the pictures the chapter refers to.
 
 **Diagrams and formulas.** The **Diagrams** and **Formulas** sections add,
-edit and remove resources. Enter Mermaid or KaTeX source and choose **Preview**
-to see the result or a renderer error. Editing a source keeps its book path
-and the chapter references that use it. In Visual, **Diagram** or **Formula**
-inserts an existing resource at the caret with optional alternative text.
-The chapter's Preview shows the same rendering as the reader.
+edit and remove resources. The source field highlights Mermaid or LaTeX
+syntax as you type. Choose **Preview** to see the result or a renderer error.
+Editing a source keeps its book path and the chapter references that use it.
+In Visual, **Diagram** or **Formula** inserts an existing resource at the
+caret. An empty alternative text field uses the resource kind as the
+description. The chapter's Preview shows the same rendering as the reader.
 
 **Linking.** **Link** opens one dialog.
 
@@ -689,6 +690,8 @@ GPUI decodes no AVIF, so the application does:
 
 References to diagrams and formulas use the
 [Markdown image syntax of RFC 0001](0001-mbook-format.md#diagram-and-formula-resources).
+The source dialogs use GPUI Kit's code editor with Tree-sitter grammars for
+Mermaid and LaTeX. The highlighting is independent of rendering.
 The application uses `merman` for Mermaid and RaTeX for KaTeX. It renders
 the source on a background task and passes SVG to GPUI. A bounded cache
 is keyed by source, page colours and formula style.
@@ -1082,6 +1085,7 @@ several packages share.
 | `image` | The version and features of the workspace; GPUI brings the same crate | MIT OR Apache-2.0 | Decoding and AVIF encoding of pictures added in the editor; scaling |
 | `futures` | already in the tree of GPUI | MIT OR Apache-2.0 | The channel of the editing task |
 | `merman` | 0.11.0 | MIT OR Apache-2.0 | Draws Mermaid as SVG |
+| `tree-sitter-mermaid`, `codebook-tree-sitter-latex` | 0.3.5 and 0.6.1 | MIT | Syntax highlighting in the Mermaid and KaTeX source dialogs |
 | `ratex-parser`, `ratex-layout`, `ratex-types`, `ratex-svg`, `ratex-font`, `ratex-unicode-font` | 0.1.16 | MIT | Parses and sets KaTeX as SVG with embedded glyph outlines |
 | `ab_glyph`, `serde_json` | 0.2 and 1 | Apache-2.0 and MIT OR Apache-2.0, respectively | System glyph metrics, Mermaid configuration and traversing the formula tree |
 | `uuid`, `tempfile`, `thiserror`, `markdown` | The versions of the workspace | | Keys; files of imports; errors; block offsets |
@@ -1141,7 +1145,7 @@ can break in its middle.
 | Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
 | Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures and diagrams scale to fit a page. Mermaid diagrams and KaTeX formulas use the page tone and display alternative text when rendering fails. Other tall blocks can be clipped through a line. |
-| Editor | Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Diagrams and Formulas have source dialogs, a preview and removal controls. Visual inserts figure references, and Preview and Split render them. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
+| Editor | Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Diagrams and Formulas have syntax-highlighted source dialogs, a preview and removal controls. Visual inserts figure references, and Preview and Split render them. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. The installer is compiled on macOS and Windows. No real release exists, so neither has met the network. |
 | Release workflow | Written; never run. The macOS and Windows x64 jobs make NASM available before building. A local `cargo bundle` on macOS produces the application with its icon. |

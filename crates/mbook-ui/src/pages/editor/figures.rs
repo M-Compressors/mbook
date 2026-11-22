@@ -2,10 +2,11 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 use gpui_kit::component::button::ButtonVariants as _;
-use gpui_kit::component::input::{Input, InputState, Textarea, TextareaState};
+use gpui_kit::component::highlighter::{GrammarConfig, LanguageRegistry};
+use gpui_kit::component::input::{Editor, EditorState, Input, InputState};
 use gpui_kit::component::{ActiveTheme as _, Selectable as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{
     AnyElement, AppContext as _, Context, Focusable as _, InteractiveElement as _, IntoElement,
@@ -194,7 +195,11 @@ impl EditorPage {
             return;
         }
         let selected = Rc::new(Cell::new(0));
-        let description = cx.new(|cx| InputState::new(window, cx));
+        let default_description = match kind {
+            FigureKind::Diagram => "Diagram",
+            FigureKind::Formula => "Formula",
+        };
+        let description = cx.new(|cx| InputState::new(window, cx).placeholder(default_description));
         let first = Cell::new(true);
         let page = cx.weak_entity();
         window.open_alert_dialog(cx, move |alert, window, cx| {
@@ -232,11 +237,13 @@ impl EditorPage {
                 .ok_text(format!("Insert {noun}"))
                 .cancel_text("Cancel")
                 .on_ok(move |_, window, cx| {
-                    let markdown = picture_markdown(
-                        &chapter,
-                        &paths[selected.get()],
-                        &description.read(cx).value(),
-                    );
+                    let description = description.read(cx).value();
+                    let alt = if description.trim().is_empty() {
+                        default_description
+                    } else {
+                        &description
+                    };
+                    let markdown = picture_markdown(&chapter, &paths[selected.get()], alt);
                     page.update(cx, |this, cx| {
                         if this.visual_is_editing(&chapter, cx)
                             && this.visual.input.read(cx).is_capture_current(&selection)
@@ -259,6 +266,44 @@ struct SourcePreview {
     task: Option<Task<()>>,
 }
 
+const MERMAID: &str = "mermaid";
+const LATEX: &str = "latex";
+
+/// Registers the source grammars before the first dialog needs them.
+fn register_source_grammars() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| {
+        let registry = LanguageRegistry::singleton();
+        registry.register(
+            MERMAID,
+            &GrammarConfig::new(
+                MERMAID,
+                tree_sitter_mermaid::LANGUAGE.into(),
+                Vec::new(),
+                tree_sitter_mermaid::HIGHLIGHTS_QUERY,
+                "",
+                "",
+            ),
+        );
+        registry.register(
+            LATEX,
+            &GrammarConfig::new(
+                LATEX,
+                codebook_tree_sitter_latex::LANGUAGE.into(),
+                Vec::new(),
+                r#"
+                    (command_name) @function
+                    [(line_comment) (block_comment)] @comment
+                    [(operator) "_" "^"] @operator
+                    ["{" "}" "[" "]"] @punctuation.bracket
+                "#,
+                "",
+                "",
+            ),
+        );
+    });
+}
+
 fn ask_source(
     kind: FigureKind,
     path: String,
@@ -266,6 +311,11 @@ fn ask_source(
     window: &mut Window,
     cx: &mut Context<'_, EditorPage>,
 ) {
+    register_source_grammars();
+    let (language, source_label) = match kind {
+        FigureKind::Diagram => (MERMAID, "Mermaid source"),
+        FigureKind::Formula => (LATEX, "KaTeX source"),
+    };
     let editing = initial.is_some();
     let path_input = cx.new(|cx| {
         let mut state = InputState::new(window, cx);
@@ -273,21 +323,19 @@ fn ask_source(
         state
     });
     let source_input = cx.new(|cx| {
-        let mut state = TextareaState::new(window, cx).rows(5);
-        if let Some(source) = initial {
-            state.set_value(source, window, cx);
-        }
-        state
+        EditorState::new(window, cx)
+            .language(language)
+            .default_value(initial.unwrap_or_default().to_owned())
+            .searchable(false)
+            .folding(false)
+            .line_number(false)
+            .soft_wrap(true)
     });
     let preview = cx.new(|_| SourcePreview::default());
     let error = cx.new(|_| None::<&'static str>);
     let first = Cell::new(true);
     let page = cx.weak_entity();
     let noun = kind.noun();
-    let source_label = match kind {
-        FigureKind::Diagram => "Mermaid source",
-        FigureKind::Formula => "KaTeX source",
-    };
     window.open_alert_dialog(cx, move |alert, window, cx| {
         if first.replace(false) {
             source_input.focus_handle(cx).focus(window, cx);
@@ -305,7 +353,11 @@ fn ask_source(
                     .child(Input::new(&path_input).aria_label("Book path"))
             }))
             .child(div().child(source_label))
-            .child(Textarea::new(&source_input).aria_label(source_label))
+            .child(
+                Editor::new(&source_input)
+                    .h(px(120.0))
+                    .aria_label(source_label),
+            )
             .child(
                 h_flex().child(control("draw-figure", "Preview").ghost().on_click(
                     move |_, window, cx| {
@@ -443,5 +495,32 @@ impl SourcePreview {
             }
         };
         Some(content)
+    }
+}
+
+#[cfg(test)]
+mod syntax_tests {
+    use super::{LATEX, MERMAID, register_source_grammars};
+    use gpui_kit::component::Rope;
+    use gpui_kit::component::highlighter::{HighlightTheme, SyntaxHighlighter};
+
+    #[test]
+    fn the_source_grammars_highlight_mermaid_keywords_and_formula_commands() {
+        register_source_grammars();
+        for (language, source, token) in [
+            (MERMAID, "flowchart LR\n  A --> B", "flowchart"),
+            (LATEX, r"\frac{a}{b}", r"\frac"),
+        ] {
+            let mut highlighter = SyntaxHighlighter::new(language);
+            assert!(highlighter.update(None, &Rope::from_str(source), None));
+            let highlights =
+                highlighter.styles(&(0..source.len()), &*HighlightTheme::default_dark());
+            assert!(
+                highlights.iter().any(|(range, style)| {
+                    source.get(range.clone()) == Some(token) && style.color.is_some()
+                }),
+                "{language}: {highlights:?}",
+            );
+        }
     }
 }

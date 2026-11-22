@@ -12,8 +12,9 @@
   formula alone in a paragraph is set as a display formula. A formula in
   running text sits on the baseline.
 - The editor has **Diagrams** and **Formulas** sections with source editing,
-  preview and removal. The Visual toolbar inserts existing resources at the
-  caret with optional alternative text.
+  Mermaid and LaTeX syntax highlighting, preview and removal. The Visual
+  toolbar inserts existing resources at the caret. Leaving the alternative
+  text field empty uses **Diagram** or **Formula** as the description.
 
 - The book editor's Landmarks section can add, edit and remove `notes`
   landmarks with a chapter, an optional anchor and an optional title.

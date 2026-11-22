@@ -3242,3 +3242,46 @@ fn a_formula_inserted_in_visual_is_drawn_in_the_draft_preview(cx: &mut TestAppCo
     let book = Book::open(setup.fixture.roots.book(setup.key)).unwrap();
     assert_eq!(book.formula("math/formula.tex").unwrap().source(), "x^2");
 }
+
+#[gpui_kit::test]
+fn inserting_figures_with_empty_descriptions_uses_the_resource_kind(cx: &mut TestAppContext) {
+    use crate::entities::figure::FigureKind;
+
+    for (kind, source, button, label, description, expected) in [
+        (
+            FigureKind::Formula,
+            "a^2",
+            "visual-formula",
+            "Insert formula",
+            "",
+            "![Formula](../fig/source)",
+        ),
+        (
+            FigureKind::Diagram,
+            "flowchart LR\n  A --> B",
+            "visual-diagram",
+            "Insert diagram",
+            "  ",
+            "![Diagram](../fig/source)",
+        ),
+    ] {
+        let setup = start_with(cx, 1280.0, &[("part/ch01.md", "")]);
+        cx.run_until_parked();
+        act(&setup, cx, |page, window, cx| {
+            page.send(
+                Command::AddFigure {
+                    kind,
+                    path: "fig/source".to_owned(),
+                    source: source.to_owned(),
+                },
+                Origin::Figure(kind),
+                window,
+                cx,
+            );
+        });
+        click(&setup, button, cx);
+        frame(&setup, cx, |window, cx| window.input(description, cx));
+        click_named(&setup, label, cx);
+        assert_eq!(editor_text(&setup, cx), expected);
+    }
+}
