@@ -1,7 +1,19 @@
 # mbook-converter
 
+**Bring your library to mbook, and take it back whenever you like.**
+
 Convert books between other formats and [mbook](https://m-compressors.github.io/mbook/)
 files: Markdown chapters and AVIF pictures in one indexed container.
+
+- **Eight formats in, eight out.** EPUB, FB2, PDF, comic archives, Word,
+  HTML, Markdown and plain text are read; with the `export` feature the
+  same eight are written, so a converted book is never locked in.
+- **A quarter of the size.** A 7.0 MB EPUB of an illustrated manual became
+  a 1.6 MB mbook file at the default settings, in three seconds. Pictures
+  are encoded as AVIF, which is lossy at the default quality of 80.
+  [How it was measured][measured].
+- **Nothing is lost silently.** Whatever a book cannot keep is reported as
+  a `Warning`, and a converted book is checked before a byte is written.
 
 ```rust
 use mbook_converter::Converter;
@@ -82,6 +94,8 @@ let converter = Converter::with_options(options);
 
 The design is described by
 [RFC 0003](https://m-compressors.github.io/mbook/0003-mbook-converter-api.html).
+
+[measured]: https://m-compressors.github.io/mbook/0001-mbook-format.html#a-converted-book
 
 Requires **Rust 1.89 or later**. The optional `export` feature
 currently requires **Rust 1.98 or later** and uses NASM on x86 and x86-64.

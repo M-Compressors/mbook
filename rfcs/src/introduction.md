@@ -5,8 +5,15 @@ small typed tables that describe the book, all stored as independent
 [OpenZL](https://github.com/facebook/openzl) frames inside one indexed
 container.
 
+The pairing of OpenZL and AVIF is what makes a book small and quick: an
+illustrated EPUB of 7.0 MB became an mbook file of 1.6 MB that opens in
+80 µs and decodes its text at more than a gigabyte per second. The
+conditions are in
+[RFC 0001, A converted book](0001-mbook-format.md#a-converted-book).
+
 | If you want to… | Read |
 | --- | --- |
+| see what the format gains over EPUB and FB2 | [RFC 0001, Motivation](0001-mbook-format.md#motivation) |
 | see what a file contains and how it is opened | [RFC 0001, guide-level explanation](0001-mbook-format.md#guide-level-explanation) |
 | implement a reader or a writer | [RFC 0001, reference-level explanation](0001-mbook-format.md#reference-level-explanation) |
 | understand why the format looks this way | [Decision records](adr/overview.md) |

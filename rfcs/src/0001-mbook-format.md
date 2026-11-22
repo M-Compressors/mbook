@@ -23,8 +23,9 @@ name to with one line of Markdown.
 
 ## Motivation
 
-A book file should open instantly, load only what is on screen, and be
-readable by a small program.
+A book file should be small, open instantly, load only what is on screen, and
+be readable by a small program. Each format in use gives up at least one of
+these:
 
 - **EPUB** is a ZIP of XHTML and CSS. Showing it correctly needs a web engine,
   and its metadata is spread over several XML files.
@@ -34,22 +35,36 @@ readable by a small program.
   file, carries no metadata, and has no index.
 
 mbook keeps the Markdown-and-pictures model and packs it into a container that
-already provides random access, per-resource checksums and typed data:
+already provides random access, per-resource checksums and typed data. Two
+codecs do the heavy work: [OpenZL](https://github.com/facebook/openzl)
+compresses text and tables, and AVIF holds the pictures.
 
-- A reader fetches the footer, the index and the first five frames, and can
-  then show the title, the cover and the table of contents.
-- Each chapter, picture, diagram and formula is decoded on its own.
-- The descriptive tables are typed columns, so no JSON, XML or TOML parser is
-  needed, and the container layer can be built for `no_std` targets.
-- Every frame is an ordinary OpenZL frame that uses only standard codecs. A
-  stock OpenZL decoder can decode any frame extracted from the file.
+- **A book is a fraction of the size.** An EPUB of 7.0 MB became an mbook
+  file of 1.6 MB, more than four times smaller
+  ([A converted book](#a-converted-book)). Most of that is AVIF; the text is
+  smaller as well, because Markdown carries less markup than XHTML.
+- **A book is on screen before the eye notices.** A reader fetches the footer,
+  the index and the first five frames, and can then show the title, the cover
+  and the table of contents. For that book the tables were ready in 80 µs.
+- **Decoding is never the slow part.** Each chapter, picture, diagram and
+  formula is decoded on its own, and text decodes at more than a gigabyte per
+  second: the largest chapter of that book in 0.1 ms.
+- **Nothing has to be parsed to find something.** The descriptive tables are
+  typed columns, so no JSON, XML or TOML parser is needed, and the container
+  layer can be built for `no_std` targets.
+- **No part of it is exotic.** Every frame is an ordinary OpenZL frame that
+  uses only standard codecs. A stock OpenZL decoder can decode any frame
+  extracted from the file, and any AVIF decoder shows a picture.
 
 ### Goals
 
 | Goal | How the design meets it |
 | --- | --- |
-| Open a book without reading all of it | Footer, directory and five small frames are enough for title, cover and contents. |
+| A small file | Pictures are AVIF; text and tables are OpenZL frames; columns have types, so numbers are stored as numbers. A 7.0 MB EPUB became 1.6 MB ([A converted book](#a-converted-book)). |
+| Open a book without reading all of it | Footer, directory and five small frames are enough for title, cover and contents: 80 µs for a book of 167 contents entries. |
 | Decode only what is shown | One frame per chapter, picture, diagram and formula. |
+| Decoding that is never the slow part | Text decodes at more than 1 GB/s, tens of times faster than the same text is parsed as Markdown. Pictures are stored AVIF files, read without a second decompression. |
+| A page that does not jump | The `resources` table gives the size of every picture before one is decoded, so a reader lays out the page first. |
 | Formulas and diagrams that follow the text | Stored as their source, not as pictures of it; the reader sets them in its own size and tone. |
 | Readers without a web engine | Markdown without raw HTML; no CSS, no scripts. |
 | Readers without text-format parsers | Metadata and navigation are typed columns. |
@@ -1135,3 +1150,40 @@ and graph on one machine; decoding time is the mean of 20 runs.
 For a sample book with 8 `meta` rows and 120 `toc` rows, the `meta` record was
 398 bytes and the `toc` record 849 bytes. An empty four-column table is 77
 bytes.
+
+### A converted book
+
+Informative. A technical book of 11 chapters, 167 contents entries and 45
+pictures, published as an EPUB, was converted with `mbook-converter` 0.3.0 at
+its defaults: AVIF quality 80 and speed 6, and mopenzl 0.2.6 at its default
+level. AVIF at this quality is lossy; the text is unchanged by compression.
+
+| Part | EPUB | mbook |
+| --- | ---: | ---: |
+| Whole file | 7,001,213 B | 1,608,479 B |
+| Pictures | 6,705,021 B, 45 PNG and JPEG files | 1,382,138 B, 43 AVIF files |
+| Text, metadata, navigation and index | 247,429 B of deflated XHTML, CSS and XML | 226,341 B |
+| Embedded font | 40,495 B | none: fonts belong to the reader |
+
+The chapters are 858,730 bytes of XHTML in the EPUB and 621,498 bytes of
+Markdown in the mbook file. The converter kept 43 of the 45 picture files.
+The conversion took 3.1 s on the machine named below.
+
+Times are the best of repeated runs on one machine (an Apple M5 Pro), with
+the file in the page cache.
+
+| Step | Time |
+| --- | ---: |
+| Open the mbook file; title, contents and the list of every resource are ready | 80 µs |
+| The same title and contents from the EPUB, with `rbook` 0.7 | 164 µs |
+| Read the bytes of the cover | 4 µs |
+| Decode the largest chapter, 174,933 B | 108 µs |
+| Decode it and parse it into a tree with `markdown` 1.0 | 6.2 ms |
+
+All chapters together decode at 1,370 MB/s. The Russian translation of the
+same book, with the same pictures, went from 7,104,418 to 1,715,352 bytes;
+it opens in 117 µs, against 199 µs for its EPUB, and its text decodes at
+1,760 MB/s.
+
+This is one book. The size of a converted book follows its pictures: a novel
+without any shrinks far less than an illustrated manual.

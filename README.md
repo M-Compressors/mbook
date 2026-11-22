@@ -1,18 +1,95 @@
 # mbook
 
-**A book file format with Markdown chapters, AVIF pictures, Mermaid
-diagrams and KaTeX formulas in one indexed container.**
+**Books a quarter of the size that open before you notice.**
 
-An mbook file opens without being read in full, decodes only what is on
-screen, and needs neither a web engine nor an XML parser to show. This
-repository holds the format specification, `mbook`, the Rust library
+mbook is a file format for books: Markdown chapters, AVIF pictures, Mermaid
+diagrams and KaTeX formulas in one indexed container, compressed with
+[OpenZL]. A file opens without being read in full, decodes only what is on
+screen, and needs neither a web engine nor an XML parser to show.
+
+| 4× smaller | 0.1 ms to open | 1 GB/s | 8 formats in, 8 out |
+| :---: | :---: | :---: | :---: |
+| A 7.0 MB EPUB became a 1.6 MB mbook file | Title, contents and the list of every resource | Text decoding; a long chapter takes 0.1 ms | EPUB, FB2, PDF, DOCX, CBZ, HTML, Markdown, text |
+
+One book, one machine: [how it was measured][measured].
+
+This repository holds the format specification, `mbook`, the Rust library
 that reads and writes it, `mbook-converter`, which turns books in other
-formats into mbook, and `mbook-ui`, an application to read and edit them.
+formats into mbook and back, and `mbook-ui`, an application to read and edit
+them.
 
 [![Tests](https://github.com/M-Compressors/mbook/actions/workflows/ci.yml/badge.svg?branch=main)][ci]
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 **[Design documents][site]** · [File format][format] · [Library API][api] · [Decisions][adr] · [Changelog](CHANGELOG.md)
+
+## Why mbook
+
+- **Small.** Pictures are AVIF and text is compressed by OpenZL, so a book
+  needs no second packing step. The illustrated manual we measured went
+  from 7.0 MB to 1.6 MB; your library takes a quarter of the disk and of the
+  download.
+- **Instant.** Opening a book reads a footer, a directory and five small
+  tables: 80 µs until the title and a contents of 167 entries are ready. A
+  library screen never unpacks a book to show its shelf.
+- **Only what is on screen.** Every chapter, picture, diagram and formula is
+  one independent frame. Jumping to chapter 40 decodes chapter 40, at more
+  than a gigabyte per second.
+- **Pages that do not jump.** The size of every picture is known before one
+  is decoded, so the page is laid out once.
+- **Formulas and diagrams that stay sharp.** They are stored as KaTeX and
+  Mermaid source, not as pictures of it, and are set in the reader's own
+  size and tone.
+- **Simple to show.** Chapters are GitHub Flavored Markdown without raw
+  HTML. No CSS, no scripts, no web engine: a reader is a Markdown view and
+  an AVIF decoder.
+- **Nothing to parse.** Metadata and navigation are typed columns, not
+  JSON, XML or TOML.
+- **Hard to break.** Every resource has a checksum, a book carries no code
+  to run, and the library and its container are written in Rust without
+  `unsafe`.
+- **Nothing to lose by trying.** The converter imports eight formats and
+  exports the same eight. Unpacked, a book is a folder any Markdown viewer
+  can show, and every frame is an ordinary [OpenZL] frame that a stock
+  decoder reads.
+
+### What gets in the way elsewhere
+
+| Format | What gets in the way |
+| --- | --- |
+| EPUB | A ZIP of XHTML and CSS: showing it correctly needs a web engine. |
+| FB2 | One XML document: nothing is readable without parsing all of it, and pictures are Base64 text. |
+| PDF | Fixed pages: the text does not reflow to the screen it is read on. |
+| Markdown in a folder | Easy to write and to render, but not one file, with no metadata and no index. |
+
+mbook keeps the Markdown-and-pictures model and packs it into the *framed*
+container of [mopenzl], which gives random access, a checksum per resource
+and typed columns.
+
+### Measured
+
+| | EPUB | mbook |
+| --- | ---: | ---: |
+| File | 7,001,213 B | 1,608,479 B |
+| Pictures | 6,705,021 B | 1,382,138 B |
+| Text, metadata and navigation | 247,429 B | 226,341 B |
+| Title and contents ready | 164 µs with `rbook` | 80 µs |
+| Largest chapter decoded | not measured | 108 µs for 175 KB |
+
+A technical book of 11 chapters and 45 pictures, converted at the defaults
+of `mbook-converter` on an Apple M5 Pro. The pictures shrink because AVIF at
+quality 80 is lossy; a book without pictures shrinks far less. The full
+table and the conditions are in [RFC 0001][measured].
+
+## Try it
+
+- **Read.** Install the application from
+  [GitHub Releases](https://github.com/M-Compressors/mbook/releases) and
+  import an EPUB, FB2 or PDF: it becomes an mbook file in your library.
+- **Convert.** A few lines of Rust turn a book into mbook; see
+  [The converter](#the-converter).
+- **Build on it.** `cargo add mbook` and read a book lazily; see
+  [The library](#the-library).
 
 ## Status
 
@@ -27,27 +104,6 @@ The format and APIs are drafts and may still change.
 | `mbook` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including chapter anchor tables and diagram and formula sources. Tested against files built by hand and against real AVIF pictures. Available on [crates.io](https://crates.io/crates/mbook). |
 | `mbook-ui` | A first version of RFC 0004: library and book creation, filtered import and export from the book menu, a scrolling reader with optional pagination and page-fitted pictures, local appearance settings, bundled offline fonts, and whole-book search, an editor with chapter search and a chapter list by title, with a default Visual view for tables, lists and code, dialogs that link to a place of the book and put a picture into a chapter, a Contents section that shows the contents and edits a stored list entry by entry, a Landmarks section for notes, a picture gallery with encoding controls, syntax-highlighted diagram and formula editing and previews, settings, and release updates with a banner below the title bar. Building for x86 or x86-64 requires NASM. Tested in headless windows and on macOS with an imported book. Remaining platform and accessibility checks are listed in [RFC 0004][app-status]. Installers are available from [GitHub Releases](https://github.com/M-Compressors/mbook/releases). |
 | `mbook-converter` | Implements RFC 0003: Imports EPUB, FB2, PDF, comic archives, Word, HTML, Markdown and plain text. Imported pictures are encoded as AVIF. The optional `export` feature writes all eight formats and is enabled in the app. Importing Mermaid fences and math markup as resources is pending. The limits of each format are listed in [RFC 0003][converter-status]. Tested against sources its tests build in memory; not yet against a collection of real books. Available on [crates.io](https://crates.io/crates/mbook-converter). |
-
-## Why another book format
-
-| Format | What gets in the way |
-| --- | --- |
-| EPUB | A ZIP of XHTML and CSS: showing it correctly needs a web engine. |
-| FB2 | One XML document: nothing is readable without parsing all of it, and pictures are Base64 text. |
-| Markdown in a folder | Easy to write and to render, but not one file, with no metadata and no index. |
-
-mbook keeps the Markdown-and-pictures model and packs it into the *framed*
-container of [mopenzl], which gives random access, a checksum per resource
-and typed columns:
-
-- A reader fetches the directory and five small tables, then shows the title,
-  the cover and the contents.
-- Every chapter, picture, diagram and formula is one independent [OpenZL]
-  frame, decoded on its own.
-- Metadata and navigation are typed columns, so there is no JSON, XML or TOML
-  to parse.
-- Chapters are GitHub Flavored Markdown without raw HTML; unpacked, a book is
-  a folder any Markdown viewer can show.
 
 ## What is in a file
 
@@ -175,6 +231,7 @@ conditions.
 [app-status]: https://m-compressors.github.io/mbook/0004-mbook-ui.html#what-is-implemented
 [converter-status]: https://m-compressors.github.io/mbook/0003-mbook-converter-api.html#what-is-implemented
 [adr]: https://m-compressors.github.io/mbook/adr/overview.html
+[measured]: https://m-compressors.github.io/mbook/0001-mbook-format.html#a-converted-book
 [mopenzl]: https://github.com/M-Compressors/mopenzl
 [OpenZL]: https://github.com/facebook/openzl
 [mdBook]: https://github.com/rust-lang/mdBook
