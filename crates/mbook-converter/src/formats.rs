@@ -26,6 +26,9 @@ macro_rules! front_ends {
             source: &[u8],
             options: &ConvertOptions,
         ) -> Result<Draft> {
+            // An export-only build recognises formats without opening them.
+            #[cfg(not(any($(feature = $feature),*)))]
+            let _ = (source, options);
             match format {
                 $(
                     #[cfg(feature = $feature)]

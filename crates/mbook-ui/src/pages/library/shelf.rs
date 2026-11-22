@@ -365,8 +365,8 @@ impl LibraryPage {
         )
         .track_focus(&more_focus)
         .tab_stop(false)
-        .dropdown_menu_with_anchor(Anchor::BottomRight, move |menu, _, _| {
-            book_menu(menu, key, &more_title, &more_page)
+        .dropdown_menu_with_anchor(Anchor::BottomRight, move |menu, window, cx| {
+            book_menu(menu, key, &more_title, &more_page, window, cx)
         });
         div()
             .id(format!("tile-{key}"))
@@ -381,7 +381,7 @@ impl LibraryPage {
                     .top(px(inset + area + PART_GAP))
                     .child(more),
             )
-            .context_menu(move |menu, _, _| book_menu(menu, key, &title, &page))
+            .context_menu(move |menu, window, cx| book_menu(menu, key, &title, &page, window, cx))
             .into_any_element()
     }
 

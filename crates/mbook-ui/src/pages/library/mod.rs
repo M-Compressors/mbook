@@ -16,6 +16,7 @@
 
 mod cover;
 mod create;
+mod export;
 mod imports;
 mod menu;
 mod shelf;

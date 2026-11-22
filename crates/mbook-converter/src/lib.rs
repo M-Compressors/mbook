@@ -1,9 +1,10 @@
-//! Convert books in other formats into mbook files.
+//! Convert books between mbook and other formats.
 //!
 //! One type does the work: [`Converter`]. It takes a source as any
 //! [`Read`](std::io::Read) or as a byte slice, and gives an mbook file
 //! written to any [`Write`](std::io::Write), or a [`Book`](mbook::Book)
 //! that can still be changed.
+//! The optional `export` feature writes an existing book in another format.
 //!
 //! ```no_run
 //! use mbook_converter::Converter;
@@ -26,7 +27,7 @@
 //!
 //! # Features
 //!
-//! Every source format is one feature, and all of them are on by default.
+//! Each import format has a feature enabled by default.
 //!
 //! | Feature | Format |
 //! | --- | --- |
@@ -39,9 +40,11 @@
 //! | `md` | One Markdown document |
 //! | `txt` | Plain text |
 //!
-//! At least one of them must be enabled. A source in a format whose feature
-//! is off is still recognised, and refused with
-//! [`Error::FormatDisabled`].
+//! A source in a format whose feature is disabled is still recognised and
+//! refused with [`Error::FormatDisabled`].
+//!
+//! The opt-in `export` feature enables writing all eight formats, including
+//! their picture codecs. It currently requires Rust 1.98 or later.
 
 #[cfg(not(any(
     feature = "epub",
@@ -51,9 +54,10 @@
     feature = "docx",
     feature = "html",
     feature = "md",
-    feature = "txt"
+    feature = "txt",
+    feature = "export"
 )))]
-compile_error!("mbook-converter needs the feature of at least one format");
+compile_error!("mbook-converter needs at least one import format or the export feature");
 
 mod assemble;
 mod converter;
@@ -62,6 +66,8 @@ mod draft;
 #[cfg(any(feature = "md", feature = "txt"))]
 mod encoding;
 mod error;
+#[cfg(feature = "export")]
+mod export;
 mod format;
 mod formats;
 mod markdown;

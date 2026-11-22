@@ -1,11 +1,14 @@
 //! The menu of a book, and the question that comes before removing one.
 
 use gpui_kit::assets::IconName;
+use gpui_kit::component::Icon;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
-use gpui_kit::{App, WeakEntity, Window};
+use gpui_kit::{App, Context, WeakEntity, Window};
+use mbook_converter::Format;
 
+use super::export;
 use super::{LibraryEvent, LibraryPage};
 use crate::entities::catalogue::{Library, Store};
 use crate::shared::model::BookKey;
@@ -16,6 +19,8 @@ pub(super) const OPEN: &str = "Open";
 pub(super) const EDIT: &str = "Edit";
 /// Show the file of the book in the file manager of the platform.
 pub(super) const SHOW_FILE: &str = "Show the file";
+/// Save a copy in another format.
+pub(super) const EXPORT: &str = "Export";
 /// Remove the book from the library.
 pub(super) const REMOVE: &str = "Remove";
 
@@ -25,12 +30,14 @@ pub(super) fn remove_question(title: &str) -> String {
 }
 
 /// Fills `menu` with what can be done to the book `key`, called `title`:
-/// open, edit, show the file, remove.
+/// open, edit, show the file, export, remove.
 pub(super) fn book_menu(
     menu: PopupMenu,
     key: BookKey,
     title: &str,
     page: &WeakEntity<LibraryPage>,
+    window: &mut Window,
+    cx: &mut Context<'_, PopupMenu>,
 ) -> PopupMenu {
     let emit = |event: LibraryEvent| {
         let page = page.clone();
@@ -39,6 +46,7 @@ pub(super) fn book_menu(
         }
     };
     let title = title.to_owned();
+    let export_title = title.clone();
     let page_for_remove = page.clone();
     menu.item(
         PopupMenuItem::new(OPEN)
@@ -57,6 +65,22 @@ pub(super) fn book_menu(
                 let path = Store::global(cx).roots.book(key);
                 cx.reveal_path(&path);
             }),
+    )
+    .submenu_with_icon(
+        Some(Icon::new(IconName::Download)),
+        EXPORT,
+        window,
+        cx,
+        move |menu, _, _| {
+            Format::ALL.iter().copied().fold(menu, |menu, format| {
+                let title = export_title.clone();
+                menu.item(PopupMenuItem::new(export::label(format)).on_click(
+                    move |_, window, cx| {
+                        export::choose(key, &title, format, window, cx, export::pick);
+                    },
+                ))
+            })
+        },
     )
     .separator()
     .item(

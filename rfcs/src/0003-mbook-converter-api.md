@@ -9,17 +9,16 @@
 
 ## Summary
 
-`mbook-converter` turns books in other formats into mbook files. It has one
-central type, **`Converter`**, with two kinds of source and two kinds of
-result:
+`mbook-converter` imports books into mbook and exports existing books to
+other formats. Its central type, **`Converter`**, has four import entry points:
 
 | | Result: an mbook file written to any `Write` | Result: a `Book` in memory |
 | --- | --- | --- |
 | **Source: any `Read`** | `convert` | `load` |
 | **Source: a byte slice** | `convert_slice` | `load_slice` |
 
-Every source format is one Cargo feature, and all of them are enabled by
-default. A format is read by an established crate (`unpdf` for PDF, `rbook`
+Each import format has a Cargo feature enabled by default. The optional
+`export` feature enables all writers. A format is read by an established crate (`unpdf` for PDF, `rbook`
 for EPUB, and so on); this crate adds what is a rule of mbook: which chapter
 a piece of text belongs to, what a link or a picture is called after
 conversion, what the Markdown dialect allows, and that every picture becomes
@@ -59,7 +58,6 @@ re-encode pictures, rename every reference, build the contents.
 
 ### Non-goals
 
-- **Converting from mbook** to another format.
 - **Keeping the layout.** Fonts, colours, CSS, page geometry and fixed
   positions are dropped; [RFC 0001](0001-mbook-format.md#non-goals) excludes
   them from the format.
@@ -145,6 +143,22 @@ book.save("example.mbook")?;
 `converted.book` is an ordinary [`Book`](0002-mbook-api.md#book): every
 call of RFC 0002 works on it.
 
+### Exporting a book
+
+```rust
+use mbook_converter::{Converter, Format, mbook::Book};
+use std::fs::File;
+use std::io::BufWriter;
+
+let book = Book::open("example.mbook")?;
+let sink = BufWriter::new(File::create("example.epub")?);
+Converter::export(&book, Format::Epub, sink)?;
+```
+
+Enable the converter’s `export` feature to use this call. An application can
+pass a book already in memory and use `Format::extension()` for the suggested
+file name. `Format::is_enabled()` reports which import formats are enabled.
+
 ### Choosing formats and settings
 
 ```toml
@@ -192,7 +206,7 @@ of this document is *proposed* and listed again under
 | --- | --- |
 | The crate converts EPUB, FB2, PDF, CBZ, DOCX, HTML, Markdown and plain text into mbook | Confirmed |
 | Mobipocket is not converted until a maintained crate reads it | Confirmed |
-| One Cargo feature per format; every feature enabled by default | Confirmed |
+| One Cargo feature per import format; every import format enabled by default | Confirmed |
 | Conversion from an I/O source and from a byte slice | Confirmed |
 | Formats are read by established crates such as `unpdf` | Confirmed |
 | Pictures are encoded as AVIF by `image` with its `avif` feature, which uses `ravif` and `rav1e`; dependencies under BSD licenses are accepted | Confirmed |
@@ -223,6 +237,9 @@ impl Converter {
     // Source to model.
     pub fn load(&self, source: impl Read) -> Result<Converted>;
     pub fn load_slice(&self, source: &[u8]) -> Result<Converted>;
+
+    #[cfg(feature = "export")]
+    pub fn export(book: &mbook::Book, format: Format, sink: impl Write) -> Result<()>;
 }
 
 #[non_exhaustive]
@@ -237,6 +254,8 @@ pub enum Format { Epub, Fb2, Pdf, Cbz, Docx, Html, Markdown, Text }
 impl Format {
     pub const ALL: &'static [Format];
     pub const fn is_enabled(self) -> bool;                  // was its feature compiled in?
+    #[cfg(feature = "export")]
+    pub const fn extension(self) -> &'static str;           // e.g. "md"
 }
 impl Display for Format { /* "epub", "fb2", … */ }
 impl FromStr for Format { /* the same names, and common file extensions */ }
@@ -257,6 +276,41 @@ pub use mbook;
   `mbook::Error` appear in this API. No type of any other dependency
   does; the rule of RFC 0002 applies to this crate as well.
 
+### Export
+
+`Converter::export` takes an existing `Book` and a target format. The single
+`export` feature enables the public export API, all eight writers, their
+AVIF decoder, and the `mbook` read API. It works independently of the import
+features, including in a build with only `export` enabled.
+
+The call returns `Error::Io` if the sink fails or `Error::Export` with the
+target and source error if encoding fails. The decoder bounds both the
+primary and alpha coded dimensions at 100 million pixels per plane. The
+caller owns the destination and can use a temporary file to publish it
+atomically.
+
+The `export` feature currently needs Rust 1.98. Its minimum can increase
+independently of the Rust 1.89 minimum for the default import build.
+
+| Format | Output |
+| --- | --- |
+| EPUB | EPUB 3 with XHTML chapters in reading order, contents, links, footnotes, metadata and a PNG cover and illustrations. |
+| DOCX | Editable Word paragraphs and headings, basic inline styles, PNG pictures and core metadata. Tables and lists are flattened into paragraphs. |
+| FB2 | FictionBook 2 XML with chapter sections, basic inline styles, metadata and Base64-encoded PNG pictures. |
+| PDF | A paginated document with selectable text, PNG illustrations and embedded Noto Sans. Glyph coverage is limited to the bundled font. |
+| CBZ | The paginated edition rasterized as numbered PNG pages, with a `ComicInfo.xml` metadata entry. |
+| HTML | One self-contained document with contents, local links and PNG data URLs. |
+| Markdown | One document with namespaced anchors and footnotes, and AVIF data URLs. Support for inline HTML anchors and data URLs varies across Markdown viewers. |
+| Plain text | UTF-8 text in reading order with picture alternative text. |
+
+Chapter links and anchors are retained in EPUB, HTML and Markdown. Other
+writers flatten links to their visible text. Diagram and formula references
+become alternative text. When an output needs PNG, the decoder uses the
+coded AVIF pixels. AVIF container crop, rotation and mirror properties are
+not applied by these writers. Markdown embeds the original AVIF. Export does
+not fetch network resources. EPUB, DOCX, PDF and CBZ buffer the output
+document in memory before writing it to the sink.
+
 ### Formats and features
 
 | Feature | Source format | Front-end crate | Status |
@@ -271,7 +325,7 @@ pub use mbook;
 | `txt` | Plain text | none | Confirmed |
 
 - `default` enables every feature of the table.
-- A build **MUST** enable at least one of them; otherwise compilation fails
+- A build **MUST** enable an import format or `export`; otherwise compilation fails
   with a message, as in `mbook`.
 - A feature enables only the dependencies its format needs. Shared mechanisms
   have no feature of their own: the HTML-to-Markdown crate comes with `epub`
@@ -628,9 +682,10 @@ One `Error` enum, non-exhaustive, built with `thiserror`, and
 | `UnknownFormat` | The content matches no format of [Detection](#detection). |
 | `FormatDisabled(Format)` | The format was recognised or named, and its feature is off. |
 | `Source { format, .. }` | The front-end crate could not parse the source. Its error is the `source()`, as a boxed `dyn Error`. |
+| `Export { format, .. }` | The writer or picture codec failed. Its error is the `source()`, as a boxed `dyn Error`. |
 | `Protected(Format)` | The source is encrypted or under rights management. |
 | `Empty` | Nothing in the source could be converted. |
-| `Limit` | A limit of `ConvertLimits` was exceeded. |
+| `Limit` | An import limit or the export pixel limit was exceeded. |
 | `Book` | `mbook` refused a call, the final check or the write. Its error is the `source()`. |
 
 ```rust
@@ -812,6 +867,11 @@ Crates that were looked at and ruled out:
 | Links to elements that are not headings | Kept, as anchor definitions in the target chapter | Sent to the nearest heading | Decided by the format author, who changed the format for it ([ADR-0008](adr/0008-chapter-anchor-tables.md), [ADR-0009](adr/0009-anchor-definitions.md)). |
 | Missing title or language | A stand-in value and a warning | An error | The caller can correct a `Book`; it cannot correct a failed conversion. |
 | Final validation | `Book::check` of `mbook` | Checks of this crate | One definition of a valid book. |
+| Export input | A borrowed `Book` | A second set of stream and slice entry points | A caller can export an edited in-memory book. `Book::open` or `Book::read` can load a saved one. |
+| Export writers | `epub-builder`, `docx-rs`, `krilla`, `xmlwriter` and the Markdown serializers of `pulldown-cmark` and `pulldown-cmark-to-cmark` | Hand-built ZIP and PDF document packages or shelling out to a converter | The libraries handle the formats and work without an installed converter. |
+| CBZ pages | Rasterize the paginated edition with `unpdf` | Export only embedded pictures | A text-only book also produces readable pages. |
+| Export feature | One opt-in feature for all writers | An export switch for each format or writing enabled by default | One dependency setting enables every output while the import-only build keeps its dependency set and minimum Rust version. |
+| Export picture decoding | `avif-decode` 3 on rav1d | `image` with `avif-native` or `avif-decode` 1 with libaom | The feature shares the decoder with the application. `avif-native` links to system dav1d, and the older decoder builds libaom with CMake. |
 
 ## Prior art
 

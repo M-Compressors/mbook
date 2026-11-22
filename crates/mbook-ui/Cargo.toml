@@ -47,7 +47,7 @@ visual = ["gpui-kit/test-support"]
 
 [dependencies]
 mbook = { workspace = true, features = ["read", "write"] }
-mbook-converter = { path = "../mbook-converter", version = "0.2.0" }
+mbook-converter = { path = "../mbook-converter", version = "0.2.0", features = ["export"] }
 image.workspace = true
 markdown.workspace = true
 percent-encoding.workspace = true
@@ -72,7 +72,7 @@ dirs = "7"
 redb = "5"
 # Decodes the AVIF pictures of a book; pure Rust, on `rav1d`. Without its
 # `binary` feature, which is a command-line tool.
-avif-decode = { version = "3", default-features = false }
+avif-decode.workspace = true
 # The channel between the editor and the task that owns the book.
 futures = "0.3"
 # Updates from the releases of the repository. The blocking `ureq` transport

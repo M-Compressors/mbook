@@ -40,8 +40,8 @@ jobs:
             cargo clippy -p mbook --all-targets --no-default-features --features "$features" --locked -- -D warnings
             echo "::endgroup::"
           done
-          # One feature per source format.
-          for features in epub fb2 pdf cbz docx html md txt; do
+          # Each import format and the export-only build.
+          for features in epub fb2 pdf cbz docx html md txt export; do
             echo "::group::mbook-converter, features '$features'"
             cargo clippy -p mbook-converter --all-targets --no-default-features --features "$features" --locked -- -D warnings
             echo "::endgroup::"
@@ -56,7 +56,7 @@ jobs:
           for features in read write; do
             cargo doc -p mbook --no-deps --no-default-features --features "$features" --locked
           done
-          for features in epub fb2 pdf cbz docx html md txt; do
+          for features in epub fb2 pdf cbz docx html md txt export; do
             cargo doc -p mbook-converter --no-deps --no-default-features --features "$features" --locked
           done
       - run: cargo package -p mbook --locked
@@ -87,10 +87,10 @@ jobs:
       - run: cargo test --workspace --all-features --locked
       - run: cargo test -p mbook --no-default-features --features read --locked
       - run: cargo test -p mbook --no-default-features --features write --locked
-      - name: mbook-converter, every format alone
+      - name: mbook-converter, each import format and export alone
         shell: bash
         run: |
-          for features in epub fb2 pdf cbz docx html md txt; do
+          for features in epub fb2 pdf cbz docx html md txt export; do
             cargo test -p mbook-converter --no-default-features --features "$features" --locked
           done
 
@@ -104,6 +104,7 @@ jobs:
         with:
           toolchain: 1.89.0
       - uses: Swatinem/rust-cache@v2
-      # `mbook-ui` declares a newer version of its own (RFC 0004).
-      - run: cargo check --workspace --exclude mbook-ui --all-targets --all-features --locked
-      - run: cargo test --workspace --exclude mbook-ui --all-features --locked
+      # The application and the converter's export feature use a newer
+      # compiler. The libraries' default features support Rust 1.89.
+      - run: cargo check --workspace --exclude mbook-ui --all-targets --locked
+      - run: cargo test --workspace --exclude mbook-ui --locked

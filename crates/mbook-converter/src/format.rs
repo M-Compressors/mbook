@@ -5,11 +5,11 @@ use std::io::{Cursor, Read};
 use std::str::FromStr;
 use zip::ZipArchive;
 
-/// A source format.
+/// A supported book format.
 ///
 /// Every variant exists whatever features are enabled, so that a `match`
 /// does not depend on the feature set. [`Format::is_enabled`] tells whether
-/// this build can convert it.
+/// this build can import it.
 ///
 /// # Examples
 ///
@@ -56,7 +56,7 @@ impl Format {
         Self::Text,
     ];
 
-    /// Tells whether the feature of this format was compiled in.
+    /// Tells whether this format’s import feature was compiled in.
     #[must_use]
     pub const fn is_enabled(self) -> bool {
         match self {
@@ -68,6 +68,17 @@ impl Format {
             Self::Html => cfg!(feature = "html"),
             Self::Markdown => cfg!(feature = "md"),
             Self::Text => cfg!(feature = "txt"),
+        }
+    }
+
+    /// The standard extension for an exported file, without a leading dot.
+    #[cfg(feature = "export")]
+    #[must_use]
+    pub const fn extension(self) -> &'static str {
+        match self {
+            Self::Markdown => "md",
+            Self::Text => "txt",
+            other => other.name(),
         }
     }
 
@@ -268,7 +279,6 @@ mod tests {
     fn a_format_is_enabled_when_its_feature_is() {
         assert_eq!(Format::Text.is_enabled(), cfg!(feature = "txt"));
         assert_eq!(Format::Pdf.is_enabled(), cfg!(feature = "pdf"));
-        assert!(Format::ALL.iter().any(|format| format.is_enabled()));
     }
 
     #[test]

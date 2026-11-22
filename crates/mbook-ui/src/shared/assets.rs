@@ -16,6 +16,7 @@ icon_assets!(
         Pencil,
         Trash,
         FilePlus,
+        Download,
         List,
         AArrowDown,
         AArrowUp,

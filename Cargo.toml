@@ -25,6 +25,9 @@ mbook = { path = "crates/mbook", version = "0.2.0", default-features = false }
 # the application for a picture added in its editor.
 image = { version = "0.25", default-features = false, features = ["avif", "bmp", "gif", "jpeg", "png", "rayon", "webp"] }
 
+# Decodes stored pictures in the reader and in picture-capable export builds.
+avif-decode = { version = "3", default-features = false }
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"

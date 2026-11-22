@@ -27,6 +27,16 @@ pub enum Error {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+    /// A book or one of its resources could not be encoded in the target format.
+    #[cfg(feature = "export")]
+    #[error("the book could not be exported to {format}")]
+    Export {
+        /// The requested output format.
+        format: Format,
+        /// What the writer reported.
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
     /// The source is encrypted or under rights management.
     #[error("the {0} source is protected")]
     Protected(Format),

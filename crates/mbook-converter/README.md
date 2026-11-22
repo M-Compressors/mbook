@@ -1,6 +1,6 @@
 # mbook-converter
 
-Convert books in other formats into [mbook](https://m-compressors.github.io/mbook/)
+Convert books between other formats and [mbook](https://m-compressors.github.io/mbook/)
 files: Markdown chapters and AVIF pictures in one indexed container.
 
 ```rust
@@ -29,9 +29,25 @@ converted.book.meta_mut().set_title("The Example")?;
 converted.book.save("example.mbook")?;
 ```
 
+## Exporting a book
+
+```rust
+use mbook_converter::{Converter, Format, mbook::Book};
+
+let book = Book::open("example.mbook")?;
+let mut epub = Vec::new();
+Converter::export(&book, Format::Epub, &mut epub)?;
+```
+
+Add `features = ["export"]` to the converter dependency to export in any of
+the eight formats, including pictures where supported. Use any `Write` as
+the destination. An export-only build can set `default-features = false`. [RFC 0003](https://m-compressors.github.io/mbook/0003-mbook-converter-api.html#export)
+describes what each output preserves.
+
 ## Formats
 
-Every source format is one Cargo feature, and all of them are on by default.
+Each import format has a Cargo feature enabled by default. The optional
+`export` feature enables every output format.
 
 | Feature | Format | Read by |
 | --- | --- | --- |
@@ -67,7 +83,9 @@ let converter = Converter::with_options(options);
 The design is described by
 [RFC 0003](https://m-compressors.github.io/mbook/0003-mbook-converter-api.html).
 
-Requires **Rust 1.89 or later**.
+Requires **Rust 1.89 or later**. The optional `export` feature
+currently requires **Rust 1.98 or later** and uses NASM on x86 and x86-64.
+Its minimum Rust version can increase separately from the default build.
 
 ## License
 

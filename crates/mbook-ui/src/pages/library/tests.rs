@@ -691,9 +691,74 @@ fn the_menu_of_a_book_opens_from_its_control(cx: &mut TestAppContext) {
     });
     harness.click(&format!("more-{key}"), cx);
     harness.frame(cx, |window, _| {
-        for label in ["Open", "Edit", "Show the file", "Remove"] {
+        for label in ["Open", "Edit", "Show the file", "Export", "Remove"] {
             assert!(window.try_find_by_label(label).is_some(), "{label}");
         }
+    });
+}
+
+#[gpui_kit::test]
+fn the_export_submenu_offers_every_converter_format(cx: &mut TestAppContext) {
+    let harness = start(cx, 1280.0, &["Dune"]);
+    let key = harness.keys[0];
+    harness.click(&format!("more-{key}"), cx);
+    for _ in 0..4 {
+        harness.press("down", cx);
+    }
+    harness.press("right", cx);
+    harness.frame(cx, |window, _| {
+        for &format in mbook_converter::Format::ALL {
+            let label = super::export::label(format);
+            assert!(window.try_find_by_label(label).is_some(), "{label}");
+        }
+    });
+}
+
+#[gpui_kit::test]
+fn an_export_saves_the_selected_book_and_announces_completion(cx: &mut TestAppContext) {
+    use mbook_converter::Format;
+    use std::future::ready;
+
+    let harness = start(cx, 1280.0, &["Dune"]);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("Dune");
+    let source = write_book(dir.path(), "Dune");
+    let key = harness.keys[0];
+    harness.frame(cx, |window, cx| {
+        std::fs::copy(source, Store::global(cx).roots.book(key)).unwrap();
+        super::export::choose(key, "Dune", Format::Text, window, cx, |name, format| {
+            assert_eq!(name, "Dune.txt");
+            assert_eq!(format, Format::Text);
+            ready(Some(path.clone()))
+        });
+    });
+    cx.run_until_parked();
+
+    assert!(
+        std::fs::read_to_string(path.with_extension("txt"))
+            .unwrap()
+            .starts_with("Dune\n")
+    );
+    harness.frame(cx, |window, _| {
+        assert!(window.find("notification").visible());
+    });
+}
+
+#[gpui_kit::test]
+fn dismissing_the_export_picker_leaves_the_library_open(cx: &mut TestAppContext) {
+    use mbook_converter::Format;
+    use std::future::ready;
+
+    let harness = start(cx, 1280.0, &["Dune"]);
+    let key = harness.keys[0];
+    harness.frame(cx, |window, cx| {
+        super::export::choose(key, "Dune", Format::Epub, window, cx, |_, _| ready(None));
+    });
+    cx.run_until_parked();
+
+    assert_eq!(harness.visible(cx), [key]);
+    harness.frame(cx, |window, _| {
+        assert!(window.try_find("notification").is_none());
     });
 }
 

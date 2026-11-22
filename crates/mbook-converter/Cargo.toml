@@ -1,6 +1,6 @@
 [package]
 name = "mbook-converter"
-description = "Convert EPUB, FB2, PDF and other book formats into mbook files"
+description = "Convert books between mbook and EPUB, DOCX, PDF and other formats"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,8 +14,7 @@ build = "build.rs"
 
 [features]
 default = ["epub", "fb2", "pdf", "cbz", "docx", "html", "md", "txt"]
-# One feature per source format. A feature brings in the crate that reads the
-# format and, for every format but plain text, the picture codecs.
+# One feature per import format.
 epub = ["dep:rbook", "dep:htmd", "dep:image"]
 fb2 = ["dep:quick-xml", "dep:base64", "dep:image"]
 pdf = ["dep:unpdf", "dep:image"]
@@ -26,6 +25,24 @@ html = ["dep:htmd", "dep:base64", "dep:encoding_rs", "dep:chardetng", "dep:image
 # assembler reads every chapter with it.
 md = ["dep:github-slugger", "dep:encoding_rs", "dep:chardetng"]
 txt = ["dep:encoding_rs", "dep:chardetng"]
+# All writers and their AVIF decoder. This feature currently needs Rust 1.98.
+export = [
+    "mbook/read",
+    "dep:avif-decode",
+    "dep:avif-parse",
+    "dep:base64",
+    "dep:docx-rs",
+    "dep:epub-builder",
+    "dep:html-escape",
+    "dep:image",
+    "dep:krilla",
+    "dep:pulldown-cmark",
+    "dep:pulldown-cmark-to-cmark",
+    "dep:quick-xml",
+    "dep:textwrap",
+    "dep:unpdf",
+    "dep:xmlwriter",
+]
 
 [dependencies]
 mbook = { workspace = true, features = ["write"] }
@@ -50,9 +67,20 @@ quick-xml = { version = "0.42", features = ["encoding", "escape-html"], optional
 alphanumeric-sort = { version = "1.5", optional = true }
 unpdf = { version = "0.55", default-features = false, features = ["raster"], optional = true }
 undoc = { version = "0.28", default-features = false, features = ["docx"], optional = true }
+# The writers share a stream of CommonMark events.
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
+pulldown-cmark-to-cmark = { version = "23", optional = true }
+html-escape = { version = "0.2", optional = true }
+xmlwriter = { version = "0.1", optional = true }
+epub-builder = { version = "0.8", default-features = false, features = ["zip-library"], optional = true }
+docx-rs = { version = "0.4.22", default-features = false, optional = true }
+krilla = { version = "0.7", optional = true }
+textwrap = { version = "0.16", optional = true }
+avif-decode = { workspace = true, optional = true }
+avif-parse = { version = "2.1", optional = true }
 
 [dev-dependencies]
-# The tests read back what was converted.
+# Tests read the converted books back.
 mbook = { workspace = true, features = ["read", "write"] }
 # Test sources are built in memory: pictures with `image`, archives with
 # `zip`, which is a dependency of every build already.

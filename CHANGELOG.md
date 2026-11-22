@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Export a saved book from the library’s book menu as EPUB, DOCX, PDF, FB2,
+  CBZ, HTML, Markdown or plain text.
+- `mbook-converter` exposes `Converter::export` for an existing `Book` and
+  `Format::extension` for suggesting an output file name, both behind the
+  optional `export` feature. The application enables that feature.
+
 - Paged reading keeps the final page aligned with its starting block, so a
   short final page shows the whole illustration without carrying over a
   strip of the preceding page.

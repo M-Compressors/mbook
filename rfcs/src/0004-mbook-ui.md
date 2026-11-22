@@ -145,7 +145,7 @@ Compact
 - A book that is still being converted is already on the shelf, with its
   file name and the state of the import.
 - The menu of a book (right click, the `…` button, or a long press): Open,
-  Edit, Show the file, Remove.
+  Edit, Show the file, Export, Remove.
 - Files are added with `+` or by dropping them on the window. The system
   picker lists mbook and the extensions accepted by the converter.
 - **New book…** asks for a title. Confirming creates a book in the library
@@ -612,6 +612,19 @@ stateDiagram-v2
   files only adds them.
 - A phone cannot hold a source of 2 GiB and its book. On a compact device
   the shell lowers `ConvertLimits` (*proposed*; the values are not chosen).
+
+### Export
+
+The library book menu offers **Export**. The application enables the
+[converter’s `export` feature](0003-mbook-converter-api.md#export), so its
+submenu lists all eight formats. Selecting a format opens a native save
+dialog with the book title and the format extension. Dismissing the dialog
+ends the action.
+
+The background executor opens the saved library book and writes the chosen
+format to a temporary file in the destination directory. The finished file
+is published only if the destination name is available. The application
+announces success or failure in the window.
 
 ### Reading
 
@@ -1165,6 +1178,7 @@ can break in its middle.
 | Part | State |
 | --- | --- |
 | Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
+| Export | The book menu exports the saved book in all eight converter output formats through a native save dialog. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
 | Reader | Scrolling, optional pagination, whole-book search with return to the original passage, auto-hiding controls and optional progress. Pagination supplies whole-book page estimates and scales pictures to the page. Pictures and diagrams scale to fit a page. Mermaid diagrams and KaTeX formulas use the page tone and display alternative text when rendering fails. Other tall blocks can be clipped through a line. |
 | Editor | Chapter search works on the current draft in Visual, Source, Split and Preview. Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Diagrams and Formulas have syntax-highlighted source dialogs, a preview and removal controls. Visual inserts figure references, and Preview and Split render them. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
@@ -1323,6 +1337,7 @@ defaults while retaining individual settings.
 | --- | --- | --- | --- |
 | Toolkit | GPUI Kit on GPUI Fast | | Decided by the format author. |
 | File picker filters | Native dialogs through `rfd` | GPUI file prompts | GPUI Kit 0.10 cannot pass extension filters to its platform picker. |
+| Export destination | Native save dialog and temporary file in the destination directory | Convert directly into the chosen file | The completed file is published in one operation and an existing file cannot be overwritten. |
 | Where CPU-bound work runs | The background executor of GPUI | A separate thread pool | Decided by the format author. One scheduler, with priorities, whose tasks are cancelled by dropping them. |
 | What decides a layout | The width of the window | The platform | A narrow desktop window and a phone need the same layout; a platform test gives two code paths that drift apart. |
 | Primary flow | Continuous vertical scrolling per chapter, with saved pagination as an alternative | Paged-only navigation | Scroll uses the native gesture path and leaves ordinary text free of page masks. |

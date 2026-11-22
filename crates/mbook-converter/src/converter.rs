@@ -8,7 +8,7 @@ use crate::options::ConvertOptions;
 use crate::report::{Converted, Report};
 use std::io::{Read, Write};
 
-/// Converts books in other formats into mbook.
+/// Converts books between mbook and other formats.
 ///
 /// A converter holds only its options: one value serves any number of
 /// conversions, from any number of threads.
@@ -35,6 +35,35 @@ pub struct Converter {
 }
 
 impl Converter {
+    /// Exports a book to the named format and writes it to `sink`.
+    ///
+    /// The sink only needs to implement [`Write`]. Formats that require a
+    /// seekable archive are assembled before being written. Each format
+    /// preserves what it can represent and uses alternative text for figures
+    /// it cannot render.
+    ///
+    /// # Errors
+    ///
+    /// A resource cannot be encoded, a picture exceeds the pixel limit, or
+    /// the writer or sink fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mbook_converter::{Converter, Format, mbook::Book};
+    ///
+    /// let mut book = Book::new("The Example", "en")?;
+    /// book.add_chapter("chapter.md", "# One\n\nA paragraph.\n")?;
+    /// let mut output = Vec::new();
+    /// Converter::export(&book, Format::Text, &mut output)?;
+    /// assert!(std::str::from_utf8(&output)?.contains("A paragraph."));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[cfg(feature = "export")]
+    pub fn export(book: &mbook::Book, format: Format, sink: impl Write) -> Result<()> {
+        crate::export::write(book, format, sink)
+    }
+
     /// A converter with the default options: the format is detected from
     /// the content of each source.
     #[must_use]
