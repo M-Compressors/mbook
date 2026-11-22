@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The release workflow publishes `mbook` and `mbook-converter` to crates.io
+  through Trusted Publishing before building the application installers.
+- A manual release run uses the selected Git tag as its ref.
+
 ## [v0.2.0](https://github.com/M-Compressors/mbook/releases/tag/v0.2.0) - 2026-11-23
 
 ### Added

@@ -16,7 +16,7 @@ formats into mbook, and `mbook-ui`, an application to read and edit them.
 
 ## Status
 
-mbook is not released yet, and the format may still change.
+The format and APIs are drafts and may still change.
 
 | Part | State |
 | --- | --- |
@@ -24,9 +24,9 @@ mbook is not released yet, and the format may still change.
 | Library API | Draft: [RFC 0002][api] |
 | Converter API | Draft: [RFC 0003][converter] |
 | Application | Draft: [RFC 0004][app] |
-| `mbook` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including chapter anchor tables and diagram and formula sources. Tested against files built by hand and against real AVIF pictures. Not published to crates.io. |
-| `mbook-ui` | A first version of RFC 0004: library and book creation, filtered import, a paged reader with whole-book numbering and page-fitted pictures, an editor that lists chapters by title, with a default Visual view for tables, lists and code, dialogs that link to a place of the book and put a picture into a chapter, a Contents section that shows the contents and edits a stored list entry by entry, a Landmarks section for notes, a picture gallery with encoding controls, syntax-highlighted diagram and formula editing and previews, settings, and release updates. Building for x86 or x86-64 requires NASM. Tested in headless windows and on macOS with an imported book. Remaining platform and accessibility checks are listed in [RFC 0004][app-status]. No release has been built. |
-| `mbook-converter` | Implements RFC 0003: EPUB, FB2, PDF, comic archives, Word, HTML, Markdown and plain text are converted into mbook, with pictures encoded as AVIF. Importing Mermaid fences and math markup as resources is pending. The limits of each format are listed in [RFC 0003][converter-status]. Tested against sources its tests build in memory; not yet against a collection of real books. Not published to crates.io. |
+| `mbook` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including chapter anchor tables and diagram and formula sources. Tested against files built by hand and against real AVIF pictures. Available on [crates.io](https://crates.io/crates/mbook). |
+| `mbook-ui` | A first version of RFC 0004: library and book creation, filtered import, a paged reader with whole-book numbering and page-fitted pictures, an editor that lists chapters by title, with a default Visual view for tables, lists and code, dialogs that link to a place of the book and put a picture into a chapter, a Contents section that shows the contents and edits a stored list entry by entry, a Landmarks section for notes, a picture gallery with encoding controls, syntax-highlighted diagram and formula editing and previews, settings, and release updates. Building for x86 or x86-64 requires NASM. Tested in headless windows and on macOS with an imported book. Remaining platform and accessibility checks are listed in [RFC 0004][app-status]. Installers are available from [GitHub Releases](https://github.com/M-Compressors/mbook/releases). |
+| `mbook-converter` | Implements RFC 0003: EPUB, FB2, PDF, comic archives, Word, HTML, Markdown and plain text are converted into mbook, with pictures encoded as AVIF. Importing Mermaid fences and math markup as resources is pending. The limits of each format are listed in [RFC 0003][converter-status]. Tested against sources its tests build in memory; not yet against a collection of real books. Available on [crates.io](https://crates.io/crates/mbook-converter). |
 
 ## Why another book format
 
