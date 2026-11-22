@@ -1,6 +1,6 @@
 //! The example book of RFC 0001, built with the public API.
 
-use crate::texts::{CH01, CH01_NAMED, CH02, CH03, ID, PLAIN, ROTATED};
+use crate::texts::{CH01, CH01_NAMED, CH02, CH03, CH04, DIAGRAM, FORMULA, ID, PLAIN, ROTATED};
 use mbook::{Book, Landmark, Result};
 
 /// The example book: a cover, two chapters and one figure.
@@ -37,6 +37,15 @@ pub(crate) fn with_landmarks() -> Result<Book> {
         Landmark::new("list-of-figures", "Figures", "ch01.md#fig-1"),
         Landmark::new("x-letter", "The letter", "ch02.md"),
     ])?;
+    Ok(book)
+}
+
+/// The example book with a diagram, a formula and a chapter that shows both.
+pub(crate) fn illustrated() -> Result<Book> {
+    let mut book = book()?;
+    book.add_diagram("dia/way.mmd", DIAGRAM)?;
+    book.add_formula("math/speed.tex", FORMULA)?;
+    book.add_chapter("ch04.md", CH04)?;
     Ok(book)
 }
 

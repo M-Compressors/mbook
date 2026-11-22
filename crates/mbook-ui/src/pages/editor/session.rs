@@ -9,10 +9,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::error::Error as _;
 
+use crate::entities::figure::FigureKind;
 use crate::features::edit_book::command::MetaChange;
 use crate::features::edit_book::error::EditError;
 use crate::features::edit_book::outline::{
-    ChapterOutline, ContentsOutline, MetaOutline, Outline, PictureOutline, ProblemOutline,
+    ChapterOutline, ContentsOutline, FigureOutline, MetaOutline, Outline, PictureOutline,
+    ProblemOutline,
 };
 use crate::shared::layout::SizeClass;
 
@@ -27,6 +29,8 @@ pub(super) enum Section {
     Contents,
     /// The pictures of the book.
     Pictures,
+    /// The diagrams or formulas of the book.
+    Figures(FigureKind),
     /// Landmarks that lead to the book's notes.
     Landmarks,
     /// What the last check or save found.
@@ -38,22 +42,26 @@ pub(super) enum Section {
 impl Section {
     /// The sections about the whole book, in the order the list shows them.
     /// The chapters stand in a list of their own under them.
-    pub(super) const BOOK: [Self; 6] = [
+    pub(super) const BOOK: [Self; 8] = [
         Self::Details,
         Self::Cover,
         Self::Contents,
         Self::Pictures,
+        Self::Figures(FigureKind::Diagram),
+        Self::Figures(FigureKind::Formula),
         Self::Landmarks,
         Self::Problems,
     ];
 
     /// Every section.
     #[cfg(test)]
-    pub(super) const ALL: [Self; 7] = [
+    pub(super) const ALL: [Self; 9] = [
         Self::Details,
         Self::Cover,
         Self::Contents,
         Self::Pictures,
+        Self::Figures(FigureKind::Diagram),
+        Self::Figures(FigureKind::Formula),
         Self::Landmarks,
         Self::Problems,
         Self::Chapters,
@@ -68,6 +76,8 @@ impl Section {
             Self::Chapters => "Chapters",
             Self::Landmarks => "Landmarks",
             Self::Pictures => "Pictures",
+            Self::Figures(FigureKind::Diagram) => "Diagrams",
+            Self::Figures(FigureKind::Formula) => "Formulas",
             Self::Problems => "Problems",
         }
     }
@@ -81,6 +91,8 @@ impl Section {
             Self::Chapters => "section-chapters",
             Self::Landmarks => "section-landmarks",
             Self::Pictures => "section-pictures",
+            Self::Figures(FigureKind::Diagram) => "section-diagrams",
+            Self::Figures(FigureKind::Formula) => "section-formulas",
             Self::Problems => "section-problems",
         }
     }
@@ -184,6 +196,8 @@ pub(super) enum Control {
     Landmarks,
     /// Adding or removing a picture.
     Pictures,
+    /// Adding, editing or removing a diagram or formula.
+    Figures(FigureKind),
     /// Adding a picture from a file into the chapter being edited.
     ChapterPicture,
     /// Replacing the cover.
@@ -361,6 +375,13 @@ impl Session {
         self.outline
             .as_ref()
             .map_or(&[], |outline| outline.pictures.as_slice())
+    }
+
+    /// The diagrams and formulas of the book.
+    pub(super) fn figures(&self) -> &[FigureOutline] {
+        self.outline
+            .as_ref()
+            .map_or(&[], |outline| outline.figures.as_slice())
     }
 
     /// The problems the last check or save found.

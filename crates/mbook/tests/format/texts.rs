@@ -62,6 +62,23 @@ pub(crate) fn offset_in_ch01(line: &str) -> u32 {
         .unwrap_or(0)
 }
 
+/// A diagram in Mermaid notation.
+pub(crate) const DIAGRAM: &str = "flowchart LR
+  station[The station] --> letter[The letter]
+";
+
+/// A formula in the notation of `KaTeX`.
+pub(crate) const FORMULA: &str = "v = \\frac{s}{t}";
+
+/// A chapter that shows the diagram as a figure and the formula in a line.
+#[cfg(feature = "write")]
+pub(crate) const CH04: &str = "# Chapter 4. The way
+
+![From the station to the letter](dia/way.mmd \"The way\")
+
+The train kept ![v = s / t](math/speed.tex) all the way.
+";
+
 /// The identifier of the example book.
 pub(crate) const ID: &str = "urn:uuid:3f1c2a7e-8a54-4d0b-9c1e-6b2f0d9a7e11";
 

@@ -11,6 +11,7 @@ use super::chapter::{PictureRef, PreparedChapter, Target};
 use super::error::BookError;
 use super::snapshot::BookSnapshot;
 use super::source::{BookSource, open};
+use crate::entities::figure::FigureKind;
 use crate::shared::model::Place;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
@@ -574,5 +575,131 @@ fn a_damaged_picture_fails_only_when_it_is_read() -> TestResult {
     // The other chapter and the cover are still read.
     assert_eq!(source.prepare_chapter(1)?.text, CH02);
     assert!(source.read_cover()?.is_some());
+    Ok(())
+}
+
+// Diagrams and formulas: RFC 0004, "Diagrams and formulas".
+
+const FLOW: &str = "flowchart LR\n  A --> B\n";
+const SPEED: &str = r"v = \frac{s}{t}";
+const SHOWN: &str = "# Three
+
+![The way](dia/way.mmd)
+
+Speed is ![v = s / t](math/speed.tex), and again ![v][speed].
+
+![A figure](img/fig.avif)
+
+[speed]: math/speed.tex
+";
+
+/// The sample book with a diagram, a formula and a chapter that shows both.
+fn write_illustrated(dir: &TempDir) -> TestResult<PathBuf> {
+    let path = write_sample(dir)?;
+    let mut book = Book::open(&path)?;
+    book.add_diagram("dia/way.mmd", FLOW)?;
+    book.add_formula("math/speed.tex", SPEED)?;
+    book.add_chapter("ch03.md", SHOWN)?;
+    book.save(&path)?;
+    Ok(path)
+}
+
+#[test]
+fn a_chapter_is_prepared_with_the_sources_of_its_diagrams_and_formulas() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let (_snapshot, source) = open(&write_illustrated(&dir)?)?;
+
+    let chapter = source.prepare_chapter(2)?;
+
+    let figures = &chapter.figures;
+    let way = figures
+        .by_destination
+        .get("dia/way.mmd")
+        .ok_or("no diagram")?;
+    assert_eq!((way.kind, &*way.source), (FigureKind::Diagram, FLOW));
+    let speed = figures
+        .by_destination
+        .get("math/speed.tex")
+        .ok_or("no formula")?;
+    assert_eq!((speed.kind, &*speed.source), (FigureKind::Formula, SPEED));
+    assert_eq!(figures.by_destination.len(), 2);
+    assert_eq!(
+        figures
+            .by_reference
+            .get("speed")
+            .map(|reference| reference.destination.as_str()),
+        Some("math/speed.tex")
+    );
+    // A picture stays a picture.
+    assert!(chapter.pictures.contains_key("img/fig.avif"));
+    assert!(!chapter.pictures.contains_key("dia/way.mmd"));
+    Ok(())
+}
+
+#[test]
+fn a_chapter_without_figures_has_none() -> TestResult {
+    let (_dir, _snapshot, source) = open_sample()?;
+    let chapter = source.prepare_chapter(0)?;
+    assert!(chapter.figures.is_empty());
+    assert!(chapter.figures.by_reference.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_link_to_a_diagram_or_to_a_formula_leads_nowhere() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let (_snapshot, source) = open(&write_illustrated(&dir)?)?;
+    let reader = source.lock()?;
+    let diagram = reader.find_diagram("dia/way.mmd").ok_or("no diagram")?.id;
+    let formula = reader
+        .find_formula("math/speed.tex")
+        .ok_or("no formula")?
+        .id;
+    let to_diagram = source.target(
+        &reader,
+        "dia/way.mmd",
+        Ok(mbook::Destination::Diagram(diagram)),
+    );
+    let to_formula = source.target(
+        &reader,
+        "math/speed.tex",
+        Ok(mbook::Destination::Formula(formula)),
+    );
+    assert_eq!(
+        (to_diagram, to_formula),
+        (Target::Unresolved, Target::Unresolved)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_damaged_formula_has_no_source_and_does_not_fail_its_chapter() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = write_illustrated(&dir)?;
+    let mut file = std::fs::read(&path)?;
+    // The formula is the last resource: its frame ends where the directory
+    // of the container starts.
+    let directory = file
+        .windows(4)
+        .rposition(|window| window == b"INDX")
+        .ok_or("a container has a directory")?;
+    file[directory - 2] ^= 0xff;
+    std::fs::write(&path, file)?;
+    let (_snapshot, source) = open(&path)?;
+
+    let chapter = source.prepare_chapter(2)?;
+
+    let speed = chapter
+        .figures
+        .by_destination
+        .get("math/speed.tex")
+        .ok_or("the formula is still a figure of the chapter")?;
+    assert_eq!((speed.kind, &*speed.source), (FigureKind::Formula, ""));
+    let way = chapter
+        .figures
+        .by_destination
+        .get("dia/way.mmd")
+        .ok_or("no diagram")?;
+    assert_eq!(&*way.source, FLOW);
     Ok(())
 }

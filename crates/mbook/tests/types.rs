@@ -1,8 +1,9 @@
 //! Value types, options and the guarantees every public type gives.
 
 use mbook::{
-    Anchor, ChapterId, Destination, Error, Limits, Meta, PictureId, Position, Problems,
-    ReadOptions, ResourceKind, Size, TocEntry, TocItem, Version, WriteOptions,
+    Anchor, ChapterId, Destination, Diagram, DiagramEntry, DiagramId, Error, Formula, FormulaEntry,
+    FormulaId, Limits, Meta, PictureId, Position, Problems, ReadOptions, ResourceKind, Size,
+    SourceError, TocEntry, TocItem, Version, WriteOptions,
 };
 
 fn assert_send_sync<T: Send + Sync + 'static>() {}
@@ -22,12 +23,19 @@ fn value_types_are_plain_data() {
     assert_value::<TocItem>();
     assert_value::<Destination>();
     assert_value::<Problems>();
+    assert_value::<Diagram>();
+    assert_value::<Formula>();
+    assert_value::<DiagramEntry<'static>>();
+    assert_value::<FormulaEntry<'static>>();
+    assert_value::<SourceError>();
 }
 
 #[test]
 fn ids_and_positions_are_copy_and_hashable() {
     assert_copy::<ChapterId>();
     assert_copy::<PictureId>();
+    assert_copy::<DiagramId>();
+    assert_copy::<FormulaId>();
     assert_copy::<Position>();
     assert_copy::<Size>();
     assert_copy::<Version>();
@@ -100,6 +108,14 @@ fn kind_code_three_is_the_anchor_table_of_a_chapter() {
 #[test]
 fn kind_code_four_is_the_landmarks() {
     assert_eq!(ResourceKind::from(4), ResourceKind::Landmarks);
+}
+
+#[test]
+fn kind_codes_five_and_six_are_the_diagram_and_the_formula() {
+    assert_eq!(
+        [5, 6].map(ResourceKind::from),
+        [ResourceKind::Diagram, ResourceKind::Formula]
+    );
 }
 
 #[test]

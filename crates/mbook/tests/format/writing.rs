@@ -2,7 +2,9 @@
 
 use crate::raw::Raw;
 use crate::sample;
-use crate::texts::{CH01, CH01_NAMED, CH02, CROPPED, MIRRORED, PLAIN, ROTATED, named_offset};
+use crate::texts::{
+    CH01, CH01_NAMED, CH02, CROPPED, DIAGRAM, FORMULA, MIRRORED, PLAIN, ROTATED, named_offset,
+};
 use mbook::{
     Book, BookReader, ChapterId, Destination, Error, Landmark, Limits, Position, ResolveError,
     ResourceKind, Result, Size, Toc, TocItem, WriteOptions, is_mbook,
@@ -788,5 +790,162 @@ fn a_book_with_landmarks_and_no_cover_puts_its_chapters_after_them() -> Result<(
     let landmarks = reader.read_landmarks()?;
     assert_eq!(landmarks[0].position.chapter.number(), 6);
     assert!(reader.chapter_id(6).is_some());
+    Ok(())
+}
+
+#[test]
+fn diagrams_and_formulas_survive_being_written_and_read() -> Result<()> {
+    let book = sample::illustrated()?;
+    let bytes = written(&book)?;
+    let read = Book::read(bytes.as_slice())?;
+    assert_eq!(read.diagrams(), book.diagrams());
+    assert_eq!(read.formulas(), book.formulas());
+    assert_eq!(open(bytes)?.load()?, read);
+    Ok(())
+}
+
+#[test]
+fn a_loaded_book_with_a_diagram_and_a_formula_writes_back_to_the_same_bytes() -> Result<()> {
+    let first = written(&sample::illustrated()?)?;
+    let second = written(&Book::read(first.as_slice())?)?;
+    assert!(first == second);
+    Ok(())
+}
+
+#[test]
+fn diagrams_and_formulas_are_written_after_the_pictures() -> Result<()> {
+    let reader = open(written(&sample::illustrated()?)?)?;
+    let rows: Vec<_> = reader
+        .resources()
+        .skip(5)
+        .map(|r| (r.kind, r.path, r.size))
+        .collect();
+    let size = |width, height| Some(Size { width, height });
+    assert_eq!(
+        rows,
+        [
+            (ResourceKind::Picture, "img/cover.avif", size(24, 16)),
+            (ResourceKind::Text, "ch01.md", None),
+            (ResourceKind::Text, "ch02.md", None),
+            (ResourceKind::Text, "ch04.md", None),
+            (ResourceKind::Picture, "img/fig-1.avif", size(16, 24)),
+            (ResourceKind::Diagram, "dia/way.mmd", None),
+            (ResourceKind::Formula, "math/speed.tex", None),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn a_reader_lists_and_reads_a_diagram_and_a_formula() -> Result<()> {
+    let mut reader = open(written(&sample::illustrated()?)?)?;
+    let diagrams: Vec<_> = reader.diagrams().map(|d| (d.path, d.decoded_len)).collect();
+    let formulas: Vec<_> = reader.formulas().map(|f| (f.path, f.decoded_len)).collect();
+    assert_eq!(diagrams, [("dia/way.mmd", DIAGRAM.len() as u64)]);
+    assert_eq!(formulas, [("math/speed.tex", FORMULA.len() as u64)]);
+    let (Some(diagram), Some(formula)) = (
+        reader.find_diagram("dia/way.mmd").map(|d| d.id),
+        reader.find_formula("math/speed.tex").map(|f| f.id),
+    ) else {
+        panic!("the book has a diagram and a formula");
+    };
+    assert_eq!(reader.read_diagram(diagram)?, DIAGRAM);
+    assert_eq!(reader.read_formula(formula)?, FORMULA);
+    assert_eq!(reader.diagram(diagram).map(|d| d.path), Some("dia/way.mmd"));
+    assert_eq!(
+        reader.formula(formula).map(|f| f.path),
+        Some("math/speed.tex")
+    );
+    assert_eq!(reader.diagram_id(diagram.number()), Some(diagram));
+    assert_eq!(reader.formula_id(formula.number()), Some(formula));
+    assert!(reader.diagram_id(formula.number()).is_none());
+    assert!(reader.formula_id(diagram.number()).is_none());
+    assert!(reader.picture_id(diagram.number()).is_none());
+    Ok(())
+}
+
+#[test]
+fn a_chapter_resolves_what_it_shows_to_a_diagram_and_a_formula() -> Result<()> {
+    let reader = open(written(&sample::illustrated()?)?)?;
+    let Some(from) = reader.find_chapter("ch04.md").map(|chapter| chapter.id) else {
+        panic!("the book has a fourth chapter");
+    };
+    let diagram = reader.find_diagram("dia/way.mmd").map(|d| d.id);
+    let formula = reader.find_formula("math/speed.tex").map(|f| f.id);
+    assert_eq!(
+        reader.resolve(from, "dia/way.mmd").ok(),
+        diagram.map(Destination::Diagram)
+    );
+    assert_eq!(
+        reader.resolve(from, "math/speed.tex").ok(),
+        formula.map(Destination::Formula)
+    );
+    assert_eq!(
+        reader.resolve(from, "dia/way.mmd#x"),
+        Err(ResolveError::FragmentOnPicture)
+    );
+    Ok(())
+}
+
+#[test]
+fn an_id_of_a_diagram_from_another_book_reads_nothing() -> Result<()> {
+    let illustrated = open(written(&sample::illustrated()?)?)?;
+    let mut plain = open(sample::bytes()?)?;
+    let (Some(diagram), Some(formula)) = (
+        illustrated.diagrams().next().map(|d| d.id),
+        illustrated.formulas().next().map(|f| f.id),
+    ) else {
+        panic!("the book has a diagram and a formula");
+    };
+    assert!(matches!(
+        plain.read_diagram(diagram),
+        Err(Error::NoSuchResource(number)) if number == diagram.number()
+    ));
+    assert!(matches!(
+        plain.read_formula(formula),
+        Err(Error::NoSuchResource(number)) if number == formula.number()
+    ));
+    assert!(plain.diagram(diagram).is_none() && plain.formula(formula).is_none());
+    Ok(())
+}
+
+#[test]
+fn a_changed_source_is_what_is_written() -> Result<()> {
+    let mut book = sample::illustrated()?;
+    if let Some(diagram) = book.diagram_mut("dia/way.mmd") {
+        diagram.set_source("flowchart TD\n  A --> B\n")?;
+    }
+    if let Some(formula) = book.formula_mut("math/speed.tex") {
+        formula.set_source("s = vt")?;
+    }
+    let read = Book::read(written(&book)?.as_slice())?;
+    assert_eq!(
+        read.diagram("dia/way.mmd").map(mbook::Diagram::source),
+        Some("flowchart TD\n  A --> B\n")
+    );
+    assert_eq!(
+        read.formula("math/speed.tex").map(mbook::Formula::source),
+        Some("s = vt")
+    );
+    Ok(())
+}
+
+#[test]
+fn a_source_larger_than_the_resource_limit_is_not_written() -> Result<()> {
+    let mut options = WriteOptions::default();
+    options.limits.max_resource_bytes = 32;
+    for diagram in [true, false] {
+        let mut book = Book::new("Small", "en")?;
+        if diagram {
+            book.add_diagram("dia/long.mmd", "flowchart LR\n".repeat(8))?;
+        } else {
+            book.add_formula("math/long.tex", "x".repeat(64))?;
+        }
+        assert!(matches!(
+            book.write_with(Vec::new(), &options),
+            Err(Error::Limit(_))
+        ));
+        assert!(book.write(Vec::new()).is_ok());
+    }
     Ok(())
 }

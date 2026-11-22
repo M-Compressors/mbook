@@ -3,7 +3,10 @@
 use std::collections::{HashMap, HashSet};
 
 use markdown::ParseOptions;
-use markdown::mdast::Node;
+use markdown::mdast::{Definition, Node};
+use percent_encoding::percent_decode_str;
+
+use crate::entities::figure::{FigureSources, ImageReference};
 
 /// A chapter, read and analysed, with everything the view needs to show it
 /// without touching the file again.
@@ -22,6 +25,9 @@ pub(crate) struct PreparedChapter {
     pub(crate) links: HashMap<String, Target>,
     /// Every picture destination of the text that is a picture of the book.
     pub(crate) pictures: HashMap<String, PictureRef>,
+    /// Every picture destination of the text that is a diagram or a formula
+    /// of the book, with its source.
+    pub(crate) figures: FigureSources,
 }
 
 /// A picture of the book, named by a chapter.
@@ -79,11 +85,48 @@ pub(super) struct Analysis {
     pub(super) links: Vec<String>,
     /// The destination of every picture, once each.
     pub(super) pictures: Vec<String>,
+    /// The destination of every picture shown through a link reference
+    /// definition, `![alt][name]`, by the identifier of the definition.
+    pub(super) references: HashMap<String, ImageReference>,
 }
 
 /// Image destinations in the chapter, including reference-style images.
 pub(crate) fn picture_destinations(text: &str) -> Vec<String> {
     analyse(text).pictures
+}
+
+/// What a text shows with the syntax of a picture: every destination, once,
+/// and the destinations reached through a link reference definition, by the
+/// identifier of the definition.
+pub(crate) fn shown(text: &str) -> (Vec<String>, HashMap<String, ImageReference>) {
+    let analysis = analyse(text);
+    (analysis.pictures, analysis.references)
+}
+
+/// Resolves an image destination against a chapter path before looking it up.
+pub(crate) fn image_path(chapter: &str, destination: &str) -> Option<String> {
+    let has_scheme = destination.split_once(':').is_some_and(|(scheme, _)| {
+        let mut bytes = scheme.bytes();
+        bytes.next().is_some_and(|byte| byte.is_ascii_alphabetic())
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || b"+.-".contains(&byte))
+    });
+    if has_scheme || destination.contains(['#', '?']) {
+        return None;
+    }
+    let path = percent_decode_str(destination).decode_utf8().ok()?;
+    let mut segments = chapter.split('/').collect::<Vec<_>>();
+    segments.pop();
+    for name in path.split('/') {
+        match name {
+            "" => return None,
+            "." => {}
+            ".." => {
+                segments.pop()?;
+            }
+            name => segments.push(name),
+        }
+    }
+    Some(segments.join("/"))
 }
 
 /// Parses a chapter as the dialect of RFC 0001, `CommonMark` with the GFM
@@ -123,12 +166,12 @@ fn block_offsets(root: &Node, text: &str) -> Vec<u32> {
 }
 
 /// Maps the identifier of every link reference definition to its destination.
-fn collect_definitions<'a>(node: &'a Node, definitions: &mut HashMap<&'a str, &'a str>) {
+fn collect_definitions<'a>(node: &'a Node, definitions: &mut HashMap<&'a str, &'a Definition>) {
     if let Node::Definition(definition) = node {
         // The first definition of an identifier wins, as in `CommonMark`.
         definitions
             .entry(definition.identifier.as_str())
-            .or_insert(definition.url.as_str());
+            .or_insert(definition);
     }
     for child in node.children().map_or_default(Vec::as_slice) {
         collect_definitions(child, definitions);
@@ -138,7 +181,7 @@ fn collect_definitions<'a>(node: &'a Node, definitions: &mut HashMap<&'a str, &'
 /// Collects the destinations of links and pictures, once each.
 fn visit(
     node: &Node,
-    definitions: &HashMap<&str, &str>,
+    definitions: &HashMap<&str, &Definition>,
     analysis: &mut Analysis,
     seen: &mut (HashSet<String>, HashSet<String>),
 ) {
@@ -146,13 +189,24 @@ fn visit(
         Node::Link(link) => (Some(link.url.as_str()), None),
         Node::Image(image) => (None, Some(image.url.as_str())),
         Node::LinkReference(reference) => (
-            definitions.get(reference.identifier.as_str()).copied(),
+            definitions
+                .get(reference.identifier.as_str())
+                .map(|definition| definition.url.as_str()),
             None,
         ),
-        Node::ImageReference(reference) => (
-            None,
-            definitions.get(reference.identifier.as_str()).copied(),
-        ),
+        Node::ImageReference(reference) => {
+            let definition = definitions.get(reference.identifier.as_str());
+            if let Some(definition) = definition {
+                analysis
+                    .references
+                    .entry(reference.identifier.clone())
+                    .or_insert_with(|| ImageReference {
+                        destination: definition.url.clone(),
+                        title: definition.title.clone(),
+                    });
+            }
+            (None, definition.map(|definition| definition.url.as_str()))
+        }
         _ => (None, None),
     };
     if let Some(url) = link.filter(|url| seen.0.insert((*url).to_owned())) {
@@ -190,6 +244,7 @@ mod tests {
             blocks: blocks.to_vec(),
             links: HashMap::new(),
             pictures: HashMap::new(),
+            figures: FigureSources::default(),
         }
     }
 
@@ -282,6 +337,29 @@ mod tests {
     fn a_reference_picture_is_reported_with_the_destination_of_its_definition() {
         let analysis = analyse("![alt][pic]\n\n[pic]: img/b.avif\n");
         assert_eq!(analysis.pictures, vec!["img/b.avif".to_owned()]);
+    }
+
+    #[test]
+    fn a_reference_picture_is_remembered_by_the_identifier_of_its_definition() {
+        let (pictures, references) =
+            shown("![alt][Pic] and ![x](a.avif)\n\n[pic]: math/e.tex \"A formula\"\n");
+        assert_eq!(pictures, ["math/e.tex", "a.avif"]);
+        assert_eq!(
+            references,
+            HashMap::from([(
+                "pic".to_owned(),
+                ImageReference {
+                    destination: "math/e.tex".to_owned(),
+                    title: Some("A formula".to_owned()),
+                }
+            )])
+        );
+    }
+
+    #[test]
+    fn a_reference_without_a_definition_shows_nothing() {
+        let (pictures, references) = shown("![alt][nothing]\n");
+        assert!(pictures.is_empty() && references.is_empty());
     }
 
     #[test]

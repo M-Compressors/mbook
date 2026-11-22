@@ -13,8 +13,9 @@
 central types:
 
 - **`BookReader<R>`** reads a book lazily from anything that can seek. Opening
-  it costs the directory and five small frames; each chapter, each picture
-  and the anchor table of each chapter is decoded when asked for.
+  it costs the directory and five small frames; each chapter, picture,
+  diagram and formula, and the anchor table of each chapter, is decoded when
+  asked for.
 - **`Book`** is a whole book in memory that can be changed and written out. It
   is how a book is created, and how an existing one is edited.
 
@@ -48,8 +49,10 @@ container itself. Four tasks must each take a few lines:
 
 ### Non-goals
 
-- **Rendering Markdown or decoding AVIF.** Chapters are returned as text and
-  pictures as AVIF bytes.
+- **Rendering Markdown, decoding AVIF, drawing diagrams or setting
+  formulas.** Chapters are returned as text, pictures as AVIF bytes, and
+  diagrams and formulas as their source. The crate links no Mermaid and no
+  KaTeX implementation and does not check their notation.
 - **Converting from other formats.** FB2, EPUB and image conversion belong to
   crates built on this one.
 - **Editing in place, or without loading the book.** The format excludes the
@@ -74,10 +77,10 @@ flowchart LR
 
 | | `BookReader<R>` | `Book` |
 | --- | --- | --- |
-| Holds | The four tables and the source | Every chapter and picture, decoded |
+| Holds | The four tables and the source | Every chapter, picture, diagram and formula, decoded |
 | Memory | Kilobytes for a novel | The decoded size of the book |
 | Can change the book | No | Yes |
-| Addresses a resource by | `ChapterId` or `PictureId`, its number in the file | Path |
+| Addresses a resource by | `ChapterId`, `PictureId`, `DiagramId` or `FormulaId`, its number in the file | Path |
 | Typical user | A reading application | A converter or an editor |
 
 Resource numbers are exact and cheap for a reader, but they shift whenever a
@@ -120,6 +123,12 @@ match book.resolve(first, "img/fig-1.avif") {
         let size = book.picture(id).map(|p| p.size);   // reserve space first
         let avif = book.read_picture(id)?;             // decode when visible
     }
+    Ok(Destination::Diagram(id)) => {
+        let mermaid = book.read_diagram(id)?;          // draw it, or show the alt text
+    }
+    Ok(Destination::Formula(id)) => {
+        let katex = book.read_formula(id)?;            // set it, or show the alt text
+    }
     Ok(Destination::Chapter(position)) => { /* jump to position */ }
     Ok(Destination::ExtraAnchor(chapter)) => { /* a place in `chapter`; see below */ }
     Ok(Destination::External) => { /* open only when the user asks */ }
@@ -145,8 +154,8 @@ Methods that only look into the tables take `&self` and cannot fail with an
 I/O error. Methods that touch the source start with `read_` and take
 `&mut self`.
 
-A chapter and a picture have different id types, so `read_chapter` cannot be
-called with the id of a picture. Ids come from the reader. To keep one outside
+A chapter, a picture, a diagram and a formula have different id types, so
+`read_chapter` cannot be called with the id of a picture. Ids come from the reader. To keep one outside
 the program, for a bookmark, store its number and ask the reader for the id
 again:
 
@@ -238,6 +247,30 @@ book.set_toc(Toc::Explicit(vec![
 ]));
 ```
 
+### Diagrams and formulas
+
+A diagram is added as its description in Mermaid notation and a formula in
+the notation of KaTeX. A chapter shows either the way it shows a picture:
+
+```rust
+book.add_diagram("dia/route.mmd", "flowchart LR\n  station --> letter\n")?;
+book.add_formula("math/speed.tex", r"v = \frac{s}{t}")?;
+book.add_chapter("ch03.md", "\
+![From the station to the letter](dia/route.mmd \"The way\")
+
+The train kept ![v = s / t](math/speed.tex) all the way.
+")?;
+
+// Later: correct the formula without touching the chapter.
+book.formula_mut("math/speed.tex").unwrap().set_source(r"v = \frac{\Delta s}{\Delta t}")?;
+```
+
+- The source is stored as text, with the line endings of a chapter. The
+  notation is not checked: a reading application shows the alternative text
+  of what it cannot render.
+- A reference with the syntax of a picture resolves when it names a picture,
+  a diagram or a formula. A link to one of them does not.
+
 ### Naming a line that is not a heading
 
 Headings get their anchors by themselves. Any other line gets a name from one
@@ -297,8 +330,12 @@ examples of the guide are compiled as its doc tests.
 ```rust
 pub struct ChapterId(/* private */);         // a resource of kind 1
 pub struct PictureId(/* private */);         // a resource of kind 2
+pub struct DiagramId(/* private */);         // a resource of kind 5
+pub struct FormulaId(/* private */);         // a resource of kind 6
 impl ChapterId { pub fn number(self) -> u32; }   // its number in the file
 impl PictureId { pub fn number(self) -> u32; }
+impl DiagramId { pub fn number(self) -> u32; }
+impl FormulaId { pub fn number(self) -> u32; }
 
 pub struct Size { pub width: u32, pub height: u32 }
 pub struct Position { pub chapter: ChapterId, pub offset: u32 }
@@ -315,6 +352,8 @@ pub struct PictureEntry<'a> {
     pub size: Size,
     pub decoded_len: u64,
 }
+pub struct DiagramEntry<'a> { pub id: DiagramId, pub path: &'a str, pub decoded_len: u64 }
+pub struct FormulaEntry<'a> { pub id: FormulaId, pub path: &'a str, pub decoded_len: u64 }
 
 pub struct TocEntry { pub level: u8, pub title: String, pub position: Position }
 pub struct LandmarkEntry { pub kind: String, pub title: String, pub position: Position }
@@ -323,11 +362,15 @@ pub enum Destination {
     External,
     Chapter(Position),
     Picture(PictureId),
+    Diagram(DiagramId),
+    Formula(FormulaId),
     ExtraAnchor(ChapterId),                  // only from BookReader::resolve
 }
 
 // The raw resource table, for tools that list a file.
-pub enum ResourceKind { Service, Text, Picture, ChapterAnchors, Landmarks, Unknown(u8) }   // non-exhaustive
+pub enum ResourceKind {                      // non-exhaustive
+    Service, Text, Picture, ChapterAnchors, Landmarks, Diagram, Formula, Unknown(u8),
+}
 pub struct Resource<'a> {
     pub number: u32,
     pub kind: ResourceKind,
@@ -340,9 +383,10 @@ pub struct Resource<'a> {
 pub fn is_mbook(prefix: &[u8]) -> bool;
 ```
 
-- Both id types are `Copy`, ordered and hashable. They have no public
+- The four id types are `Copy`, ordered and hashable. They have no public
   constructor: an id is obtained from a `BookReader`, which hands out a
-  `ChapterId` only for a text resource and a `PictureId` only for a picture.
+  `ChapterId` only for a text resource, a `PictureId` only for a picture, a
+  `DiagramId` only for a diagram and a `FormulaId` only for a formula.
 - An id is a number inside one file. It is not stable across re-packings of a
   book; the stable name of a resource is its path.
 
@@ -410,13 +454,21 @@ impl<R: Read + Seek> BookReader<R> {
     pub fn toc(&self) -> &[TocEntry];
     pub fn chapters(&self) -> impl ExactSizeIterator<Item = ChapterEntry<'_>>;  // reading order
     pub fn pictures(&self) -> impl ExactSizeIterator<Item = PictureEntry<'_>>;
+    pub fn diagrams(&self) -> impl ExactSizeIterator<Item = DiagramEntry<'_>>;
+    pub fn formulas(&self) -> impl ExactSizeIterator<Item = FormulaEntry<'_>>;
     pub fn chapter(&self, id: ChapterId) -> Option<ChapterEntry<'_>>;
     pub fn picture(&self, id: PictureId) -> Option<PictureEntry<'_>>;
+    pub fn diagram(&self, id: DiagramId) -> Option<DiagramEntry<'_>>;
+    pub fn formula(&self, id: FormulaId) -> Option<FormulaEntry<'_>>;
     pub fn find_chapter(&self, path: &str) -> Option<ChapterEntry<'_>>;
     pub fn find_picture(&self, path: &str) -> Option<PictureEntry<'_>>;
+    pub fn find_diagram(&self, path: &str) -> Option<DiagramEntry<'_>>;
+    pub fn find_formula(&self, path: &str) -> Option<FormulaEntry<'_>>;
     pub fn cover(&self) -> Option<PictureEntry<'_>>;
     pub fn chapter_id(&self, number: u32) -> Option<ChapterId>;     // checked
     pub fn picture_id(&self, number: u32) -> Option<PictureId>;     // checked
+    pub fn diagram_id(&self, number: u32) -> Option<DiagramId>;     // checked
+    pub fn formula_id(&self, number: u32) -> Option<FormulaId>;     // checked
     pub fn anchors(&self, chapter: ChapterId) -> &[Anchor];         // of headings
     pub fn resolve(&self, from: ChapterId, destination: &str)
         -> Result<Destination, ResolveError>;
@@ -429,6 +481,8 @@ impl<R: Read + Seek> BookReader<R> {
     pub fn read_resolve(&mut self, from: ChapterId, destination: &str)
         -> Result<Destination>;
     pub fn read_picture(&mut self, id: PictureId) -> Result<Vec<u8>>;
+    pub fn read_diagram(&mut self, id: DiagramId) -> Result<String>;    // Mermaid
+    pub fn read_formula(&mut self, id: FormulaId) -> Result<String>;    // KaTeX
     pub fn read_cover(&mut self) -> Result<Option<Vec<u8>>>;
 
     pub fn load(&mut self) -> Result<Book>;      // decode everything
@@ -445,7 +499,8 @@ impl<R: Read + Seek> BookReader<R> {
 | `read_landmarks` | The landmarks table; nothing when the book has none | I/O; a damaged frame; the table is not of the defined shape or breaks a rule of [Landmarks](0001-mbook-format.md#landmarks-1). |
 | `read_resolve` | That table, and only when the fragment is not the anchor of a heading | `Error::Unresolved` when the destination is unresolved; otherwise as `read_extra_anchors`. |
 | `read_chapter`, `read_picture` | One record | I/O; a damaged frame; the resource exceeds its limit; the text is not UTF-8, or a stored position in it is not at the start of a line; the id came from another book. |
-| `load` | Every text, picture and anchor table record, and the landmarks | As above, for any resource; an extra anchor is not at the start of a line; or the decoded book exceeds the file limit. |
+| `read_diagram`, `read_formula` | One record | I/O; a damaged frame; the resource exceeds its limit; the source is not UTF-8; the id came from another book. |
+| `load` | Every text, picture, diagram, formula and anchor table record, and the landmarks | As above, for any resource; an extra anchor is not at the start of a line; or the decoded book exceeds the file limit. |
 
 - An error in one resource does not poison the reader; other resources can
   still be read.
@@ -476,6 +531,10 @@ impl<R: Read + Seek> BookReader<R> {
 - The tables cannot show whether a stored position is at the start of a line;
   that needs the text. `read_chapter` checks the positions of the chapter it
   decodes, and fails for that chapter only.
+- **A diagram and a formula are read as text and not looked into.** The
+  crate does not parse either notation, so `read_diagram` succeeds for a
+  source no renderer accepts, and for an empty one, which RFC 0001 forbids
+  writers to store: the application shows the alternative text.
 - The types rule out reading a picture as a chapter. They cannot rule out an
   id taken from another book: such an id gives `None` from the table
   accessors and `Error::NoSuchResource` from the `read_` calls.
@@ -517,6 +576,20 @@ impl Book {
     pub fn set_cover(&mut self, path: impl Into<String>, avif: impl Into<Vec<u8>>)
         -> Result<&Picture>;                                 // add_picture + meta cover
 
+    pub fn diagrams(&self) -> &[Diagram];
+    pub fn diagram(&self, path: &str) -> Option<&Diagram>;
+    pub fn diagram_mut(&mut self, path: &str) -> Option<&mut Diagram>;
+    pub fn add_diagram(&mut self, path: impl Into<String>, source: impl Into<String>)
+        -> Result<&mut Diagram>;
+    pub fn remove_diagram(&mut self, path: &str) -> Option<Diagram>;
+
+    pub fn formulas(&self) -> &[Formula];
+    pub fn formula(&self, path: &str) -> Option<&Formula>;
+    pub fn formula_mut(&mut self, path: &str) -> Option<&mut Formula>;
+    pub fn add_formula(&mut self, path: impl Into<String>, source: impl Into<String>)
+        -> Result<&mut Formula>;
+    pub fn remove_formula(&mut self, path: &str) -> Option<Formula>;
+
     pub fn toc(&self) -> &Toc;
     pub fn set_toc(&mut self, toc: Toc);
 
@@ -537,6 +610,12 @@ impl Picture {
     pub fn size(&self) -> Size;
     pub fn data(&self) -> &[u8];
 }
+
+impl Diagram {                                           // Formula is the same
+    pub fn path(&self) -> &str;
+    pub fn source(&self) -> &str;
+    pub fn set_source(&mut self, source: impl Into<String>) -> Result<()>;
+}
 ```
 
 `Book::new` creates the three required `meta` rows and fails only for an
@@ -547,6 +626,12 @@ empty title. `id` is `urn:uuid:` followed by a UUID version 7 generated by the
 `add_chapter`, `insert_chapter` and `set_text` normalise the text before
 storing it: CRLF and lone CR become a line feed, and a leading byte order mark
 is removed. Nothing else is changed.
+
+`add_diagram`, `add_formula` and `set_source` normalise a source the same
+way, and refuse one without a character that is not white space. A diagram
+and a formula can be changed in place, unlike a picture: their source is
+text an editor works on, and removing and adding one again would move it to
+the end of its list.
 
 #### Navigation
 
@@ -654,11 +739,13 @@ without them gets no table.
 | Text encoding: no control characters other than line feed and tab | `add_chapter`, `insert_chapter`, `set_text`, after normalising | `Error::InvalidText`, with the byte offset |
 | The same rule, for a chapter that was loaded and never replaced | `check`, `write` | `Problems` |
 | The picture is an AVIF file with a primary item | `add_picture` | `Error::InvalidPicture` |
+| The source of a diagram or a formula: the encoding of a chapter, and not empty | `add_diagram`, `add_formula`, `set_source`, after normalising | `Error::InvalidDiagram`, `Error::InvalidFormula`, with a `SourceError` as its source |
+| The same rules, for a diagram or a formula that was loaded and never replaced | `check`, `write` | `Problems`, with the path of the diagram or the formula |
 | `meta` key syntax and counts | `Meta` setters | `Error::InvalidMeta` |
 | The form of a landmark's kind; one `start` at most | `set_landmarks` | `Error::InvalidLandmark`, with a `LandmarkError` as its source |
 | Every landmark leads to a chapter or to an anchor of it | `check`, `write` | `Problems` |
 | No raw HTML, allowed URI schemes | `check`, `write` | `Problems` |
-| Every link and picture reference resolves, a fragment against the anchors of headings and the extra anchors of its chapter | `check`, `write` | `Problems` |
+| Every link and picture reference resolves, a fragment against the anchors of headings and the extra anchors of its chapter; a picture reference names a picture, a diagram or a formula | `check`, `write` | `Problems` |
 | `cover` names a picture | `check`, `write` | `Problems` |
 | Contents entries resolve; levels form a tree | `check`, `write` | `Problems` |
 
@@ -674,7 +761,9 @@ without them gets no table.
 
 Resources 0 to 4, then the landmarks when the book has any, then the cover,
 then chapters in reading order, each directly after its anchor table when it
-has extra anchors, then the remaining pictures, as RFC 0001 recommends. Pictures use the *store* graph.
+has extra anchors, then the remaining pictures, the diagrams and the
+formulas, as RFC 0001 recommends. Pictures use the *store* graph; diagrams
+and formulas are compressed like chapters.
 The same `Book` written twice with the same options gives identical bytes.
 
 ### Options and limits
@@ -720,6 +809,7 @@ One `Error` enum, non-exhaustive, with `Result<T> = Result<T, Error>`.
 | `Malformed { resource, reason }` | A table breaks a **MUST** of RFC 0001. |
 | `Limit` | A configured limit was exceeded. |
 | `NoSuchResource` | A `read_` call was given an id from another book. |
+| `InvalidDiagram`, `InvalidFormula` | The source given for a diagram or a formula is empty or holds a control character. The `SourceError` is the `source()`. |
 | `Unresolved` | `read_resolve` was given a destination that leads nowhere. The `ResolveError` is the `source()`. |
 | `InvalidPath`, `DuplicatePath`, `InvalidText`, `InvalidPicture`, `InvalidMeta`, `InvalidLandmark` | An argument to a `Book` or `Meta` method broke a rule. |
 | `NoSuchPath`, `IndexOutOfRange` | `move_chapter` or `insert_chapter` named a chapter or a position that does not exist. |
@@ -831,7 +921,10 @@ three plain fields.
 | | | The reader keeps every anchor table it has read | Memory would grow with the chapters visited, for a table of a few hundred bytes that sits next to the chapter. |
 | When rules are checked | One-item rules at the call, cross-item rules at `write` | Everything at `write` | The error names the call that caused it. |
 | | | Everything at the call | A chapter could not be added before the pictures it shows. |
-| Ids in `BookReader` | `ChapterId` and `PictureId` | One `ResourceId` | Reading a picture as a chapter becomes a compile error instead of `WrongKind` at run time. |
+| Ids in `BookReader` | `ChapterId` and `PictureId`, and later `DiagramId` and `FormulaId` | One `ResourceId` | Reading a picture as a chapter becomes a compile error instead of `WrongKind` at run time. |
+| Diagrams and formulas in the API | Two types, `Diagram` and `Formula`, with calls of their own | One `Figure` type with a kind | A diagram cannot be handed to a formula typesetter by mistake, and the two lists of an editor are two calls. The price is the same six calls twice. |
+| Changing a diagram or a formula | `diagram_mut` and `set_source` | Remove and add, as for a picture | Its source is text that is edited; removing it would move it to the end of its list and leave the book, for a moment, with references that lead nowhere. |
+| Checking Mermaid and KaTeX notation | Not done | A parser of each behind a feature | Neither notation has a specification, a parser would tie a book to one implementation's version, and RFC 0001 lets a reader fall back to the alternative text. |
 | | | A UUID for every resource | The format has nowhere to store one, and the path is already a stable unique name. UUID version 7 is used for the book's `id` only. |
 | Line endings and byte order marks | Normalised silently | Rejected with an error | The meaning of the text does not change, and every caller would write the same replacement. |
 | Moving a resource to another path | Remove and add | A `rename` that rewrites links | The crate would start editing chapter text it was given. |
@@ -861,11 +954,12 @@ The questions raised by the first draft were settled by the format author on
 | CRLF line endings and a byte order mark? | Normalised silently. |
 | A contents row at a position without an anchor? | Forbidden by RFC 0001; a contents target is a chapter and an optional anchor. |
 | Renaming a resource? | Not provided; remove and add. |
-| One id type or two? | `ChapterId` and `PictureId`. |
+| How are reader resources identified? | `ChapterId`, `PictureId`, `DiagramId` and `FormulaId`. |
 | `Limits::default()`? | 1,000,000 resources, 64 MiB per resource, 16 GiB per file. |
 | Can a link lead to a line that is not a heading? | Yes, through the anchor table of its chapter ([ADR-0008](adr/0008-chapter-anchor-tables.md)). |
 | Where do the names of such lines come from? | From anchor definitions in the text of the chapter ([ADR-0009](adr/0009-anchor-definitions.md)). |
 | Can a book list its notable places? | Yes, as landmarks in an optional table ([ADR-0010](adr/0010-landmarks.md)). |
+| Can a book carry diagrams and formulas as text? | Yes, as resources shown like pictures ([ADR-0011](adr/0011-diagrams-and-formulas.md)); decided on 2026-11-22. |
 
 The change required from mopenzl
 ([Required from mopenzl](#required-from-mopenzl)) is a dependency, not an open

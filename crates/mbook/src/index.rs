@@ -10,14 +10,14 @@
 
 use crate::error::{Error, MetaError, ResolveError, Result};
 use crate::format::{ANCHORS, KIND_SERVICE, META, RESOURCES, SERVICE_COUNT, TOC};
-use crate::id::{ChapterId, PictureId};
+use crate::id::{ChapterId, DiagramId, FormulaId, PictureId};
 use crate::link::{self, Parsed};
 use crate::meta::{self, Meta};
 use crate::path;
 use crate::tables::{self, AnchorRow, LandmarkRow, ResourceRow, Tables, TocRow};
 use crate::types::{
-    Anchor, ChapterEntry, Destination, LandmarkEntry, PictureEntry, Position, Resource,
-    ResourceKind, Size, TocEntry, Version,
+    Anchor, ChapterEntry, Destination, DiagramEntry, FormulaEntry, LandmarkEntry, PictureEntry,
+    Position, Resource, ResourceKind, Size, TocEntry, Version,
 };
 use mopenzl::TypedOutput;
 use std::collections::HashSet;
@@ -35,6 +35,10 @@ pub(crate) struct Index {
     chapters: Vec<u32>,
     /// Numbers of picture resources, in file order.
     pictures: Vec<u32>,
+    /// Numbers of diagram resources, in file order.
+    diagrams: Vec<u32>,
+    /// Numbers of formula resources, in file order.
+    formulas: Vec<u32>,
     /// Numbers of every resource that has a path, sorted by path.
     by_path: Vec<u32>,
     /// Every anchor, grouped by chapter and sorted by offset inside it.
@@ -96,6 +100,11 @@ impl Index {
         Ok(text)
     }
 
+    /// The source of a diagram or of a formula from its decoded bytes.
+    pub(crate) fn source(number: u32, bytes: Vec<u8>) -> Result<String> {
+        String::from_utf8(bytes).map_err(|_| malformed(number, "the text is not UTF-8"))
+    }
+
     /// Checks the tables of a file and prepares them for lookups.
     ///
     /// `decoded_lens` holds the decoded size of every resource, from the
@@ -112,6 +121,8 @@ impl Index {
         };
         let chapters = numbers_of(ResourceKind::Text);
         let pictures = numbers_of(ResourceKind::Picture);
+        let diagrams = numbers_of(ResourceKind::Diagram);
+        let formulas = numbers_of(ResourceKind::Formula);
         let meta = Meta::from_rows(tables.meta).map_err(|error| {
             let reason = match error {
                 MetaError::InvalidKey(_) => "a key is not valid",
@@ -129,6 +140,8 @@ impl Index {
             rows,
             chapters,
             pictures,
+            diagrams,
+            formulas,
             by_path,
             anchors: Vec::new(),
             anchor_spans: Vec::new(),
@@ -397,6 +410,20 @@ impl Index {
             .map(|&number| self.picture_entry(number))
     }
 
+    /// The diagrams, in file order.
+    pub(crate) fn diagrams(&self) -> impl ExactSizeIterator<Item = DiagramEntry<'_>> {
+        self.diagrams
+            .iter()
+            .map(|&number| self.diagram_entry(number))
+    }
+
+    /// The formulas, in file order.
+    pub(crate) fn formulas(&self) -> impl ExactSizeIterator<Item = FormulaEntry<'_>> {
+        self.formulas
+            .iter()
+            .map(|&number| self.formula_entry(number))
+    }
+
     /// Every row of the resource table.
     pub(crate) fn resources(&self) -> impl ExactSizeIterator<Item = Resource<'_>> {
         // A container holds at most `u32::MAX` resources.
@@ -418,6 +445,14 @@ impl Index {
         (self.row(number)?.kind == ResourceKind::Picture).then(|| PictureId::new(number))
     }
 
+    pub(crate) fn diagram_id(&self, number: u32) -> Option<DiagramId> {
+        (self.row(number)?.kind == ResourceKind::Diagram).then(|| DiagramId::new(number))
+    }
+
+    pub(crate) fn formula_id(&self, number: u32) -> Option<FormulaId> {
+        (self.row(number)?.kind == ResourceKind::Formula).then(|| FormulaId::new(number))
+    }
+
     pub(crate) fn chapter(&self, id: ChapterId) -> Option<ChapterEntry<'_>> {
         self.chapter_id(id.number())
             .map(|id| self.chapter_entry(id.number()))
@@ -426,6 +461,28 @@ impl Index {
     pub(crate) fn picture(&self, id: PictureId) -> Option<PictureEntry<'_>> {
         self.picture_id(id.number())
             .map(|id| self.picture_entry(id.number()))
+    }
+
+    pub(crate) fn diagram(&self, id: DiagramId) -> Option<DiagramEntry<'_>> {
+        self.diagram_id(id.number())
+            .map(|id| self.diagram_entry(id.number()))
+    }
+
+    pub(crate) fn formula(&self, id: FormulaId) -> Option<FormulaEntry<'_>> {
+        self.formula_id(id.number())
+            .map(|id| self.formula_entry(id.number()))
+    }
+
+    pub(crate) fn find_diagram(&self, path: &str) -> Option<DiagramEntry<'_>> {
+        self.find(path)
+            .and_then(|number| self.diagram_id(number))
+            .map(|id| self.diagram_entry(id.number()))
+    }
+
+    pub(crate) fn find_formula(&self, path: &str) -> Option<FormulaEntry<'_>> {
+        self.find(path)
+            .and_then(|number| self.formula_id(number))
+            .map(|id| self.formula_entry(id.number()))
     }
 
     pub(crate) fn find_chapter(&self, path: &str) -> Option<ChapterEntry<'_>> {
@@ -451,13 +508,16 @@ impl Index {
     }
 
     /// The decoded size of everything a loaded book is built from: every
-    /// chapter, picture and anchor table of a chapter, and the landmarks.
+    /// chapter, picture, diagram, formula and anchor table of a chapter, and
+    /// the landmarks.
     pub(crate) fn content_len(&self) -> u64 {
         let loaded = |row: &&Row| {
             matches!(
                 row.kind,
                 ResourceKind::Text
                     | ResourceKind::Picture
+                    | ResourceKind::Diagram
+                    | ResourceKind::Formula
                     | ResourceKind::ChapterAnchors
                     | ResourceKind::Landmarks
             )
@@ -494,10 +554,15 @@ impl Index {
             Parsed::Internal { path, fragment } => (path, fragment),
         };
         let number = self.find(&path).ok_or(ResolveError::NotFound)?;
-        if let Some(picture) = self.picture_id(number) {
+        // What a chapter shows in a line: a picture, a diagram or a formula.
+        let shown = None
+            .or_else(|| self.picture_id(number).map(Destination::Picture))
+            .or_else(|| self.diagram_id(number).map(Destination::Diagram))
+            .or_else(|| self.formula_id(number).map(Destination::Formula));
+        if let Some(shown) = shown {
             return match fragment {
                 Some(_) => Err(ResolveError::FragmentOnPicture),
-                None => Ok(Resolved::Known(Destination::Picture(picture))),
+                None => Ok(Resolved::Known(shown)),
             };
         }
         // A resource of a kind this crate does not know is unresolved.
@@ -537,6 +602,24 @@ impl Index {
     fn chapter_entry(&self, number: u32) -> ChapterEntry<'_> {
         ChapterEntry {
             id: ChapterId::new(number),
+            path: self.path_of(number),
+            decoded_len: self.row(number).map_or(0, |row| row.decoded_len),
+        }
+    }
+
+    /// The entry of a resource known to be a diagram.
+    fn diagram_entry(&self, number: u32) -> DiagramEntry<'_> {
+        DiagramEntry {
+            id: DiagramId::new(number),
+            path: self.path_of(number),
+            decoded_len: self.row(number).map_or(0, |row| row.decoded_len),
+        }
+    }
+
+    /// The entry of a resource known to be a formula.
+    fn formula_entry(&self, number: u32) -> FormulaEntry<'_> {
+        FormulaEntry {
+            id: FormulaId::new(number),
             path: self.path_of(number),
             decoded_len: self.row(number).map_or(0, |row| row.decoded_len),
         }
@@ -665,7 +748,7 @@ mod tests {
     use super::{Index, Resolved};
     use crate::error::{Error, ResolveError};
     use crate::format::{ANCHORS, META, RESOURCES, TOC};
-    use crate::id::ChapterId;
+    use crate::id::{ChapterId, DiagramId, FormulaId};
     use crate::tables::{AnchorRow, LandmarkRow, ResourceRow, Tables, TocRow};
     use crate::types::{Anchor, Destination, ResourceKind, Size, Version};
 
@@ -896,6 +979,151 @@ mod tests {
                 ResolveError::FragmentOnPicture,
                 ResolveError::ForbiddenScheme
             ]
+        );
+    }
+
+    /// The example with a diagram as resource 9 and a formula as resource 10.
+    fn illustrated() -> Index {
+        let mut tables = tables();
+        tables.resources.push(resource(5, "dia/flow.mmd", 0, 0));
+        tables.resources.push(resource(6, "math/e.tex", 0, 0));
+        let mut lens = LENS.to_vec();
+        lens.extend([40, 8]);
+        Index::build(VERSION, tables, &lens).unwrap()
+    }
+
+    #[test]
+    fn diagrams_and_formulas_are_listed_with_their_lengths() {
+        let index = illustrated();
+        let diagrams: Vec<_> = index
+            .diagrams()
+            .map(|d| (d.id.number(), d.path, d.decoded_len))
+            .collect();
+        let formulas: Vec<_> = index
+            .formulas()
+            .map(|f| (f.id.number(), f.path, f.decoded_len))
+            .collect();
+        assert_eq!(diagrams, [(9, "dia/flow.mmd", 40)]);
+        assert_eq!(formulas, [(10, "math/e.tex", 8)]);
+        assert_eq!(
+            index
+                .resources()
+                .skip(9)
+                .map(|r| r.kind)
+                .collect::<Vec<_>>(),
+            [ResourceKind::Diagram, ResourceKind::Formula]
+        );
+    }
+
+    #[test]
+    fn a_diagram_and_a_formula_get_ids_of_their_own_kind_only() {
+        let index = illustrated();
+        let diagrams = [8, 9, 10, 99].map(|number| index.diagram_id(number).is_some());
+        let formulas = [8, 9, 10, 99].map(|number| index.formula_id(number).is_some());
+        assert_eq!(
+            (diagrams, formulas),
+            ([false, true, false, false], [false, false, true, false])
+        );
+        assert!(index.picture_id(9).is_none() && index.chapter_id(10).is_none());
+    }
+
+    #[test]
+    fn a_diagram_and_a_formula_are_found_by_path_and_by_id() {
+        let index = illustrated();
+        let diagram = index.find_diagram("dia/flow.mmd").map(|d| d.id);
+        let formula = index.find_formula("math/e.tex").map(|f| f.id);
+        assert_eq!(diagram.map(DiagramId::number), Some(9));
+        assert_eq!(formula.map(FormulaId::number), Some(10));
+        assert_eq!(
+            diagram.and_then(|id| index.diagram(id)).map(|d| d.path),
+            Some("dia/flow.mmd")
+        );
+        assert_eq!(
+            formula.and_then(|id| index.formula(id)).map(|f| f.path),
+            Some("math/e.tex")
+        );
+        assert!(index.find_diagram("math/e.tex").is_none());
+        assert!(index.find_formula("dia/flow.mmd").is_none());
+        assert!(index.find_picture("dia/flow.mmd").is_none());
+        assert!(index.diagram(DiagramId::new(10)).is_none());
+        assert!(index.formula(FormulaId::new(9)).is_none());
+    }
+
+    #[test]
+    fn a_destination_resolves_to_a_diagram_and_to_a_formula() {
+        let index = illustrated();
+        let from = index.chapter_id(6).unwrap();
+        assert!(matches!(
+            index.resolve(from, "dia/flow.mmd"),
+            Ok(Destination::Diagram(diagram)) if diagram.number() == 9
+        ));
+        assert!(matches!(
+            index.resolve(from, "math/e.tex"),
+            Ok(Destination::Formula(formula)) if formula.number() == 10
+        ));
+    }
+
+    #[test]
+    fn a_diagram_and_a_formula_take_no_fragment() {
+        let index = illustrated();
+        let from = index.chapter_id(6).unwrap();
+        let errors = ["dia/flow.mmd#a", "math/e.tex#b"].map(|d| index.resolve(from, d));
+        assert_eq!(errors, [Err(ResolveError::FragmentOnPicture); 2]);
+    }
+
+    #[test]
+    fn the_content_length_counts_diagrams_and_formulas() {
+        assert_eq!(
+            illustrated().content_len(),
+            18_000 + 279 + 101 + 42_000 + 40 + 8
+        );
+    }
+
+    #[test]
+    fn a_diagram_or_a_formula_with_a_size_is_rejected() {
+        for kind in [5, 6] {
+            let (table, reason) =
+                rejection(|tables| tables.resources[8] = resource(kind, "x", 1, 1));
+            assert_eq!(
+                (table, reason),
+                (RESOURCES, "a row that is not a picture has a size")
+            );
+        }
+    }
+
+    #[test]
+    fn a_diagram_or_a_formula_without_a_path_is_rejected() {
+        for kind in [5, 6] {
+            let (table, _) = rejection(|tables| tables.resources[8] = resource(kind, "", 0, 0));
+            assert_eq!(table, RESOURCES);
+        }
+    }
+
+    #[test]
+    fn a_contents_row_that_names_a_diagram_is_rejected() {
+        let mut tables = tables();
+        tables.resources.push(resource(5, "dia/flow.mmd", 0, 0));
+        tables.toc.push(toc(1, "A diagram", 9, 0));
+        let mut lens = LENS.to_vec();
+        lens.push(40);
+        assert!(matches!(
+            Index::build(VERSION, tables, &lens),
+            Err(Error::Malformed { resource: TOC, .. })
+        ));
+    }
+
+    #[test]
+    fn a_source_that_is_not_utf8_is_malformed() {
+        assert!(matches!(
+            Index::source(9, vec![0xff, 0xfe]),
+            Err(Error::Malformed {
+                resource: 9,
+                reason: "the text is not UTF-8"
+            })
+        ));
+        assert_eq!(
+            Index::source(9, b"x^2".to_vec()).ok().as_deref(),
+            Some("x^2")
         );
     }
 

@@ -4,6 +4,8 @@ use super::command::{Command, ContentsChange, MetaChange, Reply, Request};
 use super::contents::{self, Places};
 use super::error::{ContentsError, EditError, OpenFailure};
 use super::outline::{Outline, ProblemOutline};
+use crate::entities::book::chapter::{image_path, shown};
+use crate::entities::figure::{FigureKind, FigureSource, FigureSources};
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use mbook::{Book, Meta, Toc};
@@ -83,6 +85,30 @@ impl EditHandle {
         self.ask(|reply| Request::Picture(path, reply))
     }
 
+    /// Asks for the editable source of a figure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the path does not name a figure of this kind
+    /// or the session cannot answer.
+    pub(crate) fn figure(
+        &self,
+        kind: FigureKind,
+        path: &str,
+    ) -> impl Future<Output = Result<String, EditError>> + Send + 'static {
+        let path = path.to_owned();
+        self.ask(move |reply| Request::Figure(kind, path, reply))
+    }
+
+    /// Gets the figures in the supplied draft, including reference-style images.
+    pub(crate) fn chapter_figures(
+        &self,
+        chapter: String,
+        text: String,
+    ) -> impl Future<Output = Result<FigureSources, EditError>> + Send + 'static {
+        self.ask(|reply| Request::ChapterFigures(chapter, text, reply))
+    }
+
     /// Queues a request now, so that the order of calls is the order of
     /// application, and waits for the answer later.
     fn ask<T: Send + 'static>(
@@ -154,6 +180,21 @@ impl State {
                 });
                 drop(reply.send(outcome));
             }
+            Request::Figure(kind, path, reply) => {
+                let outcome = self.read(|book| {
+                    match kind {
+                        FigureKind::Diagram => book.diagram(&path).map(mbook::Diagram::source),
+                        FigureKind::Formula => book.formula(&path).map(mbook::Formula::source),
+                    }
+                    .map(str::to_owned)
+                    .ok_or(EditError::NoSuchPath(path))
+                });
+                drop(reply.send(outcome));
+            }
+            Request::ChapterFigures(chapter, text, reply) => {
+                let outcome = self.read(|book| Ok(chapter_figures(book, &chapter, &text)));
+                drop(reply.send(outcome));
+            }
         }
     }
 
@@ -163,6 +204,34 @@ impl State {
             Self::Open(session) => read(&session.book),
             Self::Failed(failure) => Err(EditError::Open(failure.clone())),
         }
+    }
+}
+
+/// Resolves the resources used as images in the draft against the editing book.
+fn chapter_figures(book: &Book, chapter: &str, text: &str) -> FigureSources {
+    let (destinations, mut references) = shown(text);
+    let by_destination: std::collections::HashMap<_, _> = destinations
+        .into_iter()
+        .filter_map(|destination| {
+            let path = image_path(chapter, &destination)?;
+            let (kind, source) = if let Some(diagram) = book.diagram(&path) {
+                (FigureKind::Diagram, diagram.source())
+            } else {
+                (FigureKind::Formula, book.formula(&path)?.source())
+            };
+            Some((
+                destination,
+                FigureSource {
+                    kind,
+                    source: source.into(),
+                },
+            ))
+        })
+        .collect();
+    references.retain(|_, reference| by_destination.contains_key(&reference.destination));
+    FigureSources {
+        by_destination,
+        by_reference: references,
     }
 }
 
@@ -239,6 +308,32 @@ impl Session {
             Command::RemovePicture { path } => {
                 book.remove_picture(&path)
                     .ok_or(EditError::NoSuchPath(path))?;
+            }
+            Command::AddFigure { kind, path, source } => match kind {
+                FigureKind::Diagram => {
+                    book.add_diagram(path, source)?;
+                }
+                FigureKind::Formula => {
+                    book.add_formula(path, source)?;
+                }
+            },
+            Command::SetFigureSource { kind, path, source } => match kind {
+                FigureKind::Diagram => book
+                    .diagram_mut(&path)
+                    .ok_or(EditError::NoSuchPath(path))?
+                    .set_source(source)?,
+                FigureKind::Formula => book
+                    .formula_mut(&path)
+                    .ok_or(EditError::NoSuchPath(path))?
+                    .set_source(source)?,
+            },
+            Command::RemoveFigure { kind, path } => {
+                match kind {
+                    FigureKind::Diagram => book.remove_diagram(&path).is_some(),
+                    FigureKind::Formula => book.remove_formula(&path).is_some(),
+                }
+                .then_some(())
+                .ok_or(EditError::NoSuchPath(path))?;
             }
             Command::SetCover { path, avif } => {
                 book.set_cover(path, avif)?;

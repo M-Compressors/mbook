@@ -1,6 +1,6 @@
 //! Small value types shared by the reader and the model.
 
-use crate::id::{ChapterId, PictureId};
+use crate::id::{ChapterId, DiagramId, FormulaId, PictureId};
 use std::fmt;
 
 /// The version of the mbook format a file declares.
@@ -60,6 +60,28 @@ pub struct PictureEntry<'a> {
     pub decoded_len: u64,
 }
 
+/// One diagram, as listed by a `BookReader`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DiagramEntry<'a> {
+    /// The id to read the diagram with.
+    pub id: DiagramId,
+    /// The path of the diagram inside the book.
+    pub path: &'a str,
+    /// The length of its Mermaid source in bytes.
+    pub decoded_len: u64,
+}
+
+/// One formula, as listed by a `BookReader`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FormulaEntry<'a> {
+    /// The id to read the formula with.
+    pub id: FormulaId,
+    /// The path of the formula inside the book.
+    pub path: &'a str,
+    /// The length of its `KaTeX` source in bytes.
+    pub decoded_len: u64,
+}
+
 /// One entry of the table of contents, as stored in a file.
 ///
 /// Entries form a tree listed in pre-order; `level` gives the depth.
@@ -106,6 +128,10 @@ pub enum Destination {
     Chapter(Position),
     /// A picture of this book.
     Picture(PictureId),
+    /// A diagram of this book, named the way a picture is.
+    Diagram(DiagramId),
+    /// A formula of this book, named the way a picture is.
+    Formula(FormulaId),
     /// A named place in this chapter that is not the anchor of a heading.
     ///
     /// The name may be in the chapter's own anchor table, which is not read
@@ -128,6 +154,10 @@ pub enum ResourceKind {
     ChapterAnchors,
     /// The landmarks of the book.
     Landmarks,
+    /// A diagram in Mermaid notation.
+    Diagram,
+    /// A formula in the notation of `KaTeX`.
+    Formula,
     /// A kind defined by a later minor version of the format.
     Unknown(u8),
 }
@@ -140,6 +170,8 @@ impl From<u8> for ResourceKind {
             2 => Self::Picture,
             3 => Self::ChapterAnchors,
             4 => Self::Landmarks,
+            5 => Self::Diagram,
+            6 => Self::Formula,
             other => Self::Unknown(other),
         }
     }
@@ -147,7 +179,8 @@ impl From<u8> for ResourceKind {
 
 /// One row of the resource table, for tools that list a whole file.
 ///
-/// Reading applications use [`ChapterEntry`] and [`PictureEntry`] instead.
+/// Reading applications use [`ChapterEntry`], [`PictureEntry`],
+/// [`DiagramEntry`] and [`FormulaEntry`] instead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Resource<'a> {
     /// The number of the resource in the file.

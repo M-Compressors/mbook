@@ -55,8 +55,9 @@ Two details follow from choosing GFM:
   ([ADR-0007](0007-positions-and-anchors.md)). Later, a name for a line that
   is not a heading was given back in plain GFM, as a link reference
   definition ([ADR-0009](0009-anchor-definitions.md)).
-- To revisit: math and alert blocks; the exact CommonMark version; a formal
-  definition of footnotes.
+- To revisit: alert blocks; the exact CommonMark version; a formal
+  definition of footnotes. Math did not become a part of the dialect:
+  formulas are resources ([ADR-0011](0011-diagrams-and-formulas.md)).
 
 ## Action items
 

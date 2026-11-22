@@ -13,8 +13,11 @@ An mbook file is one indexed container of independent OpenZL frames. The first
 five frames are fixed: a format header, the book's metadata, a table of every
 resource, the table of contents, and a table of heading anchors. Chapters
 follow as GitHub Flavored Markdown without raw HTML, and pictures as AVIF
-files stored without recompression. Markdown refers to pictures and to other
-chapters by relative path; the resource table maps a path to a frame. A link
+files stored without recompression. A book may also carry diagrams, described
+in Mermaid notation, and formulas, written in the notation of KaTeX; a
+chapter shows them the way it shows a picture. Markdown refers to pictures,
+diagrams, formulas and other chapters by relative path; the resource table
+maps a path to a frame. A link
 into a chapter names a heading, or any other line that the chapter gives a
 name to with one line of Markdown.
 
@@ -35,7 +38,7 @@ already provides random access, per-resource checksums and typed data:
 
 - A reader fetches the footer, the index and the first five frames, and can
   then show the title, the cover and the table of contents.
-- Each chapter and each picture is decoded on its own.
+- Each chapter, picture, diagram and formula is decoded on its own.
 - The descriptive tables are typed columns, so no JSON, XML or TOML parser is
   needed, and the container layer can be built for `no_std` targets.
 - Every frame is an ordinary OpenZL frame that uses only standard codecs. A
@@ -46,7 +49,8 @@ already provides random access, per-resource checksums and typed data:
 | Goal | How the design meets it |
 | --- | --- |
 | Open a book without reading all of it | Footer, directory and five small frames are enough for title, cover and contents. |
-| Decode only what is shown | One frame per chapter and per picture. |
+| Decode only what is shown | One frame per chapter, picture, diagram and formula. |
+| Formulas and diagrams that follow the text | Stored as their source, not as pictures of it; the reader sets them in its own size and tone. |
 | Readers without a web engine | Markdown without raw HTML; no CSS, no scripts. |
 | Readers without text-format parsers | Metadata and navigation are typed columns. |
 | Round trip with a plain folder | Chapters refer to pictures and chapters by relative path. |
@@ -74,8 +78,10 @@ flowchart TD
     ch["text resources<br/>chapters in Markdown"]
     own["anchor table of a chapter<br/>offset, name"]
     pic["picture resources<br/>AVIF files"]
+    fig["diagram and formula resources<br/>Mermaid and KaTeX text"]
     meta -- "cover: a path" --> res
     ch -- "path of a link or picture" --> res
+    res -- "row number is the resource number" --> fig
     ch -- "fragment of a link:<br/>a heading" --> anc
     ch -- "fragment of a link:<br/>another line" --> own
     own -- "offset in the resource<br/>that follows it" --> ch
@@ -95,7 +101,7 @@ resource 2   resources   kind, path, width, height           one row per resourc
 resource 3   toc         level, title, resource, offset      table of contents
 resource 4   anchors     resource, offset, name              heading anchors
 resource 5…  landmarks, when the book has any; the cover picture; then
-             chapters, then pictures;
+             chapters, then pictures, diagrams and formulas;
              a chapter that names other lines follows its own anchor table
 index + footer                                               provided by the container
 ```
@@ -107,6 +113,8 @@ ch01.md
 ch02.md
 img/cover.avif
 img/fig-3.avif
+dia/route.mmd
+math/speed.tex
 ```
 
 ### What a chapter looks like
@@ -254,6 +262,40 @@ text begins, instead of at its title page. The table is a resource of its
 own, right after the five fixed ones; a book without landmarks does not have
 it, and nothing else in the file changes.
 
+### Diagrams and formulas
+
+A diagram and a formula are text too, each in a notation of its own. A book
+stores that text, not a picture of it: `dia/route.mmd` holds
+
+```text
+flowchart LR
+  station[The station] --> letter[The letter]
+```
+
+and `math/speed.tex` holds `v = \frac{s}{t}`. A chapter shows them the way it
+shows a picture:
+
+```markdown
+![From the station to the letter](dia/route.mmd "The way of the letter")
+
+The train kept ![v = s / t](math/speed.tex) all the way.
+```
+
+- The first paragraph holds nothing else, so the diagram is a figure with a
+  caption. The formula stands inside a line and is set as a part of it; a
+  formula alone in a paragraph is set as a display formula.
+- The resource table says what a path names: `kind` 5 is a diagram and
+  `kind` 6 a formula. They have no size in the table; a reader lays them out
+  in the size and the tone of its text.
+- The words in the brackets are shown, or spoken, by a reader that cannot
+  draw the diagram or set the formula. A reader based on an earlier draft
+  of version 1.0 also shows the alternative text.
+
+| row | kind | path | width | height |
+| ---: | ---: | --- | ---: | ---: |
+| 9 | 5 | `dia/route.mmd` | 0 | 0 |
+| 10 | 6 | `math/speed.tex` | 0 | 0 |
+
 ### How a reader opens a book
 
 ```mermaid
@@ -282,7 +324,8 @@ sequenceDiagram
 4. Show the title and authors from `meta`, the cover named by the `cover` key,
    and the tree from `toc`.
 5. On navigation, decode the chapter frame; decode picture frames as they
-   scroll into view.
+   scroll into view, and the frames of the diagrams and formulas the
+   chapter shows when it is laid out.
 6. When a link with a fragment is followed and `anchors` has no such name
    for the target chapter, decode the anchor table in front of that chapter.
 
@@ -305,8 +348,9 @@ flowchart TD
 3. Parse each chapter once to collect headings (for `toc` and `anchors`) and
    anchor definitions (for the chapter's anchor table), and to validate every
    link and picture reference.
-4. Write resources 0 to 4, then the cover, the chapters and the pictures. A
-   chapter with anchor definitions is preceded by its anchor table.
+4. Write resources 0 to 4, then the cover, the chapters, the pictures, the
+   diagrams and the formulas. A chapter with anchor definitions is preceded
+   by its anchor table.
 
 ### Integration points
 
@@ -317,6 +361,8 @@ flowchart TD
 | Markdown | Any parser of the dialect that reports byte offsets | Writers: headings, anchor definitions, references, validation. Readers: rendering. |
 | AVIF encoding | Any AV1 still-image encoder | Writers only. |
 | AVIF decoding | The platform's decoder or a library | Readers only. |
+| Mermaid diagrams | Any renderer of the notation | Readers only, and optional: without one the alternative text is shown. |
+| KaTeX formulas | Any typesetter of the notation | Readers only, and optional in the same way. |
 
 Reading the resource table with mopenzl (built with the `framed` feature)
 takes no parsing beyond slicing the returned columns:
@@ -471,6 +517,8 @@ unless the result is exactly 8 bytes that begin with the prefix.
 
 Compatible additions are limited to: new columns at the end of a table, new
 `meta` keys, and new values of `kind`. Everything else requires a new `major`.
+Kinds 5 and 6 are part of version 1.0. They were added while 1.0 was still
+a draft ([ADR-0011](adr/0011-diagrams-and-formulas.md)).
 
 ### Resource 1: `meta`
 
@@ -521,6 +569,8 @@ resources in the container directory.
 | 2 | Picture | One serial output: an AVIF file ([Picture resources](#picture-resources)). |
 | 3 | Chapter anchors | A table that names positions of the next resource ([Chapter anchor tables](#chapter-anchor-tables)). |
 | 4 | Landmarks | A table of notable places of the book ([Landmarks](#landmarks-1)). |
+| 5 | Diagram | One serial output: text in Mermaid notation ([Diagram and formula resources](#diagram-and-formula-resources)). |
+| 6 | Formula | One serial output: text in the notation of KaTeX ([Diagram and formula resources](#diagram-and-formula-resources)). |
 
 - Rows 0 to 4 **MUST** have `kind` 0. No other row may have `kind` 0 in
   version 1.0.
@@ -544,8 +594,9 @@ Rules for `path`:
 
 Writers **SHOULD** place the landmarks, when the book has any, at position 5,
 then the resource named by `cover`, then all text resources, each directly
-after its anchor table when it has one, then the remaining pictures. Apart from an anchor table and its chapter, readers
-**MUST NOT** depend on this order.
+after its anchor table when it has one, then the remaining pictures, then
+the diagrams, then the formulas. Apart from an anchor table and its chapter,
+readers **MUST NOT** depend on this order.
 
 ### Resource 3: `toc`
 
@@ -741,7 +792,10 @@ convert input that contains them:
 
 Not part of the dialect, and therefore shown as literal text: math (`$…$`),
 alert blocks (`> [!NOTE]`), heading attributes (`{#id}`), superscript and
-subscript markers, wiki links, emoji shortcodes and metadata blocks.
+subscript markers, wiki links, emoji shortcodes and metadata blocks. A code
+block whose language is `mermaid` is a code block. A formula and a diagram
+are resources of their own, shown with the syntax of a picture
+([Diagram and formula resources](#diagram-and-formula-resources)).
 
 A footnote definition **MUST** be in the same chapter as the references to it.
 
@@ -821,7 +875,7 @@ has processed escapes and entities, then:
 
 | Reference | Target | Fragment |
 | --- | --- | --- |
-| Picture `![alt](dest "title")` | `kind` 2 | not allowed |
+| Picture `![alt](dest "title")` | `kind` 2, 5 or 6: a picture, a diagram or a formula | not allowed |
 | Link `[text](dest)` | `kind` 1 | optional; **MUST** equal, byte for byte, the `name` of an `anchors` row of the target chapter or of a row of that chapter's [anchor table](#chapter-anchor-tables) |
 
 A link without a fragment leads to offset 0 of the target chapter.
@@ -837,6 +891,12 @@ alternative text and continue.
 - A paragraph whose only content is one picture is a *figure*: it is shown as
   a block, and the picture's title, when present, is its caption. Any other
   picture is inline.
+- The same holds for a diagram and for a formula, which the syntax of a
+  picture shows as well. A formula that is a figure is set as a display
+  formula; any other formula is set in the style of running text, on the
+  baseline of its line.
+- A reader that cannot show a picture, a diagram or a formula **SHOULD**
+  show its alternative text in its place.
 - Readers **SHOULD** reserve space for a picture from `width` and `height`
   before decoding it.
 - Readers **MUST NOT** fetch any network resource while rendering, and
@@ -857,6 +917,46 @@ A picture resource decodes to one serial output: a complete
 - Writers **SHOULD** use the OpenZL *store* graph: AVIF payloads are already
   entropy-coded and do not shrink.
 
+### Diagram and formula resources
+
+A diagram resource (`kind` 5) and a formula resource (`kind` 6) each decode
+to one serial output: text.
+
+- The text has the [encoding](#encoding) of a chapter: UTF-8 without a byte
+  order mark, lines that end with a line feed, and no character below
+  U+0020 other than line feed and tab.
+- The text **MUST** contain a character that is not white space.
+- A diagram is described in the notation of
+  [Mermaid](https://mermaid.js.org/). Mermaid 11 is the reference for
+  authors. The source is the text inside a Mermaid code fence.
+- A formula is written in the notation of [KaTeX](https://katex.org/). KaTeX
+  0.16 is the reference for authors. The source is LaTeX in math mode,
+  without the `$` or `\[` that
+  surround a formula in running text. Whether it is set as a display formula
+  is decided by where the chapter shows it ([Rendering](#rendering)), not by
+  the resource.
+- `width` and `height` in `resources` are zero. A reader lays a diagram and a
+  formula out itself, in the size and the tone of its text.
+- Writers **SHOULD** end the `path` of a diagram with `.mmd` and that of a
+  formula with `.tex`, and **SHOULD** store a formula that a book shows more
+  than once as one resource.
+- Writers **SHOULD** give every reference to a diagram or to a formula an
+  alternative text that says in words what it shows: it is all that a reader
+  without a renderer has.
+
+Neither notation has a specification; each is defined by its implementation.
+A writer is therefore not required to check the text against the notation,
+and a reader is not required to render it:
+
+- A reader **MAY** render no diagrams, no formulas, or only a part of either
+  notation. For what it does not render it shows the alternative text of the
+  reference.
+- A reader **MUST NOT** run a script, follow a link or fetch anything on
+  behalf of a diagram or a formula: a `click` of Mermaid and `\href`,
+  `\url` and `\includegraphics` of KaTeX do nothing.
+- A reader **MAY** refuse a diagram or a formula that would take more time
+  or memory than it allows, and then shows the alternative text.
+
 ### Conformance
 
 A reader **MUST** reject a file when:
@@ -867,9 +967,9 @@ A reader **MUST** reject a file when:
   **MUST** rule of its section.
 
 A reader **MUST NOT** reject a file because of unknown `meta` keys, unknown
-`kind` values, extra table columns, or errors confined to one text or picture
-resource, to one chapter anchor table or to the landmarks; it reports those
-where they are met. A chapter anchor table that is not a table of the defined shape, or
+`kind` values, extra table columns, or errors confined to one text, picture,
+diagram or formula resource, to one chapter anchor table or to the landmarks;
+it reports those where they are met. A chapter anchor table that is not a table of the defined shape, or
 that breaks a **MUST** rule of its section, is such an error: the chapter it
 belongs to can still be shown, and a link that needs the table is unresolved.
 A landmarks table of another shape, or one that breaks a **MUST** rule of
@@ -902,6 +1002,12 @@ A writer **MUST** produce files that satisfy every **MUST** in this document.
   **MUST** still validate paths before creating files.
 - **Picture decoders.** AVIF decoding is the largest attack surface a reader
   inherits; pictures are untrusted input to that decoder.
+- **Diagram and formula renderers.** Their source is untrusted input as
+  well. Both notations can name links and, in their original
+  implementations, scripts and remote pictures; a reader acts on none of
+  them. A short source can ask for an unbounded layout (a macro that expands
+  without end, a graph of thousands of nodes), so a reader bounds the work it
+  does for one.
 - **Integrity, not authenticity.** Checksums detect damage. Nothing in the
   format authenticates a file or its origin.
 
@@ -925,6 +1031,14 @@ A writer **MUST** produce files that satisfy every **MUST** in this document.
   costs one more frame to decode when its link is followed, and a reader
   that opens a file lazily cannot tell such a link from a broken one before
   that.
+- **Two more renderers, defined by their implementations.** A reader that
+  shows diagrams and formulas needs a Mermaid renderer and a formula
+  typesetter, and neither notation has a specification. Two readers may
+  draw the same diagram differently, and a reader without them shows only
+  the alternative text. See
+  [ADR-0011](adr/0011-diagrams-and-formulas.md).
+- **No size for a diagram or a formula.** A reader cannot reserve its space
+  before it has laid it out.
 - **Uneven parser support for one extension.** Not every CommonMark library
   implements extended autolinks; see
   [ADR-0006](adr/0006-markdown-dialect.md).
@@ -946,6 +1060,7 @@ trade-off and the consequences.
 | Names of lines that are not headings in a table before their chapter | All names in resource 4; links only to headings | [ADR-0008](adr/0008-chapter-anchor-tables.md) |
 | A line is named by a link reference definition in its chapter | `{#id}` attributes; names given to the writer apart from the text | [ADR-0009](adr/0009-anchor-definitions.md) |
 | Landmarks in an optional table of their own | A sixth fixed resource; keys of `meta` | [ADR-0010](adr/0010-landmarks.md) |
+| Diagrams and formulas as resources of their own kinds, shown like pictures | ` ```mermaid ` fences and `$…$` in the dialect; pictures only | [ADR-0011](adr/0011-diagrams-and-formulas.md) |
 
 ## Prior art
 
@@ -995,8 +1110,12 @@ trade-off and the consequences.
   logical resource made of several frames (segments) and a table that lists
   them.
 - **Full-text search index** as a service table of typed columns.
-- **Math and alert blocks** as dialect additions in a later minor version;
-  until then they degrade to literal text.
+- **Alert blocks** as a dialect addition in a later minor version; until
+  then they degrade to literal text. Formulas were once expected here too
+  and became resources instead
+  ([ADR-0011](adr/0011-diagrams-and-formulas.md)).
+- **Other notations**, such as a table of data drawn as a chart, as further
+  kinds shown with the syntax of a picture.
 - **Embedded fonts and layout hints**, if a use case appears that reader
   settings cannot cover.
 

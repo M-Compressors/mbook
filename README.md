@@ -1,7 +1,7 @@
 # mbook
 
-**A book file format: Markdown chapters and AVIF pictures in one indexed
-container.**
+**A book file format with Markdown chapters, AVIF pictures, Mermaid
+diagrams and KaTeX formulas in one indexed container.**
 
 An mbook file opens without being read in full, decodes only what is on
 screen, and needs neither a web engine nor an XML parser to show. This
@@ -24,9 +24,9 @@ mbook is not released yet, and the format may still change.
 | Library API | Draft: [RFC 0002][api] |
 | Converter API | Draft: [RFC 0003][converter] |
 | Application | Draft: [RFC 0004][app] |
-| `mbook` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including anchor tables of chapters. Tested against files built by hand and against real AVIF pictures. Not published to crates.io. |
-| `mbook-ui` | A first version of RFC 0004: library and book creation, filtered import, a paged reader with whole-book numbering and page-fitted pictures, an editor that lists chapters by title, with a default Visual view for tables, lists and code, dialogs that link to a place of the book and put a picture into a chapter, a Contents section that shows the contents and edits a stored list entry by entry, a Landmarks section for notes, a picture gallery with encoding controls, settings, and release updates. Building for x86 or x86-64 requires NASM. Tested in headless windows and on macOS with an imported book. Remaining platform and accessibility checks are listed in [RFC 0004][app-status]. No release has been built. |
-| `mbook-converter` | Implements RFC 0003: EPUB, FB2, PDF, comic archives, Word, HTML, Markdown and plain text are converted into mbook, with pictures encoded as AVIF. The limits of each format are listed in [RFC 0003][converter-status]. Tested against sources its tests build in memory; not yet against a collection of real books. Not published to crates.io. |
+| `mbook` | Implements the whole of RFC 0001 and RFC 0002: lazy reading, loading into memory, creating, editing, checking and writing, including chapter anchor tables and diagram and formula sources. Tested against files built by hand and against real AVIF pictures. Not published to crates.io. |
+| `mbook-ui` | A first version of RFC 0004: library and book creation, filtered import, a paged reader with whole-book numbering and page-fitted pictures, an editor that lists chapters by title, with a default Visual view for tables, lists and code, dialogs that link to a place of the book and put a picture into a chapter, a Contents section that shows the contents and edits a stored list entry by entry, a Landmarks section for notes, a picture gallery with encoding controls, diagram and formula editing and previews, settings, and release updates. Building for x86 or x86-64 requires NASM. Tested in headless windows and on macOS with an imported book. Remaining platform and accessibility checks are listed in [RFC 0004][app-status]. No release has been built. |
+| `mbook-converter` | Implements RFC 0003: EPUB, FB2, PDF, comic archives, Word, HTML, Markdown and plain text are converted into mbook, with pictures encoded as AVIF. Importing Mermaid fences and math markup as resources is pending. The limits of each format are listed in [RFC 0003][converter-status]. Tested against sources its tests build in memory; not yet against a collection of real books. Not published to crates.io. |
 
 ## Why another book format
 
@@ -42,8 +42,8 @@ and typed columns:
 
 - A reader fetches the directory and five small tables, then shows the title,
   the cover and the contents.
-- Every chapter and every picture is one independent [OpenZL] frame, decoded
-  on its own.
+- Every chapter, picture, diagram and formula is one independent [OpenZL]
+  frame, decoded on its own.
 - Metadata and navigation are typed columns, so there is no JSON, XML or TOML
   to parse.
 - Chapters are GitHub Flavored Markdown without raw HTML; unpacked, a book is
@@ -58,7 +58,7 @@ resource 2   resources   kind, path, width, height      one row per resource
 resource 3   toc         level, title, resource, offset
 resource 4   anchors     resource, offset, name         heading anchors
 resource 5…  landmarks, when the book has any; the cover picture; then
-             chapters, then pictures;
+             chapters, then pictures, diagrams and formulas;
              a chapter that names other lines follows its own anchor table
 index + footer                                          provided by the container
 ```

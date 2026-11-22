@@ -13,6 +13,7 @@ use super::session::{
     unsaved_announcement,
 };
 use super::{EditorEvent, EditorPage};
+use crate::entities::figure::FigureKind;
 use crate::features::edit_book::command::Command;
 use crate::features::edit_book::error::EditError;
 use crate::features::edit_book::outline::Outline;
@@ -63,6 +64,8 @@ pub(super) enum Origin {
     AddPicture,
     /// A picture was removed.
     RemovePicture,
+    /// A diagram or formula changed.
+    Figure(FigureKind),
     /// The cover was set.
     SetCover,
     /// The contents were rebuilt, or their list was changed.
@@ -152,6 +155,17 @@ impl EditorPage {
             (Origin::AddPicture | Origin::RemovePicture, Err(error)) => {
                 self.fail(Control::Pictures, &error, cx);
             }
+            (Origin::Figure(kind), Ok(outline)) => {
+                self.session.clear_error(&Control::Figures(kind));
+                self.take(seq, outline, window, cx);
+                if self.loaded.is_some() {
+                    let text = self.text.read(cx).value();
+                    self.update_preview(&text, window, cx);
+                }
+            }
+            (Origin::Figure(kind), Err(error)) => {
+                self.fail(Control::Figures(kind), &error, cx);
+            }
             (Origin::SetCover, Ok(outline)) => {
                 self.visual.pictures = std::sync::Arc::default();
                 self.session.clear_error(&Control::Cover);
@@ -233,6 +247,13 @@ impl EditorPage {
             ChapterOp::Add(_) | ChapterOp::Move => {}
         }
         self.take(seq, outline, window, cx);
+        if let ChapterOp::Rename { to, .. } = op
+            && self.loaded.as_deref() == Some(to)
+        {
+            // A move to another folder changes how relative paths resolve.
+            let text = self.text.read(cx).value();
+            self.update_preview(&text, window, cx);
+        }
         if let ChapterOp::Add(path) = op {
             // A new chapter is for writing: it opens in Visual, ready to be
             // typed into under its heading.
@@ -308,7 +329,7 @@ impl EditorPage {
         };
         self.session.text_typed(&path);
         let text = self.text.read(cx).value();
-        self.preview.update(cx, |view, cx| view.set_text(&text, cx));
+        self.update_preview(&text, window, cx);
         self.escaped = false;
         self.flush_timer = Some(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(TYPING_PAUSE).await;
@@ -358,6 +379,7 @@ impl EditorPage {
             self.loaded = None;
             self.load_task = None;
             self.set_editor_text("", false, window, cx);
+            self.update_preview("", window, cx);
             return;
         };
         if self.loaded.as_deref() == Some(path.as_str()) {
@@ -366,6 +388,7 @@ impl EditorPage {
         self.load_generation += 1;
         let generation = self.load_generation;
         self.loaded = None;
+        self.update_preview("", window, cx);
         self.text
             .update(cx, |state, cx| state.set_disabled(true, cx));
         self.visual_loading(cx);
@@ -401,6 +424,7 @@ impl EditorPage {
             Ok(text) => {
                 self.set_editor_text(&text, true, window, cx);
                 self.loaded = Some(path.to_owned());
+                self.update_preview(&text, window, cx);
                 if let Some(offset) = self.caret.take() {
                     self.move_caret(offset, window, cx);
                 }
@@ -442,7 +466,6 @@ impl EditorPage {
             state.set_disabled(!editable, cx);
         });
         self.visual_loaded(editable, window, cx);
-        self.preview.update(cx, |view, cx| view.set_text(text, cx));
     }
 
     /// Moves the chapter `path` one place up or down.

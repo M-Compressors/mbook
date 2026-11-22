@@ -4,14 +4,14 @@ use crate::book::Book;
 use crate::container;
 use crate::error::{Error, ResolveError, Result};
 use crate::format::{ANCHORS, CONTAINER_MAGIC, FORMAT, META, RESOURCES, SERVICE_COUNT, TOC};
-use crate::id::{ChapterId, PictureId};
+use crate::id::{ChapterId, DiagramId, FormulaId, PictureId};
 use crate::index::Index;
 use crate::index::Resolved;
 use crate::meta::Meta;
 use crate::options::{Limits, ReadOptions};
 use crate::types::{
-    Anchor, ChapterEntry, Destination, LandmarkEntry, PictureEntry, Position, Resource, TocEntry,
-    Version,
+    Anchor, ChapterEntry, Destination, DiagramEntry, FormulaEntry, LandmarkEntry, PictureEntry,
+    Position, Resource, TocEntry, Version,
 };
 use mopenzl::TypedOutput;
 use mopenzl::framing::{FramedDecompressor, FramedIndex};
@@ -23,8 +23,8 @@ use std::path::Path;
 ///
 /// Opening a reader reads the directory of the file and its five small
 /// tables: enough for the title, the cover and the contents. Each chapter,
-/// each picture and the anchor table of each chapter is read and decoded
-/// when it is asked for.
+/// picture, diagram and formula, and the anchor table of each chapter, is
+/// read and decoded when it is asked for.
 ///
 /// Methods that only look into the tables take `&self` and do no I/O. Methods
 /// that touch the source start with `read_` and take `&mut self`.
@@ -184,6 +184,16 @@ impl<R: Read + Seek> BookReader<R> {
         self.index.pictures()
     }
 
+    /// The diagrams, in file order.
+    pub fn diagrams(&self) -> impl ExactSizeIterator<Item = DiagramEntry<'_>> {
+        self.index.diagrams()
+    }
+
+    /// The formulas, in file order.
+    pub fn formulas(&self) -> impl ExactSizeIterator<Item = FormulaEntry<'_>> {
+        self.index.formulas()
+    }
+
     /// What the tables say about a chapter. `None` for an id that came from
     /// another book.
     #[must_use]
@@ -198,6 +208,20 @@ impl<R: Read + Seek> BookReader<R> {
         self.index.picture(id)
     }
 
+    /// What the tables say about a diagram. `None` if this book has no diagram
+    /// at the id's resource number.
+    #[must_use]
+    pub fn diagram(&self, id: DiagramId) -> Option<DiagramEntry<'_>> {
+        self.index.diagram(id)
+    }
+
+    /// What the tables say about a formula. `None` if this book has no formula
+    /// at the id's resource number.
+    #[must_use]
+    pub fn formula(&self, id: FormulaId) -> Option<FormulaEntry<'_>> {
+        self.index.formula(id)
+    }
+
     /// The chapter with this path.
     #[must_use]
     pub fn find_chapter(&self, path: &str) -> Option<ChapterEntry<'_>> {
@@ -208,6 +232,18 @@ impl<R: Read + Seek> BookReader<R> {
     #[must_use]
     pub fn find_picture(&self, path: &str) -> Option<PictureEntry<'_>> {
         self.index.find_picture(path)
+    }
+
+    /// The diagram with this path.
+    #[must_use]
+    pub fn find_diagram(&self, path: &str) -> Option<DiagramEntry<'_>> {
+        self.index.find_diagram(path)
+    }
+
+    /// The formula with this path.
+    #[must_use]
+    pub fn find_formula(&self, path: &str) -> Option<FormulaEntry<'_>> {
+        self.index.find_formula(path)
     }
 
     /// The cover named by the metadata, when it is a picture of the book.
@@ -230,6 +266,20 @@ impl<R: Read + Seek> BookReader<R> {
         self.index.picture_id(number)
     }
 
+    /// The id of the diagram with this resource number, when that resource
+    /// is a diagram.
+    #[must_use]
+    pub fn diagram_id(&self, number: u32) -> Option<DiagramId> {
+        self.index.diagram_id(number)
+    }
+
+    /// The id of the formula with this resource number, when that resource
+    /// is a formula.
+    #[must_use]
+    pub fn formula_id(&self, number: u32) -> Option<FormulaId> {
+        self.index.formula_id(number)
+    }
+
     /// The anchors of the headings of a chapter, sorted by offset. Empty for
     /// an id that came from another book.
     ///
@@ -245,8 +295,9 @@ impl<R: Read + Seek> BookReader<R> {
     ///
     /// `destination` is taken after the Markdown parser has processed escapes
     /// and entities. The call does not know whether it came from a link or
-    /// from a picture: a link that resolves to [`Destination::Picture`], or a
-    /// picture that resolves to anything else, is unresolved.
+    /// from a picture: a link that resolves to [`Destination::Picture`],
+    /// [`Destination::Diagram`] or [`Destination::Formula`], or a picture
+    /// that resolves to anything else, is unresolved.
     ///
     /// Nothing is read. A fragment that is not the anchor of a heading may
     /// be in the anchor table of its chapter: the result is then
@@ -393,6 +444,53 @@ impl<R: Read + Seek> BookReader<R> {
         self.read_serial(number)
     }
 
+    /// Reads one diagram as its description in Mermaid notation.
+    ///
+    /// An error here does not affect other resources.
+    ///
+    /// # Errors
+    ///
+    /// The source fails; the record is damaged or larger than the limit; the
+    /// description is not UTF-8; the number does not identify a diagram.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use mbook::BookReader;
+    ///
+    /// let mut book = BookReader::open("example.mbook")?;
+    /// let ids: Vec<_> = book.diagrams().map(|diagram| diagram.id).collect();
+    /// for id in ids {
+    ///     println!("{}", book.read_diagram(id)?);
+    /// }
+    /// # Ok::<(), mbook::Error>(())
+    /// ```
+    pub fn read_diagram(&mut self, id: DiagramId) -> Result<String> {
+        let number = id.number();
+        if self.index.diagram_id(number).is_none() {
+            return Err(Error::NoSuchResource(number));
+        }
+        let bytes = self.read_serial(number)?;
+        Index::source(number, bytes)
+    }
+
+    /// Reads one formula in the notation of `KaTeX`.
+    ///
+    /// An error here does not affect other resources.
+    ///
+    /// # Errors
+    ///
+    /// The source fails; the record is damaged or larger than the limit; the
+    /// formula is not UTF-8; the number does not identify a formula.
+    pub fn read_formula(&mut self, id: FormulaId) -> Result<String> {
+        let number = id.number();
+        if self.index.formula_id(number).is_none() {
+            return Err(Error::NoSuchResource(number));
+        }
+        let bytes = self.read_serial(number)?;
+        Index::source(number, bytes)
+    }
+
     /// Reads the cover as the bytes of an AVIF file; `None` when the book
     /// has no cover.
     ///
@@ -406,15 +504,17 @@ impl<R: Read + Seek> BookReader<R> {
         }
     }
 
-    /// Decodes every chapter and picture into a [`Book`] that can be changed.
+    /// Decodes every chapter, picture, diagram and formula into a [`Book`]
+    /// that can be changed.
     ///
     /// Resources of a kind this crate does not know are left behind.
     ///
     /// # Errors
     ///
-    /// As [`read_chapter`](Self::read_chapter) and
-    /// [`read_picture`](Self::read_picture), for any resource; or the decoded
-    /// book is larger than the file limit.
+    /// As [`read_chapter`](Self::read_chapter),
+    /// [`read_picture`](Self::read_picture), [`read_diagram`](Self::read_diagram)
+    /// and [`read_formula`](Self::read_formula), for any resource; or the
+    /// decoded book is larger than the file limit.
     pub fn load(&mut self) -> Result<Book> {
         if self.index.content_len() > self.limits.max_file_bytes {
             return Err(Error::Limit("the decoded book exceeds the file limit"));

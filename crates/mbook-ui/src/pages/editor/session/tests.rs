@@ -33,6 +33,7 @@ fn outline(paths: &[&str], unsaved: bool) -> Outline {
         contents: ContentsOutline::default(),
         landmarks: Vec::new(),
         pictures: Vec::new(),
+        figures: Vec::new(),
         problems: Vec::new(),
         unsaved,
     }

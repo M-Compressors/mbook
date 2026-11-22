@@ -51,7 +51,9 @@ is a step of the packer, done before the frame is written.
 - Easier: readers use the platform's AVIF decoder; frames stay decodable by a
   stock OpenZL decoder.
 - Harder: nothing is saved on AVIF container overhead for tiny pictures.
-- To revisit: option C, if measurements on formula-heavy books justify it.
+- To revisit: option C, if measurements on books with many tiny pictures
+  justify it. Formulas are no longer such pictures: they are stored as
+  their source ([ADR-0011](0011-diagrams-and-formulas.md)).
 
 ## Action items
 

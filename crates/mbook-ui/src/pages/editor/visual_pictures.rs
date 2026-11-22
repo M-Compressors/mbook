@@ -15,13 +15,12 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
     TestSupportExt as _, Window, div, img, px,
 };
-use percent_encoding::percent_decode_str;
 
 use super::EditorPage;
 use super::encode::Target;
 use super::markup::picture_markdown;
 use super::picture_prompt::{DESCRIPTION_HINT, DESCRIPTION_LABEL};
-use crate::entities::book::chapter::picture_destinations;
+use crate::entities::book::chapter::{image_path, picture_destinations};
 use crate::entities::picture::{PictureCache, decode_avif};
 use crate::features::edit_book::actor::EditHandle;
 use crate::features::edit_book::outline::PictureOutline;
@@ -173,7 +172,7 @@ impl EditorPage {
         let pictures: Rc<Vec<_>> = Rc::new(
             picture_destinations(&source)
                 .iter()
-                .filter_map(|uri| book_picture_path(chapter, uri))
+                .filter_map(|uri| image_path(chapter, uri))
                 .filter_map(|path| {
                     self.session
                         .pictures()
@@ -396,35 +395,14 @@ impl VisualPictures {
     }
 }
 
-/// Resolves a relative destination lexically. Only a catalogue match is read.
-fn book_picture_path(chapter: &str, destination: &str) -> Option<String> {
-    if destination.contains(['#', '?']) || destination.split('/').next()?.contains(':') {
-        return None;
-    }
-    let path = percent_decode_str(destination).decode_utf8().ok()?;
-    let mut segments = chapter.split('/').collect::<Vec<_>>();
-    segments.pop();
-    for name in path.split('/') {
-        match name {
-            "" => return None,
-            "." => {}
-            ".." => {
-                segments.pop()?;
-            }
-            name => segments.push(name),
-        }
-    }
-    Some(segments.join("/"))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::book_picture_path;
+    use super::image_path;
 
     #[test]
     fn a_chapter_picture_path_is_relative_and_percent_decoded() {
         assert_eq!(
-            book_picture_path("part/ch01.md", "./../img/My%20pond.avif").as_deref(),
+            image_path("part/ch01.md", "./../img/My%20pond.avif").as_deref(),
             Some("img/My pond.avif")
         );
     }
@@ -438,7 +416,7 @@ mod tests {
             "../x.avif",
             "%2Fx.avif",
         ] {
-            assert!(book_picture_path("ch01.md", destination).is_none());
+            assert!(image_path("ch01.md", destination).is_none());
         }
     }
 }

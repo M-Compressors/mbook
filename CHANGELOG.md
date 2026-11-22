@@ -4,6 +4,17 @@
 
 ### Added
 
+- Format 1.0 stores diagrams and formulas as Mermaid and KaTeX source.
+  Chapters refer to them using Markdown image syntax, with alternative text
+  for readers that cannot render them. `mbook` reads, writes and edits both
+  resource kinds.
+- The reader and chapter Preview render diagrams and formulas locally. A
+  formula alone in a paragraph is set as a display formula. A formula in
+  running text sits on the baseline.
+- The editor has **Diagrams** and **Formulas** sections with source editing,
+  preview and removal. The Visual toolbar inserts existing resources at the
+  caret with optional alternative text.
+
 - The book editor's Landmarks section can add, edit and remove `notes`
   landmarks with a chapter, an optional anchor and an optional title.
 - The book editor has a Contents section. It shows the contents a reader is

@@ -2,6 +2,7 @@
 
 use super::error::EditError;
 use super::outline::Outline;
+use crate::entities::figure::{FigureKind, FigureSources};
 use futures::channel::oneshot;
 
 /// One step of editing. The session applies commands in the order they were
@@ -68,6 +69,20 @@ pub(crate) enum Command {
         /// The path of the picture.
         path: String,
     },
+    /// Adds a diagram or formula.
+    AddFigure {
+        kind: FigureKind,
+        path: String,
+        source: String,
+    },
+    /// Replaces the source while keeping existing references valid.
+    SetFigureSource {
+        kind: FigureKind,
+        path: String,
+        source: String,
+    },
+    /// Removes a diagram or formula.
+    RemoveFigure { kind: FigureKind, path: String },
     /// Adds a picture and makes it the cover.
     SetCover {
         /// The path of the new picture.
@@ -169,4 +184,8 @@ pub(crate) enum Request {
     ChapterText(String, Reply<String>),
     /// The AVIF bytes of the picture with this path.
     Picture(String, Reply<Vec<u8>>),
+    /// The source of a diagram or formula.
+    Figure(FigureKind, String, Reply<String>),
+    /// The sources referenced by a draft chapter, which might not be saved yet.
+    ChapterFigures(String, String, Reply<FigureSources>),
 }

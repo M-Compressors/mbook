@@ -16,6 +16,7 @@ trade-off, and the consequences.
 | [0008](0008-chapter-anchor-tables.md) | Names of lines that are not headings are stored in a table before their chapter | Accepted |
 | [0009](0009-anchor-definitions.md) | A chapter names a line with a link reference definition that names itself | Accepted |
 | [0010](0010-landmarks.md) | Landmarks are an optional table in a resource of its own | Accepted |
+| [0011](0011-diagrams-and-formulas.md) | Diagrams and formulas are resources of their own kinds, shown the way a picture is | Accepted |
 
 ## Status values
 

@@ -48,8 +48,7 @@ pub(crate) enum EditError {
     /// The list of contents refused the change.
     #[error("the contents were not changed")]
     Contents(#[from] ContentsError),
-    /// Neither a chapter nor a picture of the book has this path, or not the
-    /// kind the command needs.
+    /// The path does not identify a resource of the kind the command needs.
     #[error("nothing in the book has the path {0:?}")]
     NoSuchPath(String),
     /// The task that owns the book is gone: the future of the session was

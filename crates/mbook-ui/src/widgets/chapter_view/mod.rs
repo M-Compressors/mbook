@@ -32,6 +32,11 @@
 //!   keeps its place ([`layout::picture_size`]). A picture the owner does
 //!   not know is not fetched: nothing is drawn for it and the view never
 //!   reaches the network.
+//! * **Diagrams and formulas.** The Kit shows pictures only. A picture whose
+//!   destination is a diagram or a formula of the book is taken from it by
+//!   two plugins, which draw what the widget drew of its source on the
+//!   background ([`figures`]). The text is handed to the Kit when its figures
+//!   are drawn, so that it is laid out once, at its final heights.
 //! * **Structure for assistive technology.** The Kit's Markdown view reports
 //!   no roles of its own (no heading levels, lists or tables), so the widget
 //!   wraps the text in one named article. This is a gap of the Kit.
@@ -40,6 +45,7 @@
 
 mod alt;
 mod blocks;
+mod figures;
 mod layout;
 mod pages;
 #[cfg(test)]
@@ -53,7 +59,7 @@ use std::time::Duration;
 use gpui_kit::assets::IconName;
 use gpui_kit::base::animation::ease_in_cubic;
 use gpui_kit::base::motion::{MotionTransform, Sequence, Transition};
-use gpui_kit::component::text::{TextView, TextViewState};
+use gpui_kit::component::text::{MarkdownExtensions, TextView, TextViewState};
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::{
     AnyElement, App, AppContext as _, ClickEvent, Context, DispatchPhase, ElementId, Entity,
@@ -64,8 +70,10 @@ use gpui_kit::{
     TouchPhase, WeakEntity, Window, canvas, div, point, px, relative,
 };
 
+use self::figures::{BlockFigures, LineFigures, Stage, Table};
 use self::pages::{Block, BlockKind, Measures, Page};
 use self::wheel::{Travel, Wheel};
+use crate::entities::figure::{FigureSources, Figures, Palette};
 use crate::entities::picture::Bitmap;
 use crate::features::appearance::Appearance;
 use crate::shared::ui::page_colors;
@@ -192,6 +200,18 @@ pub(crate) struct ChapterView {
     label: SharedString,
     pictures: Option<PictureResolver>,
     picture_height: Option<f32>,
+    /// The diagrams and formulas the text shows, as the owner gave them.
+    figure_sources: Arc<FigureSources>,
+    /// What was drawn of them, where the plugins of the Kit reach it.
+    figures: Table,
+    /// The colours the figures in the table were drawn in; `None` while
+    /// those of `figure_sources` are not drawn.
+    drawn_in: Option<Palette>,
+    /// The colours the figures are being drawn in.
+    drawing_in: Option<Palette>,
+    /// The text is kept from the Kit until its figures are drawn.
+    held: bool,
+    figure_task: Option<Task<()>>,
     on_link: Option<LinkHandler>,
     placeholders: Placeholders,
     failures: Failures,
@@ -292,6 +312,12 @@ impl ChapterView {
             label: SharedString::default(),
             pictures: None,
             picture_height: None,
+            figure_sources: Arc::default(),
+            figures: Table::default(),
+            drawn_in: None,
+            drawing_in: None,
+            held: false,
+            figure_task: None,
             on_link: None,
             placeholders: Arc::default(),
             failures: Arc::default(),
@@ -335,6 +361,25 @@ impl ChapterView {
     /// Tells where the pictures of the text come from.
     pub(crate) fn set_pictures(&mut self, resolver: PictureResolver, cx: &mut Context<'_, Self>) {
         self.pictures = Some(resolver);
+        cx.notify();
+    }
+
+    /// Tells which diagrams and formulas the text shows and what their
+    /// sources are. They are drawn on the background, in the colours of the
+    /// page. Call it before the text is set: a text that is set while its
+    /// figures are not drawn is shown when they are.
+    pub(crate) fn set_figures(&mut self, sources: FigureSources, cx: &mut Context<'_, Self>) {
+        if *self.figure_sources == sources {
+            return;
+        }
+        self.figure_sources = Arc::new(sources);
+        self.drawn_in = None;
+        self.drawing_in = None;
+        drop(self.figure_task.take());
+        if self.figure_sources.is_empty() {
+            // Nothing to draw: the text is parsed again without figures.
+            self.figures_drawn(None, Figures::default(), cx);
+        }
         cx.notify();
     }
 
@@ -541,9 +586,77 @@ impl ChapterView {
                 .ok();
             }));
         }
-        let shown = self.shown.clone();
+        self.held = !self.figure_sources.is_empty() && self.drawn_in.is_none();
+        self.feed(cx);
+        cx.notify();
+    }
+
+    /// Hands the Kit the text to show: nothing while the figures of the text
+    /// are not drawn.
+    fn feed(&mut self, cx: &mut Context<'_, Self>) {
+        let shown = if self.held {
+            SharedString::default()
+        } else {
+            self.shown.clone()
+        };
         self.state
             .update(cx, |state, cx| state.set_text(&shown, cx));
+    }
+
+    /// Draws the figures of the text in the colours of the page, unless they
+    /// are drawn in them or are being drawn.
+    fn draw_figures(&mut self, palette: Palette, cx: &mut Context<'_, Self>) {
+        if self.figure_sources.is_empty()
+            || self.drawn_in == Some(palette)
+            || self.drawing_in == Some(palette)
+        {
+            return;
+        }
+        self.drawing_in = Some(palette);
+        let sources = Arc::clone(&self.figure_sources);
+        self.figure_task = Some(cx.spawn(async move |this, cx| {
+            let wanted = Arc::clone(&sources);
+            let figures = cx
+                .background_spawn(async move { Figures::draw(&wanted, palette) })
+                .await;
+            this.update(cx, |this, cx| {
+                // The owner may have named other figures meanwhile.
+                if Arc::ptr_eq(&this.figure_sources, &sources) {
+                    this.figures_drawn(Some(palette), figures, cx);
+                }
+            })
+            .ok();
+        }));
+    }
+
+    /// Takes the figures that were drawn. The Kit parses the text again, since
+    /// which of its pictures are figures is decided while it is parsed, and
+    /// the text keeps its place.
+    fn figures_drawn(
+        &mut self,
+        palette: Option<Palette>,
+        figures: Figures,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.drawing_in = None;
+        self.drawn_in = palette;
+        self.figures.set(Arc::new(figures));
+        let at = self.top_offset(cx);
+        let waited = std::mem::take(&mut self.held);
+        let shown = self.shown.clone();
+        self.state.update(cx, |state, cx| {
+            // The same text is no new text to the Kit: it is taken away first.
+            state.set_text("", cx);
+            state.set_text(&shown, cx);
+        });
+        if waited {
+            // The text was never shown: the place it waits for stands.
+            if self.landing.is_none() {
+                self.land(Landing::Start, cx);
+            }
+        } else if self.landing.is_none() {
+            self.land(Landing::Offset(at), cx);
+        }
         cx.notify();
     }
 
@@ -592,9 +705,7 @@ impl ChapterView {
                 };
                 let at = this.top_offset(cx);
                 this.shown = replaced.into();
-                let shown = this.shown.clone();
-                this.state
-                    .update(cx, |state, cx| state.set_text(&shown, cx));
+                this.feed(cx);
                 this.land(Landing::Offset(at), cx);
             })
             .ok();
@@ -607,6 +718,11 @@ impl ChapterView {
         let Some(landing) = self.landing else {
             return;
         };
+        if self.held {
+            // The figures of the text are being drawn; their arrival draws
+            // the next frame.
+            return;
+        }
         self.waited += 1;
         if self.waited > LANDING_FRAMES {
             self.landing = None;
@@ -958,7 +1074,7 @@ impl Render for ChapterView {
         // What GPUI makes of a relative line height: whole pixels.
         let line = (settings.text_size * settings.line_height).round();
         let gap = window.rem_size().as_f32() * PARAGRAPH_GAP_REMS;
-        if self.paging.is_some() && self.pictures.is_some() {
+        if self.paging.is_some() && (self.pictures.is_some() || !self.figure_sources.is_empty()) {
             let list = self.state.read(cx).list_state();
             let page = list.viewport_bounds().size.height.as_f32();
             // Leave room for the paragraph gap and the line that can precede an inline image.
@@ -975,12 +1091,30 @@ impl Render for ChapterView {
         self.repaginate(line, gap, cx);
         self.settle(window, cx);
         let (page, ink) = tone.map_or((cx.theme().background, cx.theme().foreground), page_colors);
+        self.draw_figures(
+            tone.map_or_else(|| Palette::of(page, ink), Palette::from),
+            cx,
+        );
         let viewport = window.viewport_size().width.as_f32();
         let column = layout::column_width(viewport, settings.text_size, class);
         let on_link = self.on_link.clone();
+        let stage = Stage {
+            table: self.figures.clone(),
+            column,
+            page: self.picture_height,
+            text_size: settings.text_size,
+            gap,
+        };
+        // The plugins read the table when the text is parsed, so the parser
+        // is the same whatever the table holds: its revision never changes.
+        let extensions = MarkdownExtensions::default()
+            .plugin(BlockFigures(stage.clone()))
+            .plugin(LineFigures(stage))
+            .parser_revision(1);
         let mut view = TextView::new(&self.state)
             .scrollable(true)
             .selectable(true)
+            .markdown_extensions(extensions)
             .image_source(self.image_source(column, cx))
             .text_size(px(settings.text_size))
             .line_height(relative(settings.line_height))

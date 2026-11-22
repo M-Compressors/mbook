@@ -1,6 +1,7 @@
 //! What the main thread knows of the book being edited.
 
 use super::contents::{Places, faults};
+use crate::entities::figure::FigureKind;
 use markdown::ParseOptions;
 use markdown::mdast::Node;
 use mbook::{Book, Chapter, Landmark, Problems, Toc};
@@ -19,6 +20,8 @@ pub(crate) struct Outline {
     pub(crate) landmarks: Vec<Landmark>,
     /// The pictures in the order they were added.
     pub(crate) pictures: Vec<PictureOutline>,
+    /// The diagrams and formulas, in the order they were added within each kind.
+    pub(crate) figures: Vec<FigureOutline>,
     /// The problems of the last `Check` or `Save`; empty after any change.
     pub(crate) problems: Vec<ProblemOutline>,
     /// A change was made since the book was opened or last saved.
@@ -130,6 +133,13 @@ pub(crate) struct PictureOutline {
     pub(crate) len: usize,
 }
 
+/// The identity of a diagram or formula in the book.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FigureOutline {
+    pub(crate) kind: FigureKind,
+    pub(crate) path: String,
+}
+
 /// One problem that keeps the book from being saved.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ProblemOutline {
@@ -193,6 +203,18 @@ impl Outline {
                     height: picture.size().height,
                     len: picture.data().len(),
                 })
+                .collect(),
+            figures: book
+                .diagrams()
+                .iter()
+                .map(|diagram| FigureOutline {
+                    kind: FigureKind::Diagram,
+                    path: diagram.path().to_owned(),
+                })
+                .chain(book.formulas().iter().map(|formula| FigureOutline {
+                    kind: FigureKind::Formula,
+                    path: formula.path().to_owned(),
+                }))
                 .collect(),
             problems: problems.to_vec(),
             unsaved,

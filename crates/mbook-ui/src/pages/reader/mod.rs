@@ -482,6 +482,8 @@ impl ReaderPage {
         let title = controls::chapter_title(&reading.snapshot, reading.chapter, self.spot.offset);
         self.view.update(cx, |view, cx| {
             view.set_label(title, cx);
+            // Before the text: a text is shown when its figures are drawn.
+            view.set_figures(prepared.figures.clone(), cx);
             view.set_chapter(&prepared.text, prepared.blocks.clone(), cx);
             match arrival {
                 Arrival::Offset(offset) => view.reveal(offset, cx),

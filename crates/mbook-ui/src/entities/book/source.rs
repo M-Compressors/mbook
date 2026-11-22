@@ -7,6 +7,8 @@ use std::sync::{Mutex, MutexGuard};
 
 use mbook::{BookReader, ChapterId, Destination, ResolveError};
 
+use crate::entities::figure::{FigureKind, FigureSource, FigureSources};
+
 use super::chapter::{PictureRef, PreparedChapter, Target, analyse};
 use super::error::BookError;
 use super::snapshot::{BookSnapshot, ChapterInfo, ContentsEntry};
@@ -78,8 +80,11 @@ impl BookSource {
     /// Reads one chapter and everything the view needs to show it without
     /// touching the file again.
     ///
-    /// The file is locked to read the text and again, without I/O, to resolve
-    /// the destinations; the Markdown is parsed between the two.
+    /// The file is locked to read the text and again to resolve the
+    /// destinations and to read the diagrams and formulas the text shows; the
+    /// Markdown is parsed between the two. A diagram or a formula that cannot
+    /// be read does not fail the chapter: it has no source, and the view
+    /// shows its alternative text.
     ///
     /// # Errors
     ///
@@ -90,7 +95,7 @@ impl BookSource {
         let id = self.id(index)?;
         let text = self.lock()?.read_chapter(id).map_err(BookError::Read)?;
         let analysis = analyse(&text);
-        let reader = self.lock()?;
+        let mut reader = self.lock()?;
         let links = analysis
             .links
             .into_iter()
@@ -100,24 +105,42 @@ impl BookSource {
                 (destination, target)
             })
             .collect();
-        let pictures = analysis
-            .pictures
-            .into_iter()
-            .filter_map(|destination| {
-                let Ok(Destination::Picture(picture)) = reader.resolve(id, &destination) else {
-                    return None;
-                };
-                let entry = reader.picture(picture)?;
-                Some((destination, picture_ref(&entry)))
-            })
-            .collect();
+        let mut pictures = HashMap::new();
+        let mut figures = FigureSources::default();
+        for destination in analysis.pictures {
+            let (kind, source) = match reader.resolve(id, &destination) {
+                Ok(Destination::Picture(picture)) => {
+                    if let Some(entry) = reader.picture(picture) {
+                        pictures.insert(destination, picture_ref(&entry));
+                    }
+                    continue;
+                }
+                Ok(Destination::Diagram(diagram)) => {
+                    (FigureKind::Diagram, reader.read_diagram(diagram))
+                }
+                Ok(Destination::Formula(formula)) => {
+                    (FigureKind::Formula, reader.read_formula(formula))
+                }
+                _ => continue,
+            };
+            let source = source.unwrap_or_default().into();
+            figures
+                .by_destination
+                .insert(destination, FigureSource { kind, source });
+        }
         drop(reader);
+        figures.by_reference = analysis
+            .references
+            .into_iter()
+            .filter(|(_, reference)| figures.by_destination.contains_key(&reference.destination))
+            .collect();
         Ok(PreparedChapter {
             index,
             text,
             blocks: analysis.blocks,
             links,
             pictures,
+            figures,
         })
     }
 
@@ -207,7 +230,9 @@ impl BookSource {
                 })
             }
             Ok(Destination::ExtraAnchor(_)) => Target::Deferred,
-            Err(_) => Target::Unresolved,
+            // A link leads to a chapter; a diagram and a formula are shown,
+            // not led to.
+            Ok(Destination::Diagram(_) | Destination::Formula(_)) | Err(_) => Target::Unresolved,
         }
     }
 }

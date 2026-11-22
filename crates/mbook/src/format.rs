@@ -41,6 +41,10 @@ pub(crate) const KIND_PICTURE: u8 = 2;
 pub(crate) const KIND_ANCHORS: u8 = 3;
 #[cfg(feature = "write")]
 pub(crate) const KIND_LANDMARKS: u8 = 4;
+#[cfg(feature = "write")]
+pub(crate) const KIND_DIAGRAM: u8 = 5;
+#[cfg(feature = "write")]
+pub(crate) const KIND_FORMULA: u8 = 6;
 
 /// The decoded format header of the version this crate writes.
 #[cfg(feature = "write")]

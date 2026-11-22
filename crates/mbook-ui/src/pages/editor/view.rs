@@ -119,6 +119,12 @@ impl EditorPage {
                     .child(self.render_pictures(cx))
                     .into_any_element(),
             ),
+            Section::Figures(kind) => scrolled(
+                v_flex()
+                    .child(heading)
+                    .child(self.render_figures(kind, cx))
+                    .into_any_element(),
+            ),
             Section::Problems => scrolled(
                 v_flex()
                     .child(heading)

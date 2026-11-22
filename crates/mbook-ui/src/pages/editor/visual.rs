@@ -27,6 +27,7 @@ use super::session::ViewMode;
 use super::visual_formatting::{formatting, insert_menu};
 use super::visual_pictures::VisualPictures;
 use super::visual_source::VisualSource;
+use crate::entities::figure::FigureKind;
 use crate::entities::picture::picture_file_extensions;
 use crate::features::appearance::Appearance;
 use crate::shared::ui::{empty_state, icon_button, page_colors, status_line, target_size};
@@ -341,7 +342,10 @@ impl EditorPage {
         let editor = self.visual.input.read(cx);
         let enabled = !editor.is_readonly();
         let (undo, redo) = (editor.model().can_undo(), editor.model().can_redo());
-        let code = editor.block_kind_at_caret() == Some(BlockKind::CodeBlock);
+        let block = editor.block_kind_at_caret();
+        let code = block == Some(BlockKind::CodeBlock);
+        let figure_enabled =
+            enabled && !matches!(block, Some(BlockKind::CodeBlock | BlockKind::TableCell));
         let divider = || {
             div()
                 .flex_none()
@@ -402,6 +406,21 @@ impl EditorPage {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.ask_chapter_picture(window, cx);
                     })),
+            )
+            .children(
+                [
+                    ("visual-diagram", "Diagram", FigureKind::Diagram),
+                    ("visual-formula", "Formula", FigureKind::Formula),
+                ]
+                .into_iter()
+                .map(|(id, label, kind)| {
+                    super::sections::control(id, label)
+                        .ghost()
+                        .disabled(!figure_enabled)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.ask_chapter_figure(kind, window, cx);
+                        }))
+                }),
             )
             .child(insert_menu(self.visual.input.clone(), enabled))
             .child(divider())

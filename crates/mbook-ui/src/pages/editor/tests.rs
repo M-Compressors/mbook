@@ -3157,3 +3157,88 @@ fn a_problem_of_the_contents_leads_to_their_section(cx: &mut TestAppContext) {
         Section::Contents
     );
 }
+
+#[gpui_kit::test]
+fn a_diagram_can_be_previewed_edited_and_removed_in_its_section(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-diagrams", cx);
+    click(&setup, "new-figure", cx);
+    click_named(&setup, "Add", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("figure-draft-error").label(),
+            Some("Enter the source.")
+        );
+    });
+    click_named(&setup, "Mermaid source", cx);
+    frame(&setup, cx, |window, cx| {
+        window.input("flowchart LR\n  A --> B", cx);
+    });
+    click(&setup, "draw-figure", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("figure-source-preview").role(),
+            Some(Role::Image)
+        );
+    });
+    click_named(&setup, "Add", cx);
+    click(&setup, "edit-figure-dia/diagram.mmd", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find_by_label("Mermaid source").role(),
+            Some(Role::MultilineTextInput)
+        );
+    });
+    act(&setup, cx, |_, window, cx| {
+        window.dispatch_action(Box::new(gpui_kit::component::input::SelectAll), cx);
+    });
+    frame(&setup, cx, |window, cx| {
+        window.input("flowchart LR\n  C --> D", cx);
+    });
+    click_named(&setup, "Apply", cx);
+    click(&setup, "save", cx);
+    let path = setup.fixture.roots.book(setup.key);
+    assert_eq!(
+        Book::open(&path)
+            .unwrap()
+            .diagram("dia/diagram.mmd")
+            .unwrap()
+            .source(),
+        "flowchart LR\n  C --> D"
+    );
+    click(&setup, "remove-figure-dia/diagram.mmd", cx);
+    click_named(&setup, "Remove", cx);
+    click(&setup, "save", cx);
+    assert_eq!(Book::open(path).unwrap().diagrams(), []);
+}
+
+#[gpui_kit::test]
+fn a_formula_inserted_in_visual_is_drawn_in_the_draft_preview(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("part/ch01.md", "")]);
+    cx.run_until_parked();
+    click(&setup, "section-formulas", cx);
+    click(&setup, "new-figure", cx);
+    frame(&setup, cx, |window, cx| window.input("x^2", cx));
+    click_named(&setup, "Add", cx);
+    click(&setup, "chapter-part/ch01.md", cx);
+    click(&setup, "visual-formula", cx);
+    frame(&setup, cx, |window, cx| window.input("x squared", cx));
+    click_named(&setup, "Insert formula", cx);
+    assert_eq!(editor_text(&setup, cx), "![x squared](../math/formula.tex)");
+    click(&setup, "mode-preview", cx);
+    cx.executor().advance_clock(Duration::from_millis(150));
+    cx.run_until_parked();
+    frame(&setup, cx, |_, _| ());
+    cx.run_until_parked();
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .find_all_by_role(Role::Image)
+                .iter()
+                .any(|node| node.label() == Some("x squared"))
+        );
+    });
+    click(&setup, "save", cx);
+    let book = Book::open(setup.fixture.roots.book(setup.key)).unwrap();
+    assert_eq!(book.formula("math/formula.tex").unwrap().source(), "x^2");
+}

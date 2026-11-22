@@ -169,7 +169,8 @@ mod write {
                 .map_err(error)
         }
 
-        /// A chapter, compressed with the default graph.
+        /// A chapter, a diagram or a formula, compressed with the default
+        /// graph.
         pub(crate) fn text(&mut self, text: &str) -> Result<()> {
             self.inner
                 .resource(FramedResource::from(text.as_bytes()))

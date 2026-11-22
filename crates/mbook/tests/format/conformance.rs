@@ -2,7 +2,7 @@
 //! they do not depend on the writer of this crate.
 
 use crate::raw::{ANCHORS, Column, META, RESOURCES, Raw, TOC};
-use crate::texts::{CH01, CH02, figure_offset, station_offset};
+use crate::texts::{CH01, CH02, DIAGRAM, FORMULA, figure_offset, station_offset};
 use mbook::{
     Book, BookReader, Destination, Error, ResolveError, ResourceKind, Result, Size, Toc, Version,
 };
@@ -656,5 +656,152 @@ fn a_landmark_without_any_anchor_is_found_when_the_book_is_loaded() -> Result<()
             reason: "a row inside a chapter has no anchor"
         })
     ));
+    Ok(())
+}
+
+/// The example with a diagram as resource 9 and a formula as resource 10.
+fn illustrated() -> Raw {
+    changed(|raw| {
+        raw.push_resource(5, "dia/way.mmd", DIAGRAM.as_bytes());
+        raw.push_resource(6, "math/speed.tex", FORMULA.as_bytes());
+    })
+}
+
+#[test]
+fn a_diagram_and_a_formula_built_by_hand_are_read() -> Result<()> {
+    let mut reader = open(&illustrated())?;
+    let kinds: Vec<_> = reader.resources().skip(9).map(|r| r.kind).collect();
+    assert_eq!(kinds, [ResourceKind::Diagram, ResourceKind::Formula]);
+    let (Some(diagram), Some(formula)) = (reader.diagram_id(9), reader.formula_id(10)) else {
+        panic!("resources 9 and 10 are the diagram and the formula");
+    };
+    assert_eq!(reader.read_diagram(diagram)?, DIAGRAM);
+    assert_eq!(reader.read_formula(formula)?, FORMULA);
+    let Some(from) = reader.chapter_id(6) else {
+        panic!("resource 6 is the first chapter");
+    };
+    assert_eq!(
+        reader.resolve(from, "dia/way.mmd"),
+        Ok(Destination::Diagram(diagram))
+    );
+    assert_eq!(
+        reader.resolve(from, "math/speed.tex"),
+        Ok(Destination::Formula(formula))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_book_with_a_diagram_and_a_formula_built_by_hand_is_loaded() -> Result<()> {
+    let book = Book::read(bytes(&illustrated())?.as_slice())?;
+    let diagrams: Vec<_> = book
+        .diagrams()
+        .iter()
+        .map(|d| (d.path(), d.source()))
+        .collect();
+    let formulas: Vec<_> = book
+        .formulas()
+        .iter()
+        .map(|f| (f.path(), f.source()))
+        .collect();
+    assert_eq!(diagrams, [("dia/way.mmd", DIAGRAM)]);
+    assert_eq!(formulas, [("math/speed.tex", FORMULA)]);
+    assert_eq!(open(&illustrated())?.load()?, book);
+    Ok(())
+}
+
+#[test]
+fn a_diagram_or_a_formula_with_a_size_is_rejected() -> Result<()> {
+    for kind in [5, 6] {
+        let table = rejected_table(|raw| {
+            raw.push_resource(kind, "x", b"x");
+            raw.tables[RESOURCES][2].words_mut()[9] = 100;
+        })?;
+        assert_eq!(table, 2);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_diagram_or_a_formula_without_a_path_is_rejected() -> Result<()> {
+    for kind in [5, 6] {
+        assert_eq!(rejected_table(|raw| raw.push_resource(kind, "", b"x"))?, 2);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_diagram_that_is_not_utf8_fails_alone() -> Result<()> {
+    let raw = illustrated().with(|raw| raw.contents[4] = vec![0xff; 4].into());
+    let mut reader = open(&raw)?;
+    let (Some(diagram), Some(formula)) = (reader.diagram_id(9), reader.formula_id(10)) else {
+        panic!("resources 9 and 10 are the diagram and the formula");
+    };
+    assert!(matches!(
+        reader.read_diagram(diagram),
+        Err(Error::Malformed {
+            resource: 9,
+            reason: "the text is not UTF-8"
+        })
+    ));
+    assert_eq!(reader.read_formula(formula)?, FORMULA);
+    assert!(matches!(
+        reader.load(),
+        Err(Error::Malformed { resource: 9, .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn a_formula_that_is_not_one_serial_output_fails_alone() -> Result<()> {
+    let raw = illustrated().with(|raw| {
+        raw.contents[5] = crate::raw::Content::Table(vec![Column::text(&["x"])]);
+    });
+    let mut reader = open(&raw)?;
+    let (Some(diagram), Some(formula)) = (reader.diagram_id(9), reader.formula_id(10)) else {
+        panic!("resources 9 and 10 are the diagram and the formula");
+    };
+    assert!(matches!(
+        reader.read_formula(formula),
+        Err(Error::Malformed { resource: 10, .. })
+    ));
+    assert_eq!(reader.read_diagram(diagram)?, DIAGRAM);
+    Ok(())
+}
+
+#[cfg(feature = "write")]
+#[test]
+fn a_loaded_source_that_breaks_a_rule_is_reported_when_the_book_is_checked() -> Result<()> {
+    use mbook::ProblemKind;
+
+    let raw = changed(|raw| {
+        raw.push_resource(5, "dia/blank.mmd", b" \n");
+        raw.push_resource(6, "math/cr.tex", b"a\r\nb");
+    });
+    let book = Book::read(bytes(&raw)?.as_slice())?;
+    let Err(problems) = book.check() else {
+        panic!("the book breaks two rules");
+    };
+    let found: Vec<_> = problems
+        .iter()
+        .map(|problem| {
+            (
+                problem.path.as_deref(),
+                problem.offset,
+                problem.kind.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (Some("dia/blank.mmd"), None, ProblemKind::EmptySource),
+            (
+                Some("math/cr.tex"),
+                Some(1),
+                ProblemKind::ForbiddenCharacter('\r')
+            ),
+        ]
+    );
     Ok(())
 }

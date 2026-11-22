@@ -268,6 +268,13 @@ book under *Book*, then the chapters in reading order under *Chapters*.
   may be left empty.
 - **Pictures in this chapter** previews the pictures the chapter refers to.
 
+**Diagrams and formulas.** The **Diagrams** and **Formulas** sections add,
+edit and remove resources. Enter Mermaid or KaTeX source and choose **Preview**
+to see the result or a renderer error. Editing a source keeps its book path
+and the chapter references that use it. In Visual, **Diagram** or **Formula**
+inserts an existing resource at the caret with optional alternative text.
+The chapter's Preview shows the same rendering as the reader.
+
 **Linking.** **Link** opens one dialog.
 
 - With words selected, they become the link. With nothing selected, the
@@ -461,7 +468,7 @@ the layers below it.
 | `pages` | `library`, `reader`, `editor`, `settings` |
 | `widgets` | `chapter_view`, the text of a chapter, which the reader and the preview of the editor share. Every other part of a screen belongs to its page until a second page needs it. |
 | `features` | `import_book`, `reading_position`, `appearance`, `edit_book`, `search_library`, `auto_update` |
-| `entities` | `book` (an open book), `catalogue` (the store), `picture` (decoding and its cache) |
+| `entities` | `book` (an open book), `catalogue` (the store), `picture` (decoding and its cache), `figure` (diagram and formula rendering) |
 | `shared` | `roots` (directories), `model` (the key of a book, a place in one), `layout` (size classes), `theme` (colour tokens), `actions`, `ui` (presets over Kit components), `assets` |
 
 State lives in model entities; a view observes a model and calls its
@@ -477,6 +484,7 @@ methods. A view holds no `BookReader`, no `Book` and no path.
 | `read_chapter`; resolving its links and pictures | Background | High |
 | Parsing Markdown for display | Background, by the text view of GPUI Kit | |
 | `read_picture`; decoding AVIF; scaling | Background | Medium |
+| Reading diagram and formula sources and drawing SVG | Background | High for the current chapter |
 | Detecting a format; copying a file | Background | Medium |
 | `Converter::convert` | Background, one conversion at a time | Low |
 | Making the thumbnail of a cover | Background | Low |
@@ -616,7 +624,7 @@ An open book is an entity with two parts.
   `resolve` for every link and picture destination of the text, then the
   byte offset of every top-level block, found with `markdown`, the parser
   `mbook` itself uses. The main thread receives the text, a map from
-  destination to `Destination`, and the offsets.
+  destination to `Destination`, the figure sources, and the offsets.
 - The reader uses the scrolling Markdown view of GPUI Kit to measure the
   top-level blocks of the chapter. It displays one measured page at a time
   by moving the list to that page's start and masking the content below
@@ -676,6 +684,21 @@ GPUI decodes no AVIF, so the application does:
   wide, and stored as a JPEG file that GPUI loads by its path.
 - A picture that cannot be decoded shows its alternative text. It never
   fails the chapter.
+
+### Diagrams and formulas
+
+References to diagrams and formulas use the
+[Markdown image syntax of RFC 0001](0001-mbook-format.md#diagram-and-formula-resources).
+The application uses `merman` for Mermaid and RaTeX for KaTeX. It renders
+the source on a background task and passes SVG to GPUI. A bounded cache
+is keyed by source, page colours and formula style.
+
+The Markdown view centres a block figure, fits its drawing to the column
+and page and displays its caption when supplied. Inline formulas follow
+the baseline of the surrounding text. Unavailable drawings show the
+alternative text. Figures use the page tone and scale with the text.
+All drawing is local. The application does not follow links or execute
+commands from figure sources.
 
 ### Accessibility
 
@@ -823,7 +846,8 @@ sequenceDiagram
   them **in the order they were sent**. A save therefore always includes the
   edits made before it.
 - The main thread holds an *outline*: the metadata, the paths and sizes of
-  chapters and pictures, the landmarks, and the problems last reported.
+  chapters and pictures, the paths of diagrams and formulas, the landmarks
+  and the problems last reported.
   The task sends a new outline after each command that changes it.
 - The Markdown text of the chapter is in the source editor of GPUI Kit.
   Source and Split use its Tree-sitter Markdown grammar.
@@ -841,16 +865,22 @@ sequenceDiagram
   sent to the task as `Chapter::set_text` when typing pauses for 400 ms,
   when another chapter is opened, and before a check or a save.
 - The preview is the Markdown view of the reader, given the text of the
-  editor. It does not wait for the task.
+  editor. The text updates immediately. The editing task resolves figure
+  references from the current draft after a short pause, including
+  reference-style images. The view then draws them using the same code as
+  the reader.
 - An error of a call (`InvalidText`, `InvalidPath`, `DuplicatePath`,
-  `InvalidPicture`, `InvalidMeta`) is shown at the control that caused it,
+  `InvalidPicture`, `InvalidDiagram`, `InvalidFormula`, `InvalidMeta`) is shown at the control that caused it,
   with the byte offset when the error has one.
 - **Save** runs `Book::check`, then `Book::save` onto the file of the
   library, which writes a temporary file beside it and renames it into
   place. A book with problems is not written, and the problems are shown.
   Save sends chapter text and pending Details edits before the save command.
   After a save the row of `books` and the thumbnail are made again.
-- Undo inside a chapter is the editor's own. Removing a chapter or a picture
+- Undo inside a chapter is the editor's own. Removing a diagram or formula
+  asks for confirmation. References to a removed resource are reported by
+  `Book::check` and block saving until they are updated or removed.
+- Removing a chapter or a picture
   asks first and cannot be undone.
 - Changes in Landmarks replace the landmark list through `Book::set_landmarks`.
   The editor keeps the other landmarks and their order. If a chapter or
@@ -1051,6 +1081,9 @@ several packages share.
 | `avif-decode` | 3.0.0, 2026-09-20 | BSD-3-Clause | Decoding pictures; Rust 1.98 |
 | `image` | The version and features of the workspace; GPUI brings the same crate | MIT OR Apache-2.0 | Decoding and AVIF encoding of pictures added in the editor; scaling |
 | `futures` | already in the tree of GPUI | MIT OR Apache-2.0 | The channel of the editing task |
+| `merman` | 0.11.0 | MIT OR Apache-2.0 | Draws Mermaid as SVG |
+| `ratex-parser`, `ratex-layout`, `ratex-types`, `ratex-svg`, `ratex-font`, `ratex-unicode-font` | 0.1.16 | MIT | Parses and sets KaTeX as SVG with embedded glyph outlines |
+| `ab_glyph`, `serde_json` | 0.2 and 1 | Apache-2.0 and MIT OR Apache-2.0, respectively | System glyph metrics, Mermaid configuration and traversing the formula tree |
 | `uuid`, `tempfile`, `thiserror`, `markdown` | The versions of the workspace | | Keys; files of imports; errors; block offsets |
 
 `avif-decode` brings `rav1d` (BSD-2-Clause, a port of dav1d to Rust; last
@@ -1107,8 +1140,8 @@ can break in its middle.
 | --- | --- |
 | Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
-| Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures scale to fit a page. Other tall blocks can be clipped through a line. |
-| Editor | Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
+| Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures and diagrams scale to fit a page. Mermaid diagrams and KaTeX formulas use the page tone and display alternative text when rendering fails. Other tall blocks can be clipped through a line. |
+| Editor | Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Diagrams and Formulas have source dialogs, a preview and removal controls. Visual inserts figure references, and Preview and Split render them. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. The installer is compiled on macOS and Windows. No real release exists, so neither has met the network. |
 | Release workflow | Written; never run. The macOS and Windows x64 jobs make NASM available before building. A local `cargo bundle` on macOS produces the application with its icon. |
@@ -1204,6 +1237,7 @@ asks:
 | Minimum Rust version | 1.100 for this package | The 1.89 of the workspace | Decided by the format author. `avif-decode` needs 1.98 and `redb` 1.90; an application is built by its maintainers, not by users of a library. |
 | Typeface of books | Literata when installed, then local serif fallbacks; any installed family in settings | A fixed set of bundled fonts | The fallback chain keeps book typography available without font assets in the repository. |
 | Building a release | A workflow started by hand for a tag | Building on every tag | Decided by the format author. A tag also marks versions of the libraries, which have no binaries. |
+| Drawing diagrams and formulas | Render source with merman and RaTeX, then give SVG to GPUI | Convert sources to AVIF; render with a web view | SVG lets the reader choose its own page colours and sizes. The source remains editable and rendering stays local. |
 | Pictures added in the editor | Encoded here, with `image` | A public encoder in `mbook-converter` | Decided by the format author. RFC 0003 stays as it is; the price is that quality and speed are written in two crates. |
 | Size class under a scaled interface | Width divided by the scale | Width in pixels | At 200% a desktop window has room for the compact layout only; clipping or a horizontal scroll bar fails WCAG 1.4.10. |
 | Reordering chapters | A drag, and "Move up" and "Move down" | A drag alone | WCAG 2.5.7: a drag needs an alternative. |

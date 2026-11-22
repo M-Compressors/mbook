@@ -1,7 +1,7 @@
 //! What `Book::check` reports, and that nothing invalid is written.
 
 use crate::sample;
-use mbook::{Book, Error, Landmark, Problem, ProblemKind, Result, Toc, TocItem};
+use mbook::{Book, Error, Landmark, Problem, ProblemKind, Result, SourceError, Toc, TocItem};
 
 /// The problems of a book as (chapter, kind) pairs.
 fn problems(book: &Book) -> Vec<(Option<String>, ProblemKind)> {
@@ -340,5 +340,99 @@ fn a_landmark_follows_an_anchor_definition_that_is_removed() -> Result<()> {
     let kinds: Vec<_> = problems(&book).into_iter().map(|(_, kind)| kind).collect();
     assert!(kinds.contains(&ProblemKind::DanglingLandmark("list-of-figures".into())));
     assert!(!kinds.contains(&ProblemKind::DanglingLandmark("preface".into())));
+    Ok(())
+}
+
+#[test]
+fn a_book_that_shows_a_diagram_and_a_formula_has_no_problems() -> Result<()> {
+    assert!(sample::illustrated()?.check().is_ok());
+    Ok(())
+}
+
+#[test]
+fn a_diagram_and_a_formula_are_shown_from_another_folder() -> Result<()> {
+    let mut book = sample::illustrated()?;
+    book.add_chapter(
+        "part/extra.md",
+        "![way](../dia/way.mmd) and ![speed](../math/speed.tex)\n",
+    )?;
+    assert_eq!(problems(&book), []);
+    Ok(())
+}
+
+#[test]
+fn a_link_to_a_diagram_or_to_a_formula_is_reported() -> Result<()> {
+    let mut book = sample::illustrated()?;
+    book.add_chapter(
+        "extra.md",
+        "[way](dia/way.mmd) and [speed](math/speed.tex)\n",
+    )?;
+    assert_eq!(
+        problems(&book),
+        [
+            ProblemKind::UnresolvedLink("dia/way.mmd".into()),
+            ProblemKind::UnresolvedLink("math/speed.tex".into())
+        ]
+        .map(|kind| (Some("extra.md".to_owned()), kind))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_diagram_with_a_fragment_is_reported() -> Result<()> {
+    let mut book = sample::illustrated()?;
+    book.add_chapter("extra.md", "![way](dia/way.mmd#station)\n")?;
+    assert_eq!(
+        problems(&book),
+        in_extra(ProblemKind::UnresolvedPicture("dia/way.mmd#station".into()))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_removed_diagram_and_a_removed_formula_leave_reported_references() -> Result<()> {
+    let mut book = sample::illustrated()?;
+    assert!(book.remove_diagram("dia/way.mmd").is_some());
+    assert!(book.remove_formula("math/speed.tex").is_some());
+    assert_eq!(
+        problems(&book),
+        [
+            ProblemKind::UnresolvedPicture("dia/way.mmd".into()),
+            ProblemKind::UnresolvedPicture("math/speed.tex".into())
+        ]
+        .map(|kind| (Some("ch04.md".to_owned()), kind))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_cover_that_is_a_diagram_is_reported() -> Result<()> {
+    let mut book = sample::illustrated()?;
+    book.meta_mut().set_cover("dia/way.mmd")?;
+    assert_eq!(problems(&book), [(None, ProblemKind::MissingCover)]);
+    Ok(())
+}
+
+#[test]
+fn a_diagram_that_nothing_shows_is_no_problem() -> Result<()> {
+    let mut book = sample::book()?;
+    book.add_diagram("dia/unused.mmd", "flowchart TD\n  A --> B\n")?;
+    book.add_formula("math/unused.tex", "x")?;
+    assert_eq!(problems(&book), []);
+    Ok(())
+}
+
+#[test]
+fn an_empty_source_is_refused_when_it_is_given() -> Result<()> {
+    let mut book = sample::book()?;
+    assert!(matches!(
+        book.add_diagram("dia/empty.mmd", "\n"),
+        Err(Error::InvalidDiagram(SourceError::Empty))
+    ));
+    assert!(matches!(
+        book.add_formula("math/empty.tex", " "),
+        Err(Error::InvalidFormula(SourceError::Empty))
+    ));
+    assert!(book.diagrams().is_empty() && book.formulas().is_empty());
     Ok(())
 }

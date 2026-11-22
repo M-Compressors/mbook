@@ -1,6 +1,6 @@
 //! Loading a whole book into memory.
 
-use super::{Book, Chapter, Landmark, Picture, Toc, TocItem};
+use super::{Book, Chapter, Diagram, Formula, Landmark, Picture, Toc, TocItem};
 use crate::container;
 use crate::error::{Error, Result};
 use crate::format::{CONTAINER_MAGIC, FORMAT, SERVICE_COUNT};
@@ -126,6 +126,22 @@ impl Book {
                 path: entry.path.to_owned(),
                 size: entry.size,
                 data: container::serial(number, outputs(number)?)?,
+            });
+        }
+        for entry in index.diagrams() {
+            let number = entry.id.number();
+            let source = Index::source(number, container::serial(number, outputs(number)?)?)?;
+            book.place_diagram(Diagram {
+                path: entry.path.to_owned(),
+                source,
+            });
+        }
+        for entry in index.formulas() {
+            let number = entry.id.number();
+            let source = Index::source(number, container::serial(number, outputs(number)?)?)?;
+            book.place_formula(Formula {
+                path: entry.path.to_owned(),
+                source,
             });
         }
         book.toc = Toc::Explicit(

@@ -1,7 +1,7 @@
 //! A whole book in memory.
 
 #[cfg(feature = "write")]
-use crate::error::{Error, LandmarkError, Result};
+use crate::error::{Error, LandmarkError, Result, SourceError};
 use crate::meta::Meta;
 use crate::types::{Anchor, Size};
 #[cfg(feature = "write")]
@@ -13,11 +13,11 @@ mod load;
 #[cfg(feature = "write")]
 mod write;
 
-/// A whole book in memory: metadata, chapters in reading order, pictures and
-/// the table of contents.
+/// A whole book in memory: metadata, chapters in reading order, pictures,
+/// diagrams, formulas and the table of contents.
 ///
 /// A `Book` is how a book is created and how an existing one is changed.
-/// Chapters and pictures are addressed by path. Nothing in it is a byte
+/// Chapters, pictures, diagrams and formulas are addressed by path. Nothing in it is a byte
 /// offset the caller has to keep correct: anchors are computed from the text
 /// of each chapter, and contents items name their target the way a link
 /// does.
@@ -69,10 +69,13 @@ pub struct Book {
     meta: Meta,
     chapters: Vec<Chapter>,
     pictures: Vec<Picture>,
+    diagrams: Vec<Diagram>,
+    formulas: Vec<Formula>,
     toc: Toc,
     /// The notable places of the book, in the order they are listed.
     landmarks: Vec<Landmark>,
-    /// Where each path lives; paths are unique across chapters and pictures.
+    /// Where each path lives; paths are unique across chapters, pictures,
+    /// diagrams and formulas.
     slots: HashMap<String, Slot>,
 }
 
@@ -81,6 +84,8 @@ pub struct Book {
 enum Slot {
     Chapter(usize),
     Picture(usize),
+    Diagram(usize),
+    Formula(usize),
 }
 
 /// One chapter of a [`Book`]: a path, Markdown text, the anchors of its
@@ -101,6 +106,28 @@ pub struct Picture {
     path: String,
     size: Size,
     data: Vec<u8>,
+}
+
+/// One diagram of a [`Book`]: a path and a description in Mermaid notation.
+///
+/// A chapter shows it the way it shows a picture:
+/// `![The flow of a request](dia/flow.mmd)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Diagram {
+    path: String,
+    source: String,
+}
+
+/// One formula of a [`Book`]: a path and a formula in the notation of
+/// `KaTeX`, without the `$` that surround one in running text.
+///
+/// A chapter shows it the way it shows a picture: `![E = mc^2](math/e.tex)`.
+/// Alone in a paragraph it is set as a display formula, and inside a line as
+/// a part of that line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Formula {
+    path: String,
+    source: String,
 }
 
 /// The table of contents of a [`Book`].
@@ -369,6 +396,93 @@ impl Picture {
     }
 }
 
+/// The stored form of the source of a diagram or of a formula.
+///
+/// The encoding is that of a chapter: CRLF and lone CR become a line feed and
+/// a leading byte order mark is dropped. A source without a character that is
+/// not white space describes nothing and is refused.
+#[cfg(feature = "write")]
+fn stored_source(source: String) -> Result<String, SourceError> {
+    let source = text::normalize(source)?;
+    if source.trim().is_empty() {
+        return Err(SourceError::Empty);
+    }
+    Ok(source)
+}
+
+impl Diagram {
+    /// Normalises the source.
+    #[cfg(feature = "write")]
+    fn new(path: String, source: String) -> Result<Self> {
+        let source = stored_source(source).map_err(Error::InvalidDiagram)?;
+        Ok(Self { path, source })
+    }
+
+    /// The path of the diagram inside the book.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// The description of the diagram in Mermaid notation, in the form it is
+    /// stored in.
+    #[must_use]
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Replaces the description of the diagram.
+    ///
+    /// CRLF and lone CR become a line feed and a leading byte order mark is
+    /// dropped. On error the diagram is unchanged.
+    ///
+    /// # Errors
+    ///
+    /// The source is empty, or contains a control character other than line
+    /// feed and tab.
+    #[cfg(feature = "write")]
+    pub fn set_source(&mut self, source: impl Into<String>) -> Result<()> {
+        self.source = stored_source(source.into()).map_err(Error::InvalidDiagram)?;
+        Ok(())
+    }
+}
+
+impl Formula {
+    /// Normalises the source.
+    #[cfg(feature = "write")]
+    fn new(path: String, source: String) -> Result<Self> {
+        let source = stored_source(source).map_err(Error::InvalidFormula)?;
+        Ok(Self { path, source })
+    }
+
+    /// The path of the formula inside the book.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// The formula in the notation of `KaTeX`, in the form it is stored in.
+    #[must_use]
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Replaces the formula.
+    ///
+    /// CRLF and lone CR become a line feed and a leading byte order mark is
+    /// dropped. On error the formula is unchanged.
+    ///
+    /// # Errors
+    ///
+    /// The source is empty, or contains a control character other than line
+    /// feed and tab.
+    #[cfg(feature = "write")]
+    pub fn set_source(&mut self, source: impl Into<String>) -> Result<()> {
+        self.source = stored_source(source.into()).map_err(Error::InvalidFormula)?;
+        Ok(())
+    }
+}
+
 /// Looking at a book.
 impl Book {
     /// The metadata.
@@ -388,7 +502,7 @@ impl Book {
     pub fn chapter(&self, path: &str) -> Option<&Chapter> {
         match self.slots.get(path)? {
             Slot::Chapter(index) => self.chapters.get(*index),
-            Slot::Picture(_) => None,
+            _ => None,
         }
     }
 
@@ -403,7 +517,37 @@ impl Book {
     pub fn picture(&self, path: &str) -> Option<&Picture> {
         match self.slots.get(path)? {
             Slot::Picture(index) => self.pictures.get(*index),
-            Slot::Chapter(_) => None,
+            _ => None,
+        }
+    }
+
+    /// The diagrams, in the order they were added.
+    #[must_use]
+    pub fn diagrams(&self) -> &[Diagram] {
+        &self.diagrams
+    }
+
+    /// The diagram with this path.
+    #[must_use]
+    pub fn diagram(&self, path: &str) -> Option<&Diagram> {
+        match self.slots.get(path)? {
+            Slot::Diagram(index) => self.diagrams.get(*index),
+            _ => None,
+        }
+    }
+
+    /// The formulas, in the order they were added.
+    #[must_use]
+    pub fn formulas(&self) -> &[Formula] {
+        &self.formulas
+    }
+
+    /// The formula with this path.
+    #[must_use]
+    pub fn formula(&self, path: &str) -> Option<&Formula> {
+        match self.slots.get(path)? {
+            Slot::Formula(index) => self.formulas.get(*index),
+            _ => None,
         }
     }
 
@@ -429,6 +573,8 @@ impl Book {
             meta,
             chapters: Vec::new(),
             pictures: Vec::new(),
+            diagrams: Vec::new(),
+            formulas: Vec::new(),
             toc: Toc::default(),
             landmarks: Vec::new(),
             slots: HashMap::new(),
@@ -453,12 +599,42 @@ impl Book {
         &self.pictures[index]
     }
 
+    /// Puts a diagram with a free path after the others.
+    fn place_diagram(&mut self, diagram: Diagram) -> &mut Diagram {
+        let index = self.diagrams.len();
+        self.slots
+            .insert(diagram.path.clone(), Slot::Diagram(index));
+        self.diagrams.push(diagram);
+        &mut self.diagrams[index]
+    }
+
+    /// Puts a formula with a free path after the others.
+    fn place_formula(&mut self, formula: Formula) -> &mut Formula {
+        let index = self.formulas.len();
+        self.slots
+            .insert(formula.path.clone(), Slot::Formula(index));
+        self.formulas.push(formula);
+        &mut self.formulas[index]
+    }
+
     /// Updates the slots of the chapters from `from` on after a shift.
     fn renumber_chapters(&mut self, from: usize) {
-        for (index, chapter) in self.chapters.iter().enumerate().skip(from) {
-            if let Some(slot) = self.slots.get_mut(chapter.path.as_str()) {
-                *slot = Slot::Chapter(index);
-            }
+        let paths = self.chapters.iter().map(|chapter| chapter.path.as_str());
+        renumber(&mut self.slots, paths, from, Slot::Chapter);
+    }
+}
+
+/// Points the slots of the items from `from` on at their places after a
+/// shift. `paths` holds the path of every item, in order.
+fn renumber<'a>(
+    slots: &mut HashMap<String, Slot>,
+    paths: impl Iterator<Item = &'a str>,
+    from: usize,
+    slot_of: impl Fn(usize) -> Slot,
+) {
+    for (index, path) in paths.enumerate().skip(from) {
+        if let Some(slot) = slots.get_mut(path) {
+            *slot = slot_of(index);
         }
     }
 }
@@ -498,7 +674,7 @@ impl Book {
     pub fn chapter_mut(&mut self, path: &str) -> Option<&mut Chapter> {
         match self.slots.get(path)? {
             Slot::Chapter(index) => self.chapters.get_mut(*index),
-            Slot::Picture(_) => None,
+            _ => None,
         }
     }
 
@@ -594,8 +770,118 @@ impl Book {
         };
         self.slots.remove(path);
         let picture = self.pictures.remove(index);
-        self.renumber_pictures(index);
+        let paths = self.pictures.iter().map(|picture| picture.path.as_str());
+        renumber(&mut self.slots, paths, index, Slot::Picture);
         Some(picture)
+    }
+
+    /// The diagram with this path, for changing its source.
+    pub fn diagram_mut(&mut self, path: &str) -> Option<&mut Diagram> {
+        match self.slots.get(path)? {
+            Slot::Diagram(index) => self.diagrams.get_mut(*index),
+            _ => None,
+        }
+    }
+
+    /// Adds a diagram, described in Mermaid notation.
+    ///
+    /// A chapter shows it the way it shows a picture, by its path:
+    /// `![The flow of a request](dia/flow.mmd)`. CRLF and lone CR in the
+    /// source become a line feed and a leading byte order mark is dropped.
+    /// The notation itself is not checked: a reading application shows the
+    /// alternative text of a diagram it cannot draw.
+    ///
+    /// # Errors
+    ///
+    /// The path is not valid or is already used, or the source is empty or
+    /// contains a control character other than line feed and tab.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut book = mbook::Book::new("The Example", "en")?;
+    /// book.add_diagram("dia/flow.mmd", "flowchart LR\n  A --> B\n")?;
+    /// book.add_chapter("ch01.md", "![From A to B](dia/flow.mmd)\n")?;
+    /// assert!(book.check().is_ok());
+    /// # Ok::<(), mbook::Error>(())
+    /// ```
+    pub fn add_diagram(
+        &mut self,
+        path: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Result<&mut Diagram> {
+        let path = self.free_path(path.into())?;
+        let diagram = Diagram::new(path, source.into())?;
+        Ok(self.place_diagram(diagram))
+    }
+
+    /// Removes a diagram and returns it.
+    ///
+    /// References to it from chapters are reported when the book is written.
+    pub fn remove_diagram(&mut self, path: &str) -> Option<Diagram> {
+        let Slot::Diagram(index) = self.slots.get(path).copied()? else {
+            return None;
+        };
+        self.slots.remove(path);
+        let diagram = self.diagrams.remove(index);
+        let paths = self.diagrams.iter().map(|diagram| diagram.path.as_str());
+        renumber(&mut self.slots, paths, index, Slot::Diagram);
+        Some(diagram)
+    }
+
+    /// The formula with this path, for changing its source.
+    pub fn formula_mut(&mut self, path: &str) -> Option<&mut Formula> {
+        match self.slots.get(path)? {
+            Slot::Formula(index) => self.formulas.get_mut(*index),
+            _ => None,
+        }
+    }
+
+    /// Adds a formula, written in the notation of `KaTeX` without the `$`
+    /// that surround a formula in running text.
+    ///
+    /// A chapter shows it the way it shows a picture, by its path:
+    /// `![E = mc^2](math/e.tex)`. CRLF and lone CR in the source become a
+    /// line feed and a leading byte order mark is dropped. The notation
+    /// itself is not checked: a reading application shows the alternative
+    /// text of a formula it cannot set.
+    ///
+    /// # Errors
+    ///
+    /// The path is not valid or is already used, or the source is empty or
+    /// contains a control character other than line feed and tab.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut book = mbook::Book::new("The Example", "en")?;
+    /// book.add_formula("math/e.tex", "E = mc^2")?;
+    /// book.add_chapter("ch01.md", "Mass is energy: ![E = mc^2](math/e.tex).\n")?;
+    /// assert!(book.check().is_ok());
+    /// # Ok::<(), mbook::Error>(())
+    /// ```
+    pub fn add_formula(
+        &mut self,
+        path: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Result<&mut Formula> {
+        let path = self.free_path(path.into())?;
+        let formula = Formula::new(path, source.into())?;
+        Ok(self.place_formula(formula))
+    }
+
+    /// Removes a formula and returns it.
+    ///
+    /// References to it from chapters are reported when the book is written.
+    pub fn remove_formula(&mut self, path: &str) -> Option<Formula> {
+        let Slot::Formula(index) = self.slots.get(path).copied()? else {
+            return None;
+        };
+        self.slots.remove(path);
+        let formula = self.formulas.remove(index);
+        let paths = self.formulas.iter().map(|formula| formula.path.as_str());
+        renumber(&mut self.slots, paths, index, Slot::Formula);
+        Some(formula)
     }
 
     /// Adds a picture and makes it the cover.
@@ -678,22 +964,13 @@ impl Book {
         }
         Ok(path)
     }
-
-    /// Updates the slots of the pictures from `from` on after a shift.
-    fn renumber_pictures(&mut self, from: usize) {
-        for (index, picture) in self.pictures.iter().enumerate().skip(from) {
-            if let Some(slot) = self.slots.get_mut(picture.path.as_str()) {
-                *slot = Slot::Picture(index);
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 #[cfg(feature = "write")]
 mod tests {
-    use super::{Book, Chapter, Landmark, Picture, Toc, TocItem};
-    use crate::error::{Error, LandmarkError, PathError};
+    use super::{Book, Chapter, Diagram, Formula, Landmark, Picture, Toc, TocItem};
+    use crate::error::{Error, LandmarkError, PathError, SourceError};
     use crate::types::Size;
 
     /// A chapter with one heading and two paragraphs, the first of them
@@ -804,7 +1081,216 @@ mod tests {
             .pictures()
             .iter()
             .all(|p| book.picture(p.path()) == Some(p));
-        chapters && pictures && book.slots.len() == book.chapters.len() + book.pictures.len()
+        let diagrams = book
+            .diagrams()
+            .iter()
+            .all(|d| book.diagram(d.path()) == Some(d));
+        let formulas = book
+            .formulas()
+            .iter()
+            .all(|f| book.formula(f.path()) == Some(f));
+        let items =
+            book.chapters.len() + book.pictures.len() + book.diagrams.len() + book.formulas.len();
+        chapters && pictures && diagrams && formulas && book.slots.len() == items
+    }
+
+    /// The example with two diagrams and two formulas.
+    fn illustrated() -> Book {
+        let mut book = book();
+        for path in ["dia/a.mmd", "dia/b.mmd"] {
+            book.add_diagram(path, "flowchart LR\n  A --> B\n").unwrap();
+        }
+        for path in ["math/a.tex", "math/b.tex"] {
+            book.add_formula(path, "E = mc^2").unwrap();
+        }
+        book
+    }
+
+    #[test]
+    fn a_diagram_exposes_its_path_and_source() {
+        let book = illustrated();
+        let diagram = book.diagram("dia/a.mmd").unwrap();
+        assert_eq!(
+            (diagram.path(), diagram.source()),
+            ("dia/a.mmd", "flowchart LR\n  A --> B\n")
+        );
+    }
+
+    #[test]
+    fn a_formula_exposes_its_path_and_source() {
+        let book = illustrated();
+        let formula = book.formula("math/b.tex").unwrap();
+        assert_eq!(
+            (formula.path(), formula.source()),
+            ("math/b.tex", "E = mc^2")
+        );
+    }
+
+    #[test]
+    fn diagrams_and_formulas_are_listed_in_the_order_they_were_added() {
+        let book = illustrated();
+        let diagrams: Vec<_> = book.diagrams().iter().map(Diagram::path).collect();
+        let formulas: Vec<_> = book.formulas().iter().map(Formula::path).collect();
+        assert_eq!(
+            (diagrams, formulas),
+            (
+                vec!["dia/a.mmd", "dia/b.mmd"],
+                vec!["math/a.tex", "math/b.tex"]
+            )
+        );
+        assert!(slots_agree(&book));
+    }
+
+    #[test]
+    fn a_path_of_another_kind_is_neither_a_diagram_nor_a_formula() {
+        let mut book = illustrated();
+        assert!(book.diagram("math/a.tex").is_none());
+        assert!(book.diagram("ch01.md").is_none());
+        assert!(book.formula("dia/a.mmd").is_none());
+        assert!(book.formula("img/a.avif").is_none());
+        assert!(book.diagram_mut("math/a.tex").is_none());
+        assert!(book.formula_mut("dia/a.mmd").is_none());
+        assert!(book.picture("dia/a.mmd").is_none());
+        assert!(book.chapter("math/a.tex").is_none());
+        assert!(book.chapter_mut("dia/a.mmd").is_none());
+    }
+
+    #[test]
+    fn a_source_is_stored_with_line_feeds_and_without_a_byte_order_mark() {
+        let mut book = book();
+        let diagram = book.add_diagram("d.mmd", "\u{feff}flowchart LR\r\n  A --> B\r");
+        assert_eq!(
+            diagram.map(|diagram| diagram.source().to_owned()).unwrap(),
+            "flowchart LR\n  A --> B\n"
+        );
+        let formula = book.add_formula("f.tex", "a\r\n+ b");
+        assert_eq!(
+            formula.map(|formula| formula.source().to_owned()).unwrap(),
+            "a\n+ b"
+        );
+    }
+
+    #[test]
+    fn a_source_without_a_visible_character_is_refused() {
+        let mut book = book();
+        let diagram = book.add_diagram("d.mmd", " \n\t\n");
+        assert!(matches!(
+            diagram,
+            Err(Error::InvalidDiagram(SourceError::Empty))
+        ));
+        let formula = book.add_formula("f.tex", "");
+        assert!(matches!(
+            formula,
+            Err(Error::InvalidFormula(SourceError::Empty))
+        ));
+        assert!(slots_agree(&book));
+    }
+
+    #[test]
+    fn a_source_with_a_control_character_is_refused_with_its_place() {
+        let mut book = book();
+        let diagram = book.add_diagram("d.mmd", "flow\u{1b}chart");
+        assert!(matches!(
+            diagram,
+            Err(Error::InvalidDiagram(SourceError::ForbiddenCharacter(found)))
+                if (found.offset, found.character) == (4, '\u{1b}')
+        ));
+        let formula = book.add_formula("f.tex", "\0");
+        assert!(matches!(
+            formula,
+            Err(Error::InvalidFormula(SourceError::ForbiddenCharacter(found)))
+                if found.offset == 0
+        ));
+    }
+
+    #[test]
+    fn a_diagram_and_a_formula_need_a_free_and_valid_path() {
+        let mut book = illustrated();
+        assert!(matches!(
+            book.add_diagram("ch01.md", "flowchart LR"),
+            Err(Error::DuplicatePath(path)) if path == "ch01.md"
+        ));
+        assert!(matches!(
+            book.add_formula("dia/a.mmd", "x"),
+            Err(Error::DuplicatePath(path)) if path == "dia/a.mmd"
+        ));
+        assert!(matches!(
+            book.add_diagram("/d.mmd", "flowchart LR"),
+            Err(Error::InvalidPath {
+                reason: PathError::EmptySegment,
+                ..
+            })
+        ));
+        assert!(matches!(
+            book.add_formula("", "x"),
+            Err(Error::InvalidPath {
+                reason: PathError::Empty,
+                ..
+            })
+        ));
+        assert!(matches!(
+            book.add_chapter("math/a.tex", "text"),
+            Err(Error::DuplicatePath(path)) if path == "math/a.tex"
+        ));
+    }
+
+    #[test]
+    fn set_source_replaces_the_source_of_a_diagram_and_of_a_formula() {
+        let mut book = illustrated();
+        let diagram = book.diagram_mut("dia/b.mmd").unwrap();
+        diagram
+            .set_source("sequenceDiagram\r\n  A->>B: hi")
+            .unwrap();
+        assert_eq!(diagram.source(), "sequenceDiagram\n  A->>B: hi");
+        let formula = book.formula_mut("math/a.tex").unwrap();
+        formula.set_source("a^2 + b^2 = c^2").unwrap();
+        assert_eq!(formula.source(), "a^2 + b^2 = c^2");
+    }
+
+    #[test]
+    fn a_source_that_is_refused_keeps_the_one_before() {
+        let mut book = illustrated();
+        let diagram = book.diagram_mut("dia/a.mmd").unwrap();
+        assert!(matches!(
+            diagram.set_source("  "),
+            Err(Error::InvalidDiagram(SourceError::Empty))
+        ));
+        assert_eq!(diagram.source(), "flowchart LR\n  A --> B\n");
+        let formula = book.formula_mut("math/a.tex").unwrap();
+        assert!(matches!(
+            formula.set_source("x\u{7}"),
+            Err(Error::InvalidFormula(SourceError::ForbiddenCharacter(_)))
+        ));
+        assert_eq!(formula.source(), "E = mc^2");
+    }
+
+    #[test]
+    fn slots_follow_a_removed_diagram_and_a_removed_formula() {
+        let mut book = illustrated();
+        let diagram = book.remove_diagram("dia/a.mmd");
+        let formula = book.remove_formula("math/a.tex");
+        assert_eq!(diagram.as_ref().map(Diagram::path), Some("dia/a.mmd"));
+        assert_eq!(formula.as_ref().map(Formula::path), Some("math/a.tex"));
+        assert_eq!(
+            book.diagram("dia/b.mmd").map(Diagram::path),
+            Some("dia/b.mmd")
+        );
+        assert_eq!(
+            book.formula("math/b.tex").map(Formula::path),
+            Some("math/b.tex")
+        );
+        assert!(slots_agree(&book));
+    }
+
+    #[test]
+    fn removing_ignores_a_path_of_another_kind() {
+        let mut book = illustrated();
+        assert!(book.remove_diagram("math/a.tex").is_none());
+        assert!(book.remove_diagram("nothing.mmd").is_none());
+        assert!(book.remove_formula("dia/a.mmd").is_none());
+        assert!(book.remove_picture("dia/a.mmd").is_none());
+        assert!(book.remove_chapter("math/a.tex").is_none());
+        assert!(slots_agree(&book));
     }
 
     #[test]

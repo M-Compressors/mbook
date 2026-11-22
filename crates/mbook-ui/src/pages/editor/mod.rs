@@ -24,6 +24,7 @@ mod contents;
 mod details;
 mod encode;
 mod entry_prompt;
+mod figures;
 mod files;
 mod keys;
 mod landmarks;
@@ -152,6 +153,10 @@ pub(crate) struct EditorPage {
     visual: VisualEditor,
     /// The preview of the text of the editor.
     preview: Entity<ChapterView>,
+    /// The preview request for the current chapter text.
+    preview_figures: Option<Task<()>>,
+    /// Loads the source for the current figure dialog.
+    figure_edit: Option<Task<()>>,
     /// The chapter whose text is in the editor.
     loaded: Option<String>,
     /// The request the text that is loading must belong to.
@@ -227,6 +232,8 @@ impl EditorPage {
             text,
             visual,
             preview: preview::new_preview(window, cx),
+            preview_figures: None,
+            figure_edit: None,
             loaded: None,
             load_generation: 0,
             load_task: None,

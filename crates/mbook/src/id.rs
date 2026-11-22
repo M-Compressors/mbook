@@ -18,6 +18,20 @@ pub struct ChapterId(u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PictureId(u32);
 
+/// Identifies a diagram inside one mbook file.
+///
+/// It wraps the number of a diagram resource. See [`ChapterId`] for how ids
+/// are obtained and how long they stay valid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DiagramId(u32);
+
+/// Identifies a formula inside one mbook file.
+///
+/// It wraps the number of a formula resource. See [`ChapterId`] for how ids
+/// are obtained and how long they stay valid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FormulaId(u32);
+
 impl ChapterId {
     #[cfg(feature = "read")]
     pub(crate) const fn new(number: u32) -> Self {
@@ -43,6 +57,36 @@ impl PictureId {
     /// The number of the resource in the file.
     ///
     /// Turn it back into an id with `BookReader::picture_id`.
+    #[must_use]
+    pub const fn number(self) -> u32 {
+        self.0
+    }
+}
+
+impl DiagramId {
+    #[cfg(feature = "read")]
+    pub(crate) const fn new(number: u32) -> Self {
+        Self(number)
+    }
+
+    /// The number of the resource in the file.
+    ///
+    /// Turn it back into an id with `BookReader::diagram_id`.
+    #[must_use]
+    pub const fn number(self) -> u32 {
+        self.0
+    }
+}
+
+impl FormulaId {
+    #[cfg(feature = "read")]
+    pub(crate) const fn new(number: u32) -> Self {
+        Self(number)
+    }
+
+    /// The number of the resource in the file.
+    ///
+    /// Turn it back into an id with `BookReader::formula_id`.
     #[must_use]
     pub const fn number(self) -> u32 {
         self.0

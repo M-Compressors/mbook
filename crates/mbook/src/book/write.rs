@@ -1,11 +1,12 @@
 //! Checking a book and writing it out.
 
-use super::{Book, Chapter, Picture, Slot, Toc, TocItem};
+use super::{Book, Chapter, Diagram, Formula, Picture, Slot, Toc, TocItem};
 use crate::analysis::{self, Heading, Reference, ReferenceKind};
 use crate::container::{self, Writer};
 use crate::error::{Error, Problem, ProblemKind, Problems, ResolveError, Result};
 use crate::format::{
-    KIND_ANCHORS, KIND_LANDMARKS, KIND_PICTURE, KIND_SERVICE, KIND_TEXT, SERVICE_COUNT,
+    KIND_ANCHORS, KIND_DIAGRAM, KIND_FORMULA, KIND_LANDMARKS, KIND_PICTURE, KIND_SERVICE,
+    KIND_TEXT, SERVICE_COUNT,
 };
 use crate::link::{self, Parsed};
 use crate::options::{Limits, WriteOptions};
@@ -22,6 +23,8 @@ enum Content<'a> {
     Anchors(&'a Chapter),
     Chapter(&'a Chapter),
     Picture(&'a Picture),
+    Diagram(&'a Diagram),
+    Formula(&'a Formula),
 }
 
 /// What a check works out and writing then uses: the four tables and the
@@ -53,7 +56,7 @@ impl Book {
     ///
     /// Every problem found, not only the first: links and pictures that lead
     /// nowhere, raw HTML, a cover that is not in the book, contents items
-    /// that do not resolve.
+    /// that do not resolve, a diagram or a formula without a source.
     pub fn check(&self) -> Result<(), Problems> {
         self.layout().map(drop)
     }
@@ -74,7 +77,7 @@ impl Book {
     /// bytes. The landmarks come first, when the book has any, then the
     /// cover, then the chapters in reading order,
     /// each after its anchor table when it has extra anchors, then the other
-    /// pictures.
+    /// pictures, the diagrams and the formulas.
     ///
     /// # Errors
     ///
@@ -98,6 +101,8 @@ impl Book {
                 }
                 Content::Chapter(chapter) => out.text(&chapter.text)?,
                 Content::Picture(picture) => out.stored(&picture.data)?,
+                Content::Diagram(diagram) => out.text(&diagram.source)?,
+                Content::Formula(formula) => out.text(&formula.source)?,
             }
         }
         out.finish()
@@ -171,6 +176,18 @@ impl Book {
             Toc::Explicit(items) => self.toc_from_items(items, number_of, &mut problems),
         };
         let landmarks = self.landmark_rows(number_of, &mut problems);
+        let sources = self
+            .diagrams
+            .iter()
+            .map(|diagram| (&diagram.path, &diagram.source))
+            .chain(
+                self.formulas
+                    .iter()
+                    .map(|formula| (&formula.path, &formula.source)),
+            );
+        for (path, source) in sources {
+            check_source(path, source, &mut problems);
+        }
         Problems::none_or(problems)?;
 
         let pictures = || (0..).zip(&self.pictures);
@@ -194,6 +211,8 @@ impl Book {
                     .filter(|(index, _)| Some(*index) != cover)
                     .map(|(_, picture)| Content::Picture(picture)),
             )
+            .chain(self.diagrams.iter().map(Content::Diagram))
+            .chain(self.formulas.iter().map(Content::Formula))
             .collect();
         let service = (0..SERVICE_COUNT).map(|_| ResourceRow {
             kind: KIND_SERVICE,
@@ -253,7 +272,8 @@ impl Book {
         analysis.headings
     }
 
-    /// What is wrong with a link or a picture of a chapter, if anything.
+    /// What is wrong with a link or a picture of a chapter, if anything. A
+    /// picture reference may name a diagram or a formula as well.
     fn reference_problem(&self, chapter: &Chapter, reference: &Reference) -> Option<ProblemKind> {
         let destination = || reference.destination.clone();
         let parsed = link::parse(&chapter.path, &reference.destination);
@@ -273,7 +293,7 @@ impl Book {
                     path,
                     fragment: None,
                 }),
-            ) if self.picture(&path).is_some() => None,
+            ) if self.shows(&path) => None,
             // A picture may not name a network location at all.
             (ReferenceKind::Picture, Ok(Parsed::External))
             | (_, Err(ResolveError::ForbiddenScheme)) => {
@@ -282,6 +302,15 @@ impl Book {
             (ReferenceKind::Link, Err(_)) => Some(ProblemKind::UnresolvedLink(destination())),
             (ReferenceKind::Picture, _) => Some(ProblemKind::UnresolvedPicture(destination())),
         }
+    }
+
+    /// Tells whether a chapter can show what has this path the way it shows
+    /// a picture: a picture, a diagram or a formula of the book.
+    fn shows(&self, path: &str) -> bool {
+        matches!(
+            self.slots.get(path),
+            Some(Slot::Picture(_) | Slot::Diagram(_) | Slot::Formula(_))
+        )
     }
 
     /// The contents as every heading down to `max_level`.
@@ -421,6 +450,27 @@ impl Book {
     }
 }
 
+/// Checks the source of a diagram or of a formula. One given through the API
+/// is stored clean; a loaded one is kept as the file had it.
+fn check_source(path: &str, source: &str, problems: &mut Vec<Problem>) {
+    let mut report = |offset, kind| {
+        problems.push(Problem {
+            path: Some(path.to_owned()),
+            offset,
+            kind,
+        });
+    };
+    if let Some(found) = text::violation(source) {
+        report(
+            Some(to_u32(found.offset)),
+            ProblemKind::ForbiddenCharacter(found.character),
+        );
+    }
+    if source.trim().is_empty() {
+        report(None, ProblemKind::EmptySource);
+    }
+}
+
 impl Content<'_> {
     /// The row of the resource table that describes this resource.
     fn row(&self) -> ResourceRow {
@@ -449,6 +499,18 @@ impl Content<'_> {
                 width: picture.size.width,
                 height: picture.size.height,
             },
+            Self::Diagram(diagram) => ResourceRow {
+                kind: KIND_DIAGRAM,
+                path: diagram.path.clone(),
+                width: 0,
+                height: 0,
+            },
+            Self::Formula(formula) => ResourceRow {
+                kind: KIND_FORMULA,
+                path: formula.path.clone(),
+                width: 0,
+                height: 0,
+            },
         }
     }
 
@@ -468,6 +530,8 @@ impl Content<'_> {
                 .sum(),
             Self::Chapter(chapter) => chapter.text.len(),
             Self::Picture(picture) => picture.data.len(),
+            Self::Diagram(diagram) => diagram.source.len(),
+            Self::Formula(formula) => formula.source.len(),
         }
     }
 }
@@ -486,7 +550,7 @@ impl Layout<'_> {
             Ok(())
         } else {
             Err(Error::Limit(
-                "a chapter, a table or a picture exceeds the resource limit",
+                "a chapter, a table, a picture, a diagram or a formula exceeds the resource limit",
             ))
         }
     }

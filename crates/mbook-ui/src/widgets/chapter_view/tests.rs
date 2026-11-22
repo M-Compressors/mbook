@@ -3,13 +3,14 @@
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
 
-use gpui_kit::test::{TestEventExt as _, TestWindowExt as _};
+use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{
     AnyWindowHandle, AppContext as _, ClickEvent, Context, Entity, IntoElement, Render, Role,
     TestAppContext, Window,
 };
 
 use super::*;
+use crate::entities::figure::{FigureKind, FigureSource, ImageReference};
 use crate::features::appearance::Appearance;
 use crate::testing::{self, Fixture};
 
@@ -799,4 +800,280 @@ fn a_turn_is_drawn_in_two_steps_when_motion_is_allowed(cx: &mut TestAppContext) 
             .view
             .read_with(cx, |view, _| view.paging.as_ref().unwrap().turn.is_none())
     );
+}
+
+/// The sources of a formula and of a diagram, by the destinations a text
+/// shows them with.
+fn figure_sources(formula: &str, diagram: &str) -> FigureSources {
+    let figure = |kind, source: &str| FigureSource {
+        kind,
+        source: source.into(),
+    };
+    FigureSources {
+        by_destination: HashMap::from([
+            (
+                "math/e.tex".to_owned(),
+                figure(FigureKind::Formula, formula),
+            ),
+            (
+                "dia/way.mmd".to_owned(),
+                figure(FigureKind::Diagram, diagram),
+            ),
+        ]),
+        by_reference: HashMap::from([(
+            "way".to_owned(),
+            ImageReference {
+                destination: "dia/way.mmd".to_owned(),
+                title: Some("The route through the station".to_owned()),
+            },
+        )]),
+    }
+}
+
+const FLOW: &str = "flowchart TD\n  A[Start] --> B[Middle]\n  B --> C[End]";
+const WITH_FIGURES: &str = "Before.\n\n![The way](dia/way.mmd)\n\nMass is ![Energy](math/e.tex) here.\n\n![The energy](math/e.tex)\n\nAfter.\n";
+
+/// The figures that are drawn as pictures, by their names.
+fn drawn_figures(started: &Started, cx: &mut TestAppContext) -> Vec<(String, f32, f32)> {
+    testing::frame(cx, started.window, |window, _| {
+        window
+            .find_all_by_role(Role::Image)
+            .iter()
+            .map(|image| {
+                let size = image.bounds().size;
+                (
+                    image.label().unwrap_or_default().to_owned(),
+                    size.width.as_f32(),
+                    size.height.as_f32(),
+                )
+            })
+            .collect()
+    })
+}
+
+#[gpui_kit::test]
+fn a_diagram_and_a_formula_alone_in_a_paragraph_are_drawn_as_blocks(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 900.0);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("E = mc^2", FLOW), cx);
+        view.set_text(WITH_FIGURES, cx);
+    });
+    settle(&started, cx);
+    let drawn = drawn_figures(&started, cx);
+    let names: Vec<&str> = drawn.iter().map(|figure| figure.0.as_str()).collect();
+    assert_eq!(names, ["The way", "The energy"]);
+    for (name, width, height) in &drawn {
+        // Each takes the whole column and is as high as its drawing.
+        assert!((*width - 736.0).abs() < 1.0, "{name}: {width}");
+        assert!(*height > 10.0, "{name}: {height}");
+    }
+    assert!(
+        drawn[0].2 > drawn[1].2,
+        "a diagram is taller than a formula"
+    );
+}
+
+#[gpui_kit::test]
+fn the_text_around_a_figure_is_shown_with_its_alternative_text(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 900.0);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("E = mc^2", FLOW), cx);
+        view.set_text(WITH_FIGURES, cx);
+    });
+    settle(&started, cx);
+    let shown = started.view.read_with(cx, ChapterView::shown_text);
+    for words in ["Before.", "Mass is", "Energy", "here.", "After."] {
+        assert!(shown.contains(words), "{words}: {shown:?}");
+    }
+    assert!(!shown.contains("math/e.tex"), "{shown:?}");
+}
+
+#[gpui_kit::test]
+fn a_figure_in_a_line_does_not_make_a_block_of_its_own(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 600.0);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("x", FLOW), cx);
+        view.set_text("Let ![x](math/e.tex) be a number.\n", cx);
+    });
+    settle(&started, cx);
+    assert_eq!(drawn_figures(&started, cx), Vec::new());
+    assert_eq!(started.view.read_with(cx, ChapterView::item_count), 1);
+}
+
+#[gpui_kit::test]
+fn a_figure_shown_through_a_definition_is_drawn(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 900.0);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("x", FLOW), cx);
+        view.set_text(
+            "![The way][way]\n\n[way]: dia/way.mmd \"The route through the station\"\n",
+            cx,
+        );
+    });
+    settle(&started, cx);
+    let drawn = drawn_figures(&started, cx);
+    assert_eq!(drawn.len(), 1);
+    assert_eq!(drawn[0].0, "The way");
+    let shown = started.view.read_with(cx, ChapterView::shown_text);
+    assert!(shown.contains("The route through the station"));
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_diagram_does_not_follow_a_mermaid_link(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 600.0);
+    let followed = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&followed);
+    let source = format!("{FLOW}\n  click A \"https://example.com/diagram\"");
+    started.view.update(cx, |view, cx| {
+        view.on_link(move |url, _, _| seen.lock().unwrap().push(url.to_owned()));
+        view.set_figures(figure_sources("x", &source), cx);
+        view.set_text("![The way](dia/way.mmd)\n", cx);
+    });
+    settle(&started, cx);
+    testing::frame(cx, started.window, |window, cx| {
+        let image = window.find_by_label("The way");
+        assert_eq!(image.role(), Some(Role::Image));
+        let at = image.bounds().center();
+        window.pointer_down(at, gpui_kit::MouseButton::Left, cx);
+        window.pointer_up(at, gpui_kit::MouseButton::Left, cx);
+    });
+    assert_eq!(*followed.lock().unwrap(), Vec::<String>::new());
+}
+
+#[gpui_kit::test]
+fn a_figure_that_cannot_be_drawn_shows_its_alternative_text(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 600.0);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources(r"\frac{", "no diagram at all"), cx);
+        view.set_text(WITH_FIGURES, cx);
+    });
+    settle(&started, cx);
+    assert_eq!(drawn_figures(&started, cx), Vec::new());
+    let shown = started.view.read_with(cx, ChapterView::shown_text);
+    assert!(
+        shown.contains("The way") && shown.contains("Energy"),
+        "{shown:?}"
+    );
+}
+
+#[gpui_kit::test]
+fn a_text_waits_for_its_figures_and_a_text_without_them_does_not(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 600.0);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("x", FLOW), cx);
+        view.set_text(WITH_FIGURES, cx);
+        assert!(view.held, "the figures are not drawn yet");
+    });
+    settle(&started, cx);
+    started.view.update(cx, |view, cx| {
+        assert!(!view.held);
+        // The same figures are drawn already: the next text is not kept.
+        view.set_text("Only ![x](math/e.tex).\n", cx);
+        assert!(!view.held);
+        view.set_figures(FigureSources::default(), cx);
+        view.set_text("No figures.\n", cx);
+        assert!(!view.held);
+    });
+}
+
+#[gpui_kit::test]
+fn figures_named_after_the_text_are_drawn_into_it(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 900.0);
+    started
+        .view
+        .update(cx, |view, cx| view.set_text(WITH_FIGURES, cx));
+    settle(&started, cx);
+    assert_eq!(drawn_figures(&started, cx), Vec::new());
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("E = mc^2", FLOW), cx);
+    });
+    settle(&started, cx);
+    assert_eq!(drawn_figures(&started, cx).len(), 2);
+    // Taking them away gives the pictures back to the Kit.
+    started.view.update(cx, |view, cx| {
+        view.set_figures(FigureSources::default(), cx);
+    });
+    settle(&started, cx);
+    assert_eq!(drawn_figures(&started, cx), Vec::new());
+}
+
+#[gpui_kit::test]
+fn figures_that_arrive_keep_the_place_of_the_reader(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    let mut text = String::from("![The way](dia/way.mmd)\n\n");
+    text.push_str(&chapter(60));
+    let target = offset_of(&text, "Paragraph 30 says");
+    started.view.update(cx, |view, cx| {
+        view.set_text(&text, cx);
+        view.reveal(target, cx);
+    });
+    settle(&started, cx);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("x", FLOW), cx);
+    });
+    settle(&started, cx);
+    assert_eq!(top(&started, cx), target);
+}
+
+#[gpui_kit::test]
+fn a_page_tone_draws_the_figures_again(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 900.0);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("E = mc^2", FLOW), cx);
+        view.set_text(WITH_FIGURES, cx);
+    });
+    settle(&started, cx);
+    let before = started.view.read_with(cx, |view, _| view.drawn_in);
+    assert!(before.is_some());
+    cx.update(|cx| {
+        Appearance::global(cx).update(cx, |appearance, cx| {
+            appearance.update(
+                |settings| {
+                    settings.page_tone = Some(crate::shared::theme::PageTone::Night);
+                },
+                cx,
+            );
+        });
+    });
+    settle(&started, cx);
+    let after = started.view.read_with(cx, |view, _| view.drawn_in);
+    assert_eq!(
+        after,
+        Some(Palette::from(crate::shared::theme::PageTone::Night))
+    );
+    assert_ne!(before, after);
+    assert_eq!(drawn_figures(&started, cx).len(), 2);
+}
+
+#[gpui_kit::test]
+fn a_tall_diagram_stays_on_one_page(cx: &mut TestAppContext) {
+    let started = start_paged(cx, 1000.0, 400.0);
+    let tall =
+        "flowchart TD\n  A --> B\n  B --> C\n  C --> D\n  D --> E\n  E --> F\n  F --> G\n  G --> H";
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("x", tall), cx);
+        view.set_text("Before.\n\n![The way](dia/way.mmd)\n\nAfter.\n", cx);
+    });
+    settle(&started, cx);
+    started.view.read_with(cx, |view, _| {
+        let paging = view.paging.as_ref().unwrap();
+        assert_eq!(paging.heights.len(), 3, "{:?}", paging.heights);
+        assert!(paging.heights[1] <= 400.0, "{:?}", paging.heights);
+        assert!(paging.pages.iter().all(|page| page.offset == 0.0));
+    });
+}
+
+#[gpui_kit::test]
+fn a_paged_text_with_figures_is_divided_into_pages(cx: &mut TestAppContext) {
+    let mut text = String::from("![The way](dia/way.mmd)\n\n");
+    text.push_str(&long_chapter(40));
+    let started = start_paged(cx, 800.0, 600.0);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("x", FLOW), cx);
+        view.set_text(&text, cx);
+    });
+    settle(&started, cx);
+    let (page, pages) = page_number(&started, cx);
+    assert_eq!(page, 1);
+    assert!(pages > 1, "{pages}");
 }

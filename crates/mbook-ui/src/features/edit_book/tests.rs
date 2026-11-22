@@ -1462,3 +1462,165 @@ fn the_actor_ends_when_every_handle_is_dropped() -> Result {
     assert_eq!(actor.now_or_never(), Some(()));
     Ok(())
 }
+
+#[test]
+fn figure_edits_are_saved_at_the_original_path() -> Result {
+    use crate::entities::figure::FigureKind;
+
+    let (_folder, path) = sample()?;
+    for (kind, figure, initial, updated) in [
+        (
+            FigureKind::Diagram,
+            "dia/line.mmd",
+            "flowchart LR\n  A --> B",
+            "flowchart LR\n  B --> C",
+        ),
+        (FigureKind::Formula, "math/x.tex", "x^2", "x^3"),
+    ] {
+        run(&path, |handle| async move {
+            let outline = send(
+                &handle,
+                Command::AddFigure {
+                    kind,
+                    path: figure.to_owned(),
+                    source: initial.to_owned(),
+                },
+            )
+            .await?;
+            assert!(outline.unsaved);
+            assert!(
+                outline
+                    .figures
+                    .iter()
+                    .any(|entry| entry.kind == kind && entry.path == figure)
+            );
+            assert_eq!(handle.figure(kind, figure).await?, initial);
+            send(
+                &handle,
+                Command::SetFigureSource {
+                    kind,
+                    path: figure.to_owned(),
+                    source: updated.to_owned(),
+                },
+            )
+            .await?;
+            assert_eq!(handle.figure(kind, figure).await?, updated);
+            assert!(!send(&handle, Command::Save).await?.unsaved);
+            Ok::<_, Box<dyn std::error::Error>>(())
+        })?;
+    }
+    let book = reopened(&path)?;
+    assert_eq!(
+        book.diagram("dia/line.mmd").map(mbook::Diagram::source),
+        Some("flowchart LR\n  B --> C")
+    );
+    assert_eq!(
+        book.formula("math/x.tex").map(mbook::Formula::source),
+        Some("x^3")
+    );
+    Ok(())
+}
+
+#[test]
+fn removing_each_kind_of_figure_updates_the_outline_and_saved_book() -> Result {
+    use crate::entities::figure::FigureKind;
+
+    let (_folder, path) = sample()?;
+    let mut book = reopened(&path)?;
+    book.add_diagram("d", "flowchart LR\n  A --> B")?;
+    book.add_formula("f", "x")?;
+    book.save(&path)?;
+    run(&path, |handle| async move {
+        for (kind, figure) in [(FigureKind::Diagram, "d"), (FigureKind::Formula, "f")] {
+            let outline = send(
+                &handle,
+                Command::RemoveFigure {
+                    kind,
+                    path: figure.to_owned(),
+                },
+            )
+            .await?;
+            assert!(!outline.figures.iter().any(|entry| entry.path == figure));
+            assert!(
+                matches!(handle.figure(kind, figure).await, Err(EditError::NoSuchPath(path)) if path == figure)
+            );
+        }
+        assert!(!send(&handle, Command::Save).await?.unsaved);
+        Ok::<_, Box<dyn std::error::Error>>(())
+    })?;
+    let book = reopened(&path)?;
+    assert_eq!(book.diagrams(), []);
+    assert_eq!(book.formulas(), []);
+    Ok(())
+}
+
+#[test]
+fn a_draft_resolves_its_figures_without_changing_the_chapter() -> Result {
+    use crate::entities::figure::FigureKind;
+
+    let (_folder, path) = sample()?;
+    let mut book = reopened(&path)?;
+    book.add_diagram("dia/road map", "flowchart LR\n  A --> B")?;
+    book.add_formula("math/x", "x^2")?;
+    book.save(&path)?;
+    run(&path, |handle| async move {
+        let draft = "![Road](../dia/road%20map) ![Squared][formula] ![Photo][photo] ![Missing](gone)\n\n[formula]: ../math/x\n[photo]: ../img/a.avif";
+        let sources = handle
+            .chapter_figures("part/ch01.md".into(), draft.into())
+            .await?;
+        assert_eq!(sources.by_destination.len(), 2);
+        assert_eq!(
+            sources.by_destination["../dia/road%20map"].kind,
+            FigureKind::Diagram
+        );
+        assert_eq!(sources.by_destination["../math/x"].source.as_ref(), "x^2");
+        assert_eq!(sources.by_reference.len(), 1);
+        assert_eq!(sources.by_reference["formula"].destination, "../math/x");
+        assert!(!send(&handle, Command::Load).await?.unsaved);
+        Ok::<_, Box<dyn std::error::Error>>(())
+    })
+}
+
+#[test]
+fn a_figure_command_refuses_the_wrong_kind_or_invalid_source() -> Result {
+    use crate::entities::figure::FigureKind;
+
+    let (_folder, path) = sample()?;
+    let mut book = reopened(&path)?;
+    book.add_formula("f", "x")?;
+    book.save(&path)?;
+    run(&path, |handle| async move {
+        assert!(matches!(
+            handle
+                .send(Command::RemoveFigure {
+                    kind: FigureKind::Diagram,
+                    path: "f".into(),
+                })
+                .await,
+            Err(EditError::NoSuchPath(_))
+        ));
+        assert!(matches!(
+            handle
+                .send(Command::SetFigureSource {
+                    kind: FigureKind::Diagram,
+                    path: "f".into(),
+                    source: "flowchart LR".into(),
+                })
+                .await,
+            Err(EditError::NoSuchPath(_))
+        ));
+        assert!(matches!(
+            handle
+                .send(Command::SetFigureSource {
+                    kind: FigureKind::Formula,
+                    path: "f".into(),
+                    source: " ".into(),
+                })
+                .await,
+            Err(EditError::Book(mbook::Error::InvalidFormula(_)))
+        ));
+        assert_eq!(handle.figure(FigureKind::Formula, "f").await?, "x");
+        assert!(!send(&handle, Command::Load).await?.unsaved);
+        Ok::<_, Box<dyn std::error::Error>>(())
+    })
+}

@@ -33,9 +33,9 @@ pub enum Error {
     #[error("limit exceeded: {0}")]
     Limit(&'static str),
     /// An id that came from another book was used to read a resource.
-    #[error("resource {0} is not a chapter or picture of this book")]
+    #[error("resource {0} is not a chapter, picture, diagram or formula of this book")]
     NoSuchResource(u32),
-    /// No chapter or picture of the book has this path.
+    /// No chapter of the book has this path.
     #[error("nothing in the book has the path {0:?}")]
     NoSuchPath(String),
     /// A position in the reading order is past its end.
@@ -55,7 +55,8 @@ pub enum Error {
         #[source]
         reason: PathError,
     },
-    /// The path is already used by a chapter or a picture.
+    /// The path is already used by a chapter, a picture, a diagram or a
+    /// formula.
     #[error("the path {0:?} is already used")]
     DuplicatePath(String),
     /// The text of a chapter cannot be stored.
@@ -64,6 +65,12 @@ pub enum Error {
     /// The bytes given for a picture are not a usable AVIF file.
     #[error("invalid picture: {0}")]
     InvalidPicture(&'static str),
+    /// The source given for a diagram cannot be stored.
+    #[error("invalid diagram")]
+    InvalidDiagram(#[source] SourceError),
+    /// The source given for a formula cannot be stored.
+    #[error("invalid formula")]
+    InvalidFormula(#[source] SourceError),
     /// A change to the metadata breaks the rules of the format.
     #[error("invalid metadata")]
     InvalidMeta(#[from] MetaError),
@@ -99,7 +106,7 @@ pub enum PathError {
     ControlCharacter,
 }
 
-/// A character that a chapter must not contain.
+/// A character that a chapter, a diagram or a formula must not contain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("control character U+{:04X} at byte {offset}", u32::from(*.character))]
 #[non_exhaustive]
@@ -109,6 +116,18 @@ pub struct TextError {
     pub offset: usize,
     /// The character.
     pub character: char,
+}
+
+/// Why the source of a diagram or of a formula was refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum SourceError {
+    /// The source is empty or holds nothing but white space.
+    #[error("the source is empty")]
+    Empty,
+    /// The source holds a control character other than line feed and tab.
+    #[error("the source holds a character that is not allowed")]
+    ForbiddenCharacter(#[from] TextError),
 }
 
 /// Why a change to the metadata was refused.
@@ -156,13 +175,14 @@ pub enum ResolveError {
     /// A `..` segment leaves the root of the book.
     #[error("the destination leaves the book")]
     OutsideRoot,
-    /// No chapter or picture has the resolved path.
+    /// No chapter, picture, diagram or formula has the resolved path.
     #[error("nothing in the book has that path")]
     NotFound,
     /// The chapter has no anchor with the name given after `#`.
     #[error("the chapter has no such anchor")]
     UnknownAnchor,
-    /// A destination that names a picture has a fragment.
+    /// A destination that names a picture, a diagram or a formula has a
+    /// fragment.
     #[error("a picture cannot have a fragment")]
     FragmentOnPicture,
 }
@@ -217,9 +237,9 @@ impl<'a> IntoIterator for &'a Problems {
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("{}{kind}", location(.path.as_deref(), *.offset))]
 pub struct Problem {
-    /// The chapter the problem is in, when it is in one.
+    /// The chapter, diagram or formula the problem is in, when it is in one.
     pub path: Option<String>,
-    /// Where in that chapter, in bytes from the start of its text.
+    /// Where in it, in bytes from the start of its text.
     pub offset: Option<u32>,
     /// What is wrong.
     pub kind: ProblemKind,
@@ -241,7 +261,7 @@ pub enum ProblemKind {
     /// A link leads to no chapter or anchor of the book.
     #[error("the link to {0:?} leads nowhere")]
     UnresolvedLink(String),
-    /// A picture reference names no picture of the book.
+    /// A picture reference names no picture, diagram or formula of the book.
     #[error("the picture {0:?} is not in the book")]
     UnresolvedPicture(String),
     /// A link or a picture uses a URI scheme the format does not allow.
@@ -253,11 +273,14 @@ pub enum ProblemKind {
     /// The `cover` key names no picture of the book.
     #[error("the cover is not a picture of the book")]
     MissingCover,
-    /// A chapter holds a character the format does not allow: a byte order
-    /// mark at its start, or a control character other than line feed and
-    /// tab.
+    /// A chapter, a diagram or a formula holds a character the format does
+    /// not allow: a byte order mark at its start, or a control character
+    /// other than line feed and tab.
     #[error("the character U+{:04X} is not allowed", u32::from(*.0))]
     ForbiddenCharacter(char),
+    /// A diagram or a formula is empty or holds nothing but white space.
+    #[error("the source is empty")]
+    EmptySource,
     /// A contents item, named by its title, leads to a chapter or an anchor
     /// that does not exist.
     #[error("the contents item {0:?} leads nowhere")]
@@ -283,7 +306,7 @@ pub enum ProblemKind {
 mod tests {
     use super::{
         Error, LandmarkError, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError,
-        TextError,
+        SourceError, TextError,
     };
     use crate::types::Version;
     use std::error::Error as _;
@@ -369,6 +392,49 @@ mod tests {
             character: '\u{1b}',
         };
         assert_eq!(text.to_string(), "control character U+001B at byte 7");
+    }
+
+    #[test]
+    fn source_error_is_the_source_of_an_invalid_diagram_and_formula() {
+        let diagram = Error::InvalidDiagram(SourceError::Empty);
+        let formula = Error::InvalidFormula(SourceError::Empty);
+        let sources = [&diagram, &formula].map(|error| error.source().map(ToString::to_string));
+        assert_eq!(
+            (diagram.to_string(), formula.to_string()),
+            ("invalid diagram".to_owned(), "invalid formula".to_owned())
+        );
+        assert_eq!(sources.map(|source| source.is_some()), [true, true]);
+    }
+
+    #[test]
+    fn a_text_error_is_the_source_of_a_forbidden_character_in_a_source() {
+        let text = TextError {
+            offset: 3,
+            character: '\u{7}',
+        };
+        let error = SourceError::from(text);
+        let source = error.source().map(ToString::to_string);
+        assert_eq!(
+            (error.to_string().as_str(), source.as_deref()),
+            (
+                "the source holds a character that is not allowed",
+                Some("control character U+0007 at byte 3")
+            )
+        );
+        assert_eq!(SourceError::Empty.to_string(), "the source is empty");
+    }
+
+    #[test]
+    fn an_id_of_another_book_is_named_by_its_number() {
+        assert_eq!(
+            Error::NoSuchResource(9).to_string(),
+            "resource 9 is not a chapter, picture, diagram or formula of this book"
+        );
+    }
+
+    #[test]
+    fn an_empty_source_has_a_message() {
+        assert_eq!(ProblemKind::EmptySource.to_string(), "the source is empty");
     }
 
     #[test]

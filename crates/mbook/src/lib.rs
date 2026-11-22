@@ -1,13 +1,15 @@
 //! Read, edit and create mbook files.
 //!
 //! An mbook file holds a book as Markdown chapters and AVIF pictures, with
+//! diagrams in Mermaid notation, formulas in the notation of `KaTeX`, and
 //! small tables that describe it. The format is specified by RFC 0001 and this
 //! API by RFC 0002, both in the `rfcs` folder of the repository.
 //!
 //! Two types do the work:
 //!
 //! - [`BookReader`] reads a book lazily from anything that can seek. Opening
-//!   it reads the tables; each chapter and picture is decoded when asked for.
+//!   it reads the tables; each chapter, picture, diagram and formula is
+//!   decoded when asked for.
 //! - [`Book`] is a whole book in memory. It is how a book is created and how
 //!   an existing one is changed.
 //!
@@ -57,19 +59,19 @@ mod tables;
 mod text;
 mod types;
 
-pub use book::{Book, Chapter, Landmark, Picture, Toc, TocItem};
+pub use book::{Book, Chapter, Diagram, Formula, Landmark, Picture, Toc, TocItem};
 pub use error::{
     Error, LandmarkError, MetaError, PathError, Problem, ProblemKind, Problems, ResolveError,
-    Result, TextError,
+    Result, SourceError, TextError,
 };
-pub use id::{ChapterId, PictureId};
+pub use id::{ChapterId, DiagramId, FormulaId, PictureId};
 pub use meta::{Meta, Series};
 pub use options::{Limits, ReadOptions, WriteOptions};
 #[cfg(feature = "read")]
 pub use reader::BookReader;
 pub use types::{
-    Anchor, ChapterEntry, Destination, LandmarkEntry, PictureEntry, Position, Resource,
-    ResourceKind, Size, TocEntry, Version,
+    Anchor, ChapterEntry, Destination, DiagramEntry, FormulaEntry, LandmarkEntry, PictureEntry,
+    Position, Resource, ResourceKind, Size, TocEntry, Version,
 };
 
 /// Tells whether a file looks like an mbook file from its first bytes.
