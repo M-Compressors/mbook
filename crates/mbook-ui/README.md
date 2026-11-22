@@ -43,7 +43,7 @@ on x86 and x86-64. The executable is called `mbook`.
 | Screen | What you do there |
 | --- | --- |
 | **Library** | Keep books as covers on a shelf, search and sort them, add files with `+` or by dropping them on the window, create a new book, export one in any of eight formats |
-| **Reader** | Read one scrolling column or one page at a time, follow links and footnotes and return, search the whole book, choose typeface, size and one of five page tones |
+| **Reader** | Read one scrolling column or one page at a time, follow links and footnotes and return, open a picture or a diagram over the whole window and zoom it, search the whole book, choose typeface, size and one of five page tones |
 | **Editor** | Write chapters as blocks, as Markdown source or side by side with a preview; put in pictures, links, diagrams and formulas; edit the details, the cover, the contents and the landmarks; see what `Book::check` reports |
 | **Settings** | Typography, page tone, the size of the interface, motion and updates |
 
@@ -57,7 +57,8 @@ beside the content.
 | Page Up, Page Down, Home, End | Move in a chapter |
 | The platform's bracket keys | Previous and next chapter |
 | Space | Turn a page |
-| Escape | Close a panel; return to the previous passage; go back |
+| `+`, `-`, `0` | Zoom in, zoom out and fit a picture opened over the window |
+| Escape | Close a picture or a panel; return to the previous passage; go back |
 
 ## How it is built
 

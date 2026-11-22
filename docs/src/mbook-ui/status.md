@@ -20,7 +20,7 @@ can break in its middle.
 | Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Export | The book menu exports the saved book in all eight converter output formats through a native save dialog. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
-| Reader | Scrolling, optional pagination, whole-book search with return to the original passage, auto-hiding controls and optional progress. Pagination supplies whole-book page estimates and scales pictures to the page. Pictures and diagrams scale to fit a page. Mermaid diagrams and KaTeX formulas use the page tone and display alternative text when rendering fails. Other tall blocks can be clipped through a line. |
+| Reader | Scrolling, optional pagination, whole-book search with return to the original passage, auto-hiding controls and optional progress. Pagination supplies whole-book page estimates and scales pictures to the page. Pictures and diagrams scale to fit a page. Mermaid diagrams and KaTeX formulas use the page tone and display alternative text when rendering fails. A picture, diagram or formula alone in its paragraph opens over the window with zoom; one in a line of text, a linked one and a reference-style picture do not. Other tall blocks can be clipped through a line. |
 | Editor | Chapter search works on the current draft in Visual, Source, Split and Preview. Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Diagrams and Formulas have syntax-highlighted source dialogs, a preview and removal controls. Visual inserts figure references, and Preview and Split render them. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The banner sits below the window controls, and update notifications appear at the bottom. The check and the installation are written and tested against scripted releases and signed archives made by the tests. The installer is compiled on macOS and Windows. |
@@ -37,6 +37,9 @@ asks:
 - **The language of a book is not reported**: GPUI has no property for it.
 - **The link in the About dialog cannot be reached by keyboard**: the link
   of GPUI Kit takes no focus.
+- **A picture cannot be opened larger from the keyboard**: the pictures of a
+  chapter take no focus, as its links do not. Once open, the viewer is used
+  with keys alone.
 - A few parts of Kit controls are reported without a role: the frame of a
   text field, the search field inside a select, the track of a slider. The
   controls they belong to have roles and names.
@@ -57,7 +60,7 @@ asks:
 - Every layout is drawn at 390, 800 and 1280 px of width. With the Cargo
   feature `visual`, `cargo test -p mbook-ui --features visual --test visual`
   renders every screen without a window, in these widths and in a light
-  and a dark page tone, into `target/visual/`: 136 pictures for a person to
+  and a dark page tone, into `target/visual/`: 156 pictures for a person to
   look at. The renderer exists on macOS; elsewhere the test says so and
   passes.
 - Accessibility is tested, not reviewed:

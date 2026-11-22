@@ -45,6 +45,7 @@
 
 mod alt;
 mod blocks;
+mod enlarge;
 mod figures;
 mod layout;
 mod notes;
@@ -77,6 +78,7 @@ use gpui_kit::{
     TouchPhase, WeakEntity, Window, canvas, div, point, px, relative, rems,
 };
 
+use self::enlarge::{BlockPictures, SourceOf};
 use self::figures::{BlockFigures, LineFigures, Stage, Table};
 use self::pages::{Block, BlockKind, Measures, Page};
 use self::wheel::{Travel, Wheel};
@@ -86,6 +88,7 @@ use crate::entities::picture::Bitmap;
 use crate::features::appearance::Appearance;
 use crate::shared::ui::page_colors;
 
+pub(crate) use enlarge::{EnlargeHandler, Enlarged};
 pub(crate) use layout::picture_size;
 
 /// How far a page slides while it is turned, in pixels.
@@ -220,6 +223,7 @@ pub(crate) struct ChapterView {
     held: bool,
     figure_task: Option<Task<()>>,
     on_link: Option<LinkHandler>,
+    on_enlarge: Option<EnlargeHandler>,
     note_definitions: Arc<HashMap<String, u32>>,
     on_note: Option<notes::FollowNote>,
     placeholders: Placeholders,
@@ -343,6 +347,7 @@ impl ChapterView {
             held: false,
             figure_task: None,
             on_link: None,
+            on_enlarge: None,
             note_definitions: Arc::default(),
             on_note: None,
             placeholders: Arc::default(),
@@ -480,6 +485,15 @@ impl ChapterView {
         handler: impl Fn(&str, &mut Window, &mut App) + Send + Sync + 'static,
     ) {
         self.on_link = Some(Arc::new(handler));
+    }
+
+    /// Tells what to do when a picture or a figure that stands alone in a
+    /// paragraph is clicked or tapped. Without it they answer no click.
+    pub(crate) fn on_enlarge(
+        &mut self,
+        handler: impl Fn(Enlarged, &mut Window, &mut App) + Send + Sync + 'static,
+    ) {
+        self.on_enlarge = Some(Arc::new(handler));
     }
 
     /// Draws the text again: a picture arrived.
@@ -1253,15 +1267,21 @@ impl Render for ChapterView {
             page: self.picture_height,
             text_size: settings.text_size,
             gap,
+            enlarge: self.on_enlarge.clone(),
         };
-        let extensions = self.extensions(stage, tone.map_or(ink, |tone| tone.colors().link.into()));
+        let source: SourceOf = Arc::new(self.image_source(column, cx));
+        let extensions = self.extensions(
+            stage,
+            Arc::clone(&source),
+            tone.map_or(ink, |tone| tone.colors().link.into()),
+        );
         let style = self.page_style(tone, gap, (page, ink), window, cx);
         let mut view = TextView::new(&self.state)
             .style(style)
             .scrollable(true)
             .selectable(true)
             .markdown_extensions(extensions)
-            .image_source(self.image_source(column, cx))
+            .image_source(move |uri| source(uri))
             .text_size(px(settings.text_size))
             .line_height(relative(settings.line_height))
             .font_family(font)
@@ -1300,12 +1320,21 @@ impl Render for ChapterView {
 }
 
 impl ChapterView {
-    fn extensions(&self, stage: Stage, link_ink: Hsla) -> MarkdownExtensions {
+    fn extensions(&self, stage: Stage, source: SourceOf, link_ink: Hsla) -> MarkdownExtensions {
         // The plugins read the table when the text is parsed, so the parser
         // is the same whatever the table holds: its revision never changes.
-        let extensions = MarkdownExtensions::default()
-            .plugin(BlockFigures(stage.clone()))
-            .plugin(LineFigures(stage));
+        let pictures = stage.enlarge.clone().map(|enlarge| BlockPictures {
+            figures: stage.table.clone(),
+            source,
+            enlarge,
+        });
+        let extensions = MarkdownExtensions::default().plugin(BlockFigures(stage.clone()));
+        // After the figures, which take the pictures that show one.
+        let extensions = match pictures {
+            Some(pictures) => extensions.plugin(pictures),
+            None => extensions,
+        };
+        let extensions = extensions.plugin(LineFigures(stage));
         let extensions = if let Some(follow) = self.on_note.clone()
             && !self.note_definitions.is_empty()
         {

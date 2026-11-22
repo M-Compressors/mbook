@@ -26,6 +26,7 @@ mod support;
 #[cfg(test)]
 mod tests;
 mod typography;
+mod viewer;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -45,6 +46,7 @@ use self::pictures::{CONCURRENCY, Job, Pictures};
 use self::scrubber::Scrubber;
 use self::search::BookMatch;
 use self::typography::TypographyPanel;
+use self::viewer::{PictureViewer, ViewerContent, ViewerEvent, decoded_size};
 use crate::entities::book::chapter::{PreparedChapter, Target};
 use crate::entities::book::error::BookError;
 use crate::entities::book::snapshot::BookSnapshot;
@@ -55,7 +57,7 @@ use crate::features::reading_position::{PositionKeeper, now_ms, reading_state};
 use crate::shared::layout::SizeClass;
 use crate::shared::model::{BookKey, Place};
 use crate::shared::ui::search_bar::SearchBar;
-use crate::widgets::chapter_view::{ChapterView, ChapterViewEvent, Direction};
+use crate::widgets::chapter_view::{ChapterView, ChapterViewEvent, Direction, Enlarged};
 
 /// How many places the "back" of the reader remembers.
 const HISTORY: usize = 64;
@@ -181,6 +183,14 @@ impl Handles {
     }
 }
 
+/// A picture or a figure of the text shown over the whole window.
+struct Viewer {
+    entity: Entity<PictureViewer>,
+    /// Decodes the picture at the size of the viewer.
+    _load: Option<Task<()>>,
+    _subscription: Subscription,
+}
+
 /// The page of one open book.
 pub(crate) struct ReaderPage {
     key: BookKey,
@@ -215,6 +225,7 @@ pub(crate) struct ReaderPage {
     suspended: bool,
     controls: Controls,
     panel: Option<Panel>,
+    viewer: Option<Viewer>,
     opening: Option<Task<()>>,
     chapter_task: Option<Task<()>>,
     follow_task: Option<Task<()>>,
@@ -238,27 +249,7 @@ impl ReaderPage {
         let page = cx.entity().downgrade();
         let (wake, mut wakes) = unbounded::<()>();
         let pictures = Arc::new(Pictures::new(pictures::budget(class), wake));
-        let table = Arc::clone(&pictures);
-        let for_links = page.clone();
-        let for_notes = page.clone();
-        view.update(cx, |view, cx| {
-            view.set_pictures(
-                Arc::new(move |destination, column, page, _, _| {
-                    table.resolve(destination, column, page)
-                }),
-                cx,
-            );
-            view.on_link(move |destination, _, cx| {
-                for_links
-                    .update(cx, |page, cx| page.follow(destination, cx))
-                    .ok();
-            });
-            view.on_note(move |offset, window, cx| {
-                for_notes
-                    .update(cx, |page, cx| page.follow_note(offset, window, cx))
-                    .ok();
-            });
-        });
+        connect(&view, &page, Arc::clone(&pictures), cx);
         let handles = Handles::new(cx);
         let scrubber = Scrubber::new(cx);
         let search = SearchBar::new("Find in book", window, cx);
@@ -317,6 +308,7 @@ impl ReaderPage {
                 timer: None,
             },
             panel: None,
+            viewer: None,
             opening: None,
             chapter_task: None,
             follow_task: None,
@@ -341,6 +333,7 @@ impl ReaderPage {
         // Dropping the tasks stops the ones that have not started; the ones
         // that have hold the file only for the length of one read.
         self.picture_tasks.clear();
+        self.close_viewer(cx);
         self.search.hide();
         self.search_origin = None;
         drop(self.opening.take());
@@ -583,6 +576,77 @@ impl ReaderPage {
             self.view.update(cx, ChapterView::pictures_changed);
         }
         self.pump(cx);
+    }
+
+    /// Shows a picture or a figure of the text over the whole window. A
+    /// picture is decoded again at the size of the viewer, on the
+    /// background.
+    fn enlarge(&mut self, enlarged: Enlarged, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let Phase::Ready(reading) = &self.phase else {
+            return;
+        };
+        let alt = enlarged.alt().clone();
+        let (content, load) = match enlarged {
+            Enlarged::Picture { destination, .. } => {
+                let (Some(picture), Some(source)) = (
+                    self.pictures.picture(&destination),
+                    reading.source.as_ref().map(Arc::downgrade),
+                ) else {
+                    return;
+                };
+                let pixels = (picture.width, picture.height);
+                (ViewerContent::Loading(pixels), Some((source, picture)))
+            }
+            Enlarged::Figure { figure, .. } => {
+                let text_size = Appearance::global(cx).read(cx).settings().text_size;
+                (ViewerContent::Figure { figure, text_size }, None)
+            }
+        };
+        self.close_viewer(cx);
+        let entity = cx.new(|cx| PictureViewer::new(alt, content, cx));
+        let subscription =
+            cx.subscribe_in(&entity, window, |this, _, event, window, cx| match event {
+                ViewerEvent::Close => {
+                    this.close_viewer(cx);
+                    this.focus_handle.focus(window, cx);
+                }
+            });
+        let load = load.map(|(source, picture)| {
+            let viewer = entity.downgrade();
+            cx.spawn(async move |_, cx| {
+                let pixels = (picture.width, picture.height);
+                let loaded = cx
+                    .background_spawn(async move {
+                        match source.upgrade() {
+                            Some(source) => pictures::load(&source, picture, decoded_size(pixels)),
+                            None => Err(pictures::LoadError::Read(BookError::Unusable)),
+                        }
+                    })
+                    .await;
+                let content = match loaded {
+                    Ok((image, _)) => ViewerContent::Picture { image, pixels },
+                    Err(_) => ViewerContent::Failed,
+                };
+                viewer
+                    .update(cx, |viewer, cx| viewer.set_content(content, cx))
+                    .ok();
+            })
+        });
+        entity.focus_handle(cx).focus(window, cx);
+        self.viewer = Some(Viewer {
+            entity,
+            _load: load,
+            _subscription: subscription,
+        });
+        cx.notify();
+    }
+
+    /// Closes the picture shown over the window, if one is.
+    fn close_viewer(&mut self, cx: &mut Context<'_, Self>) {
+        if let Some(viewer) = self.viewer.take() {
+            viewer.entity.update(cx, |viewer, cx| viewer.release(cx));
+            cx.notify();
+        }
     }
 
     fn follow_note(&mut self, offset: u32, window: &mut Window, cx: &mut Context<'_, Self>) {
@@ -908,6 +972,42 @@ fn chapter_view(
         ChapterView::new
     };
     (class, cx.new(|cx| build(window, cx)))
+}
+
+/// Tells the view of the text where its pictures come from and hands what
+/// is clicked in it to the page.
+fn connect(
+    view: &Entity<ChapterView>,
+    page: &gpui_kit::WeakEntity<ReaderPage>,
+    table: Arc<Pictures>,
+    cx: &mut Context<'_, ReaderPage>,
+) {
+    let for_links = page.clone();
+    let for_notes = page.clone();
+    let for_pictures = page.clone();
+    view.update(cx, |view, cx| {
+        view.set_pictures(
+            Arc::new(move |destination, column, page, _, _| {
+                table.resolve(destination, column, page)
+            }),
+            cx,
+        );
+        view.on_link(move |destination, _, cx| {
+            for_links
+                .update(cx, |page, cx| page.follow(destination, cx))
+                .ok();
+        });
+        view.on_note(move |offset, window, cx| {
+            for_notes
+                .update(cx, |page, cx| page.follow_note(offset, window, cx))
+                .ok();
+        });
+        view.on_enlarge(move |enlarged, window, cx| {
+            for_pictures
+                .update(cx, |page, cx| page.enlarge(enlarged, window, cx))
+                .ok();
+        });
+    });
 }
 
 fn task_key(job: &Job) -> String {

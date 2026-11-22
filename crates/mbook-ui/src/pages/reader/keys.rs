@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use gpui_kit::{Action, App, Global, KeyBinding, KeyBindingContextPredicate, actions};
 
+use super::viewer::CONTEXT as VIEWER;
 use crate::shared::ui::search_bar::KEY_CONTEXT as FIND_BAR;
 
 /// The key context of the reader.
@@ -67,7 +68,7 @@ pub(crate) fn bind(cx: &mut App) {
         ("secondary-]", Box::new(NextChapter)),
     ];
     let context = KeyBindingContextPredicate::parse(&format!(
-        "{CONTEXT} && !{SCRUBBER} && !{FIND_BAR} && !ReaderAppearance"
+        "{CONTEXT} && !{SCRUBBER} && !{FIND_BAR} && !ReaderAppearance && !{VIEWER}"
     ))
     .ok()
     .map(Rc::new);
@@ -79,7 +80,7 @@ pub(crate) fn bind(cx: &mut App) {
             KeyBinding::load(keys, action, context.clone(), false, None, cx).ok()
         })
         .collect();
-    let hidden = KeyBindingContextPredicate::parse(&format!("{CONTEXT} && {HIDDEN}"))
+    let hidden = KeyBindingContextPredicate::parse(&format!("{CONTEXT} && {HIDDEN} && !{VIEWER}"))
         .ok()
         .map(Rc::new);
     let tab: Vec<KeyBinding> = ["tab", "shift-tab"]

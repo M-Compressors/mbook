@@ -36,7 +36,10 @@ icon_assets!(
         Strikethrough,
         TextQuote,
         ListIndentDecrease,
-        ListIndentIncrease
+        ListIndentIncrease,
+        ZoomIn,
+        ZoomOut,
+        Scan
     ]
 );
 

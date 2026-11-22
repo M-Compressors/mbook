@@ -151,6 +151,13 @@ impl Pictures {
         }
     }
 
+    /// The picture the text shows at `destination`, when it is one of the
+    /// book.
+    pub(super) fn picture(&self, destination: &str) -> Option<PictureRef> {
+        let inner = self.inner.lock().ok()?;
+        inner.slots.get(destination).map(|slot| slot.picture)
+    }
+
     /// What the view draws within the column width and available page height.
     /// A size missing from the cache queues a decode.
     pub(super) fn resolve(

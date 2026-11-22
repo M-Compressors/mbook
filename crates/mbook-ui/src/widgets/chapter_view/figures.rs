@@ -26,6 +26,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, img, px,
 };
 
+use super::enlarge::{EnlargeHandler, Enlarged, opens};
 use crate::entities::figure::{Figures, Setting};
 
 /// The name of the nodes [`BlockFigures`] makes.
@@ -68,6 +69,9 @@ pub(super) struct Stage {
     pub(super) text_size: f32,
     /// The gap under a paragraph, in pixels.
     pub(super) gap: f32,
+    /// What a click on a figure that stands alone does; `None` when it
+    /// does nothing.
+    pub(super) enlarge: Option<EnlargeHandler>,
 }
 
 /// A figure the parser found in the text.
@@ -207,13 +211,35 @@ impl MarkdownPlugin for BlockFigures {
             });
         let body = if let Some((figure, (width, height, scale))) = drawn {
             let image = figure.image(scale * window.scale_factor());
+            let mut picture = img(image)
+                .id(("figure-enlarge", at))
+                .flex_none()
+                .w(px(width))
+                .h(px(height));
+            if let Some(enlarge) = stage.enlarge.clone() {
+                let figure = Arc::clone(figure);
+                let alt = shown.alt.clone();
+                picture = picture.cursor_pointer().on_click(move |event, window, cx| {
+                    if opens(event) {
+                        cx.stop_propagation();
+                        enlarge(
+                            Enlarged::Figure {
+                                figure: Arc::clone(&figure),
+                                alt: alt.clone(),
+                            },
+                            window,
+                            cx,
+                        );
+                    }
+                });
+            }
             let body = div()
                 .id(("figure-image", at))
                 .test_support()
                 .w_full()
                 .flex()
                 .justify_center()
-                .child(img(image).flex_none().w(px(width)).h(px(height)));
+                .child(picture);
             if shown.alt.is_empty() {
                 body
             } else {

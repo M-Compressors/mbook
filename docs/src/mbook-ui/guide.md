@@ -89,6 +89,16 @@ Compact
   chapter and excerpt. For supported Markdown spans the text is highlighted.
   Use the arrows, Return or Shift+Return to move between results. Closing
   the bar takes the reader back to the passage where they opened it.
+- Click or tap a picture, a diagram or a formula that stands alone in its
+  paragraph to see it over the whole window. It opens fitted to the window.
+  **Zoom in** and **Zoom out** change its size a step at a time, as do `+`
+  and `-` (with or without Command or Control), a pinch, or the wheel with
+  Command or Control held. A step stops at the size the picture has in the
+  book and at the fitted size; **Fit to window** or `0` goes back to the
+  fitted size. An enlarged picture is moved by dragging it or by scrolling.
+  Escape, **Close** or a click beside the picture closes it. A picture inside
+  a line of text, a picture that is a link and a reference-style picture
+  `![…][name]` do not open.
 - Links, GFM footnote references and contents entries can be followed and
   revisited with Escape or **Return to previous passage**.
   A web link opens in the system browser. A book reopens at its saved

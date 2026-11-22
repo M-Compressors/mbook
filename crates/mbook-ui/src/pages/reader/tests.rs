@@ -22,6 +22,7 @@ use crate::shared::actions::GoBack;
 use crate::shared::model::{BookKey, Place};
 use crate::shared::theme::PageTone;
 use crate::testing::{self, Fixture};
+use crate::widgets::chapter_view::Enlarged;
 
 /// Where the tests read from.
 struct Started {
@@ -1303,6 +1304,262 @@ fn a_picture_that_cannot_be_decoded_shows_its_alternative_text(cx: &mut TestAppC
     });
     settle(&started, cx);
     assert!(shown_text(&started, cx).contains("A figure"));
+}
+
+// The picture viewer
+
+/// Clicks the picture of the first chapter.
+fn click_picture(started: &Started, cx: &mut TestAppContext) {
+    testing::frame(cx, started.window, |window, cx| {
+        let picture = window.find_by_label("A figure");
+        let id = picture.path().last().unwrap().clone();
+        window.click(id, cx);
+    });
+    settle(started, cx);
+}
+
+fn viewer_open(started: &Started, cx: &TestAppContext) -> bool {
+    started.page.read_with(cx, |page, _| page.viewer.is_some())
+}
+
+#[gpui_kit::test]
+fn clicking_a_picture_shows_it_over_the_window_decoded_again(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    click_picture(&started, cx);
+    assert!(has(&started, "picture-viewer", cx));
+    let (known, shown) = started.page.read_with(cx, |page, cx| {
+        let known = page.pictures.picture(FIGURE).unwrap();
+        let viewer = page.viewer.as_ref().unwrap().entity.read(cx);
+        let shown = match viewer.content() {
+            super::viewer::ViewerContent::Picture { image, pixels } => {
+                Some((*pixels, image.size(0)))
+            }
+            _ => None,
+        };
+        (known, shown)
+    });
+    let (pixels, decoded) = shown.expect("the picture is decoded for the viewer");
+    assert_eq!(pixels, (known.width, known.height));
+    assert_eq!(
+        (decoded.width.0, decoded.height.0),
+        (
+            i32::try_from(known.width).unwrap(),
+            i32::try_from(known.height).unwrap()
+        )
+    );
+    let focused = cx
+        .update_window(started.window, |_, window, cx| {
+            let viewer = started.page.read(cx).viewer.as_ref().unwrap();
+            viewer.entity.focus_handle(cx).is_focused(window)
+        })
+        .unwrap();
+    assert!(focused, "the viewer has the focus");
+}
+
+#[gpui_kit::test]
+fn the_keys_of_the_reader_do_not_move_the_text_under_the_viewer(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    click_picture(&started, cx);
+    let before = started
+        .page
+        .read_with(cx, |page, cx| page.view.read(cx).page_number());
+    press(&started, "right", cx);
+    press(&started, "space", cx);
+    press(&started, &secondary("]"), cx);
+    assert_eq!(chapter_of(&started, cx), 0);
+    let after = started
+        .page
+        .read_with(cx, |page, cx| page.view.read(cx).page_number());
+    assert_eq!(before, after);
+    assert!(viewer_open(&started, cx));
+}
+
+#[gpui_kit::test]
+fn going_back_closes_the_viewer_and_the_reader_stays(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    click_picture(&started, cx);
+    cx.update_window(started.window, |_, window, cx| {
+        window.dispatch_action(GoBack.boxed_clone(), cx);
+    })
+    .unwrap();
+    settle(&started, cx);
+    assert!(!viewer_open(&started, cx));
+    assert!(!has(&started, "picture-viewer", cx));
+    assert_eq!(seen(&started, cx), Vec::new());
+    let focused = cx
+        .update_window(started.window, |_, window, cx| {
+            started.page.read(cx).focus_handle.is_focused(window)
+        })
+        .unwrap();
+    assert!(focused, "the focus is back on the reader");
+}
+
+#[gpui_kit::test]
+fn the_close_button_closes_the_viewer(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    click_picture(&started, cx);
+    click(&started, "picture-viewer-close", cx);
+    assert!(!viewer_open(&started, cx));
+}
+
+#[gpui_kit::test]
+fn suspending_the_reader_closes_the_viewer(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    click_picture(&started, cx);
+    started.page.update(cx, ReaderPage::suspend);
+    assert!(!viewer_open(&started, cx));
+}
+
+#[gpui_kit::test]
+fn a_picture_clicked_before_the_book_is_open_opens_nothing(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    started
+        .page
+        .update_in_window(cx, started.window, |page, window, cx| {
+            page.enlarge(
+                Enlarged::Picture {
+                    destination: FIGURE.to_owned(),
+                    alt: "A figure".into(),
+                },
+                window,
+                cx,
+            );
+        });
+    assert!(!viewer_open(&started, cx));
+}
+
+#[gpui_kit::test]
+fn a_picture_the_book_does_not_have_opens_nothing(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    started
+        .page
+        .update_in_window(cx, started.window, |page, window, cx| {
+            page.enlarge(
+                Enlarged::Picture {
+                    destination: "img/missing.avif".to_owned(),
+                    alt: "Missing".into(),
+                },
+                window,
+                cx,
+            );
+        });
+    assert!(!viewer_open(&started, cx));
+}
+
+#[gpui_kit::test]
+fn a_picture_the_viewer_cannot_read_says_so(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    started
+        .page
+        .update_in_window(cx, started.window, |page, window, cx| {
+            page.enlarge(
+                Enlarged::Picture {
+                    destination: FIGURE.to_owned(),
+                    alt: "A figure".into(),
+                },
+                window,
+                cx,
+            );
+            // The file closes before the picture is read.
+            if let Phase::Ready(reading) = &mut page.phase {
+                reading.source = None;
+            }
+        });
+    settle(&started, cx);
+    let failed = started.page.read_with(cx, |page, cx| {
+        matches!(
+            page.viewer.as_ref().unwrap().entity.read(cx).content(),
+            super::viewer::ViewerContent::Failed
+        )
+    });
+    assert!(failed);
+}
+
+#[gpui_kit::test]
+fn a_figure_is_shown_over_the_window_at_the_size_of_the_text(cx: &mut TestAppContext) {
+    use crate::entities::figure::{FigureKind, Palette, Setting, render};
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    let figure = render(
+        FigureKind::Formula,
+        "E = mc^2",
+        Setting::Block,
+        Palette::PAPER,
+    )
+    .unwrap();
+    started
+        .page
+        .update_in_window(cx, started.window, |page, window, cx| {
+            page.enlarge(
+                Enlarged::Figure {
+                    figure,
+                    alt: "Energy".into(),
+                },
+                window,
+                cx,
+            );
+        });
+    settle(&started, cx);
+    let text_size = cx.update(|cx| Appearance::global(cx).read(cx).settings().text_size);
+    let shown = started.page.read_with(cx, |page, cx| {
+        match page.viewer.as_ref().unwrap().entity.read(cx).content() {
+            super::viewer::ViewerContent::Figure { text_size, .. } => Some(*text_size),
+            _ => None,
+        }
+    });
+    assert_eq!(shown, Some(text_size));
+    // Opening another one replaces it.
+    started
+        .page
+        .update_in_window(cx, started.window, |page, window, cx| {
+            page.enlarge(
+                Enlarged::Picture {
+                    destination: FIGURE.to_owned(),
+                    alt: "A figure".into(),
+                },
+                window,
+                cx,
+            );
+        });
+    settle(&started, cx);
+    let picture = started.page.read_with(cx, |page, cx| {
+        matches!(
+            page.viewer.as_ref().unwrap().entity.read(cx).content(),
+            super::viewer::ViewerContent::Picture { .. }
+        )
+    });
+    assert!(picture);
+}
+
+#[gpui_kit::test]
+fn every_control_of_the_viewer_has_a_role_and_a_name(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0).unwrap();
+    settle(&started, cx);
+    click_picture(&started, cx);
+    testing::frame(cx, started.window, |window, _| {
+        let viewer: Vec<_> = window
+            .elements()
+            .into_iter()
+            .filter(|element| format!("{:?}", element.path()).contains("picture-viewer"))
+            .collect();
+        assert!(!viewer.is_empty());
+        for element in viewer {
+            assert!(element.role().is_some(), "no role: {element:?}");
+            assert!(
+                element
+                    .label()
+                    .is_some_and(|label| !label.trim().is_empty()),
+                "no name: {element:?}"
+            );
+        }
+    });
 }
 
 // Accessibility

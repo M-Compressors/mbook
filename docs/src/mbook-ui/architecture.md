@@ -274,6 +274,40 @@ GPUI decodes no AVIF, so the application does:
 - A picture that cannot be decoded shows its alternative text. It never
   fails the chapter.
 
+### Seeing a picture larger
+
+The Markdown view of GPUI Kit draws a picture as an image that answers no
+click. The chapter view therefore takes a paragraph that holds nothing but
+one picture, written `![alt](destination)`, away from the Kit with a block
+plugin of its own. The plugin draws the picture from the same source and at
+the same size as the Kit, so the layout and the pages do not change, and
+tells the reader when it is clicked or tapped. A block diagram or formula
+answers the same way. A picture in a line of text, a linked picture and a
+reference-style picture stay with the Kit and do not answer.
+
+- The reader shows what was clicked over the whole window, in a viewer
+  that belongs to the reader page. The viewer takes the focus; the keys of
+  the reader do not reach the text under it.
+- A picture is read and decoded again on the background at its own size,
+  not at the size of the column. A picture of more than 16,000,000 pixels
+  is decoded at that many and scaled up. The decoded picture belongs to the
+  viewer, not to the cache of the chapter, and is released when the viewer
+  closes.
+- The scale is a part of the picture's own size, in which a pixel of the
+  picture is a logical pixel, as in the text. At first the picture fits the
+  window, enlarged at most four times to do so. It may be reduced to the
+  smaller of the fitted and its own size, and enlarged to four times the
+  larger of them. A step is a factor of 1.25 and stops at the fitted and at
+  the own size.
+- A zoom keeps the part of the picture under the pointer, or in the middle
+  for a button or a key, where it was. A drag of more than four logical
+  pixels moves an enlarged picture and does not close the viewer.
+- A figure is drawn for the viewer as SVG at a density that is a power of
+  two, so it is rasterised again only when its size doubles or halves, with
+  at most 16,000,000 pixels. The drawing before stands in while the next is
+  rasterised. The viewer keeps its own drawings, apart from the one the
+  text shows, and releases them when it closes.
+
 ## Diagrams and formulas
 
 References to diagrams and formulas use the

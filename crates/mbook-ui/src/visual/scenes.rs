@@ -178,6 +178,12 @@ fn other_shots() -> Vec<Shot> {
             settings: large_text,
             ..shot("05d-reading-mode-enlarged", Library::Reading, open_reader)
         },
+        shot("05e-reader-picture", Library::Books, open_picture),
+        shot("05f-reader-picture-enlarged", Library::Books, |stage| {
+            open_picture(stage)?;
+            stage.click("picture-viewer-zoom-in")?;
+            stage.click("picture-viewer-zoom-in")
+        }),
         shot("06a-reader-hidden", Library::Books, reader_hidden),
         Shot {
             settings: keep_controls,
@@ -343,6 +349,17 @@ pub(super) fn reading_latency(stage: &mut Stage) -> Result<Vec<(&'static str, Du
         stage.click("text-smaller")?;
     }
     Ok(samples)
+}
+
+/// Opens the picture of the chapter over the window.
+fn open_picture(stage: &mut Stage) -> Result<()> {
+    open_reader(stage)?;
+    // The picture is under the table, below the place the reader opens at.
+    stage.scroll("chapter-text", -12.0)?;
+    stage.click_label("The orchard at dusk, seen from the gate")?;
+    // The picture is decoded again for the viewer.
+    stage.settle()?;
+    stage.settle()
 }
 
 fn reader_hidden(stage: &mut Stage) -> Result<()> {

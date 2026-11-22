@@ -199,13 +199,20 @@ impl Figure {
         {
             return Arc::clone(image);
         }
-        let document = svg::resized(&self.svg, self.width * density, self.height * density)
-            .unwrap_or_else(|| self.svg.clone());
-        let image = svg::image(document);
+        let image = self.draw(density);
         if let Some(sized) = sized.as_deref_mut() {
             *sized = Some((key, Arc::clone(&image)));
         }
         image
+    }
+
+    /// The image at `density`, as [`Figure::image`] makes it, without
+    /// keeping it. For a second place that shows the figure at another size,
+    /// which would otherwise make the two take turns at the one image kept.
+    pub(crate) fn draw(&self, density: f32) -> Arc<Image> {
+        let document = svg::resized(&self.svg, self.width * density, self.height * density)
+            .unwrap_or_else(|| self.svg.clone());
+        svg::image(document)
     }
 }
 

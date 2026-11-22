@@ -143,6 +143,10 @@ Ruled out:
 | Size class under a scaled interface | Width divided by the scale | Width in pixels | At 200% a desktop window has room for the compact layout only; clipping or a horizontal scroll bar fails WCAG 1.4.10. |
 | Reordering chapters | A drag, and "Move up" and "Move down" | A drag alone | WCAG 2.5.7: a drag needs an alternative. |
 | Thumbnails | JPEG files in the cache | Decoding every cover at start | The shelf then needs no AVIF decoder to appear. |
+| Making a picture of the text open larger | A block plugin of the chapter view that draws a picture alone in its paragraph as the Kit does, and answers a click | Wrapping each picture in a link of the text; a hit test over the whole text | GPUI Kit 0.10 lets no click reach an image of its Markdown view. A link would change the text that offsets, search and copying use; a hit test would need the bounds of the images, which the Kit does not give. The price is that a picture in a line of text does not open. |
+| What the viewer shows of a picture | The picture decoded again at its own size, up to 16,000,000 pixels | The bitmap fitted to the column, scaled up | The point of the viewer is to see more than the column shows. |
+| Where the viewer lives | In the reader page | In `widgets` | Only the reader opens it; a part of a screen moves to `widgets` when a second page needs it. |
+| How often a figure is drawn for the viewer | At densities that are powers of two | At every zoom; once at the largest zoom | Every step would rasterise and keep a new image; one large raster costs memory at every zoom and blurs when reduced far. |
 
 ## Prior art
 

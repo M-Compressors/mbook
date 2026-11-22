@@ -1189,3 +1189,159 @@ fn a_large_mixed_script_chapter_reaches_its_final_passage(cx: &mut TestAppContex
     settle(&started, cx);
     assert!(top(&started, cx) > final_offset - 1024);
 }
+
+// Pictures and figures that open larger
+
+/// What the view asked to enlarge, in order.
+type Asked = Arc<Mutex<Vec<Enlarged>>>;
+
+fn ask_to_enlarge(started: &Started, cx: &mut TestAppContext) -> Asked {
+    let asked = Asked::default();
+    let log = Arc::clone(&asked);
+    started.view.update(cx, |view, _| {
+        view.on_enlarge(move |enlarged, _, _| log.lock().unwrap().push(enlarged));
+    });
+    asked
+}
+
+/// Clicks the element an image of the text is reported by.
+fn click_image(started: &Started, label: &str, cx: &mut TestAppContext) {
+    let label = label.to_owned();
+    testing::frame(cx, started.window, move |window, cx| {
+        let image = window.find_by_label(&label);
+        let id = image.path().last().unwrap().clone();
+        window.click(id, cx);
+    });
+    settle(started, cx);
+}
+
+#[gpui_kit::test]
+fn clicking_a_picture_alone_in_a_paragraph_asks_to_enlarge_it(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 600.0);
+    let asked = ask_to_enlarge(&started, cx);
+    started.view.update(cx, |view, cx| {
+        view.set_pictures(
+            picture_resolver(|| Some(PictureState::Pending((400, 200)))),
+            cx,
+        );
+        view.set_text(WITH_PICTURE, cx);
+    });
+    settle(&started, cx);
+    click_image(&started, "A grey cat", cx);
+    let asked = asked.lock().unwrap();
+    assert_eq!(asked.len(), 1);
+    assert!(matches!(
+        &asked[0],
+        Enlarged::Picture { destination, alt }
+            if destination == "cat.avif" && alt.as_ref() == "A grey cat"
+    ));
+}
+
+#[gpui_kit::test]
+fn a_picture_that_opens_larger_takes_the_room_the_kit_gives_it(cx: &mut TestAppContext) {
+    let heights = |enlarge: bool, cx: &mut TestAppContext| {
+        let started = start_paged(cx, 800.0, 600.0);
+        if enlarge {
+            ask_to_enlarge(&started, cx);
+        }
+        started.view.update(cx, |view, cx| {
+            view.set_pictures(
+                picture_resolver(|| Some(PictureState::Pending((1600, 800)))),
+                cx,
+            );
+            view.set_text(WITH_PICTURE, cx);
+        });
+        settle(&started, cx);
+        let sizes = started
+            .view
+            .read_with(cx, |view, _| view.placeholder_sizes());
+        let heights = started
+            .view
+            .read_with(cx, |view, _| view.paging.as_ref().unwrap().heights.clone());
+        (sizes, heights)
+    };
+    let (kit_sizes, kit) = heights(false, cx);
+    let (sizes, ours) = heights(true, cx);
+    assert_eq!(sizes, kit_sizes);
+    assert_eq!(kit.len(), ours.len());
+    // The picture is not the last block, so both have the gap under it.
+    assert!((kit[1] - ours[1]).abs() < 1.0, "{kit:?} {ours:?}");
+}
+
+#[gpui_kit::test]
+fn a_picture_in_a_line_of_text_stays_with_the_kit(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 600.0);
+    let asked = ask_to_enlarge(&started, cx);
+    started.view.update(cx, |view, cx| {
+        view.set_pictures(
+            picture_resolver(|| Some(PictureState::Pending((40, 20)))),
+            cx,
+        );
+        view.set_text("A cat ![A grey cat](cat.avif) sleeps.\n", cx);
+    });
+    settle(&started, cx);
+    let ours = testing::frame(cx, started.window, |window, _| {
+        window.try_find_by_label("A grey cat").is_some()
+    });
+    assert!(!ours, "the picture stays in its line, with the Kit");
+    assert!(asked.lock().unwrap().is_empty());
+}
+
+#[gpui_kit::test]
+fn a_picture_without_a_handler_is_left_to_the_kit(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 600.0);
+    started.view.update(cx, |view, cx| {
+        view.set_pictures(
+            picture_resolver(|| Some(PictureState::Pending((400, 200)))),
+            cx,
+        );
+        view.set_text(WITH_PICTURE, cx);
+    });
+    settle(&started, cx);
+    let ours = testing::frame(cx, started.window, |window, _| {
+        window.try_find_by_label("A grey cat").is_some()
+    });
+    assert!(!ours, "the Kit reports no picture of its own");
+}
+
+#[gpui_kit::test]
+fn clicking_a_figure_alone_in_a_paragraph_asks_to_enlarge_its_drawing(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 900.0);
+    let asked = ask_to_enlarge(&started, cx);
+    started.view.update(cx, |view, cx| {
+        view.set_figures(figure_sources("E = mc^2", FLOW), cx);
+        view.set_text(WITH_FIGURES, cx);
+    });
+    settle(&started, cx);
+    click_image(&started, "The way", cx);
+    let asked = asked.lock().unwrap();
+    assert_eq!(asked.len(), 1);
+    assert!(matches!(
+        &asked[0],
+        Enlarged::Figure { figure, alt } if alt.as_ref() == "The way" && figure.height > 10.0
+    ));
+}
+
+#[gpui_kit::test]
+fn a_picture_without_words_opens_but_is_not_announced(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 600.0);
+    ask_to_enlarge(&started, cx);
+    started.view.update(cx, |view, cx| {
+        view.set_pictures(
+            picture_resolver(|| Some(PictureState::Pending((400, 200)))),
+            cx,
+        );
+        view.set_text("Before.\n\n![](cat.avif)\n\nAfter.\n", cx);
+    });
+    settle(&started, cx);
+    let images = testing::frame(cx, started.window, |window, _| {
+        window.find_all_by_role(Role::Image).len()
+    });
+    assert_eq!(images, 0);
+    assert_eq!(
+        started
+            .view
+            .read_with(cx, |view, _| view.placeholder_sizes()),
+        vec![(400, 200)]
+    );
+}

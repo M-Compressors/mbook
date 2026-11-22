@@ -147,6 +147,7 @@ impl Render for ReaderPage {
                     .pb(bottom)
                     .children(ready.then(|| self.footer(class, muted, presence, window, cx))),
             )
+            .children(self.viewer.as_ref().map(|viewer| viewer.entity.clone()))
     }
 }
 

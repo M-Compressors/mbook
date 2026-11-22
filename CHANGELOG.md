@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- The reader opens a picture, a diagram or a formula that stands alone in
+  its paragraph over the whole window when it is clicked or tapped. The
+  viewer fits it to the window and zooms it with buttons, `+`, `-` and `0`,
+  a pinch, or the wheel with Command or Control held; an enlarged picture
+  is moved by dragging or scrolling. A picture is decoded again at its own
+  size for the viewer.
+
 ### Changed
 
 - The documentation is one site with two kinds of document. RFC 0001 and
