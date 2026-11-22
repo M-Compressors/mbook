@@ -1,8 +1,8 @@
 //! Offering an update: the entity that checks, installs and shows the bar
-//! above the pages (RFC 0004, "Updates").
+//! below the page header (RFC 0004, "Updates").
 //!
-//! One [`UpdateBanner`] serves the whole application. The root shows it above
-//! the pages; the settings ask it to check now, so that there is one check at
+//! One [`UpdateBanner`] serves the whole application. Each page shows it below
+//! its header. The settings ask it to check now, so that there is one check at
 //! a time. Nothing here blocks: the check and the installation run on the
 //! background executor, the daily check waits on a timer of the executor.
 
@@ -11,9 +11,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::{ActiveTheme as _, h_flex};
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::{ActiveTheme as _, WindowExt as _, h_flex};
 use gpui_kit::{
-    AnyElement, AnyWindowHandle, App, AppContext as _, Context, Entity, Global,
+    Anchor, AnyElement, AnyWindowHandle, App, AppContext as _, Context, Entity, Global,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _, Window,
     div, px,
@@ -24,12 +25,14 @@ use super::error::UpdateError;
 use super::install::{Installed, install};
 use crate::features::appearance::Appearance;
 use crate::shared::roots::Roots;
-use crate::shared::ui::{announce, status_line, target_size};
+use crate::shared::ui::{status_line, target_size};
 
 /// How long after a check the next one is made.
 const CHECK_EVERY: Duration = Duration::from_hours(24);
 /// How long to wait before asking again whether an import is still running.
 const BUSY_RETRY: Duration = Duration::from_secs(5);
+/// Space below update notifications for the library tabs and reader controls.
+const NOTIFICATION_BOTTOM_MARGIN: f32 = 84.0;
 
 /// What is said when a restart is asked for while the application is busy.
 const RESTART_WAITS: &str =
@@ -450,9 +453,9 @@ impl UpdateBanner {
     /// Restarts the application into the version that was installed, unless
     /// an import is running or a book is being edited: then it says so and
     /// waits to be asked again.
-    fn restart(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+    fn restart(&mut self, cx: &mut Context<'_, Self>) {
         if (self.is_busy)(cx) {
-            announce(RESTART_WAITS, window, cx);
+            self.announce(RESTART_WAITS.to_owned(), cx);
         } else {
             cx.restart();
         }
@@ -476,12 +479,20 @@ impl UpdateBanner {
         }
     }
 
-    /// Tells the window of something the user did not cause.
+    /// Announces update status away from the window controls and the update banner.
     fn announce(&self, message: String, cx: &mut Context<'_, Self>) {
         let window = self.window;
         cx.defer(move |cx| {
             window
-                .update(cx, |_, window, cx| announce(message, window, cx))
+                .update(cx, |_, window, cx| {
+                    window.push_notification(
+                        Notification::info(message)
+                            .placement(Anchor::BottomCenter)
+                            .mb(px(NOTIFICATION_BOTTOM_MARGIN))
+                            .autohide(false),
+                        cx,
+                    );
+                })
                 .ok();
         });
     }
@@ -510,7 +521,7 @@ impl UpdateBanner {
             ],
             UpdateState::Installed(_) => vec![
                 primary("update-restart", "Restart")
-                    .on_click(cx.listener(|this, _, window, cx| this.restart(window, cx)))
+                    .on_click(cx.listener(|this, _, _, cx| this.restart(cx)))
                     .into_any_element(),
             ],
             UpdateState::Failed { .. } => vec![

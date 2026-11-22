@@ -6,7 +6,6 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use gpui_kit::component::WindowExt as _;
 use gpui_kit::test::{TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{
     AnyWindowHandle, Context, Entity, IntoElement, Render, Role, TestAppContext, Window, div,
@@ -98,7 +97,7 @@ struct Started {
 fn start(cx: &mut TestAppContext, backend: Backend) -> Started {
     let busy = Rc::new(Cell::new(false));
     let asked = busy.clone();
-    let (window, host) = testing::open(cx, 600.0, 200.0, |window, cx| {
+    let (window, host) = testing::open(cx, 600.0, 480.0, |window, cx| {
         let banner = cx.new(|cx| {
             UpdateBanner::with_backend(
                 backend,
@@ -445,6 +444,19 @@ fn a_restart_waits_while_the_application_is_busy(cx: &mut TestAppContext) {
     assert_eq!(state(&started, cx), UpdateState::Installed(update("0.2.0")));
     assert_eq!(notifications(&started, cx), before + 1);
     assert!(RESTART_WAITS.contains("close the editor"));
+}
+
+#[gpui_kit::test]
+fn the_restart_button_restarts_an_idle_application(cx: &mut TestAppContext) {
+    let script = Script::answering_checks(vec![Ok(Some(update("0.2.0")))]);
+    let started = start(cx, script.backend(true));
+    cx.run_until_parked();
+    click(&started, "update-install", cx);
+
+    let mut restart = cx.expect_restart();
+    click(&started, "update-restart", cx);
+
+    assert!(matches!(restart.try_recv(), Ok(Some(_))));
 }
 
 #[gpui_kit::test]

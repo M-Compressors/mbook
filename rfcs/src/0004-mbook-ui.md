@@ -1057,6 +1057,8 @@ a build for a store or a package manager leaves off.
   offered once that release has the archive for the running platform. The
   check runs at start and once a day in release builds and can be turned off
   in the settings.
+- The update banner occupies a row below the title bar on every page.
+  Update notifications appear at the bottom of the window.
 - `self_update` is used with its blocking `ureq` transport inside a
   background task. The application has no second runtime.
 - An update is offered, never installed unasked. It is downloaded to
@@ -1166,7 +1168,7 @@ can break in its middle.
 | Reader | Whole-book text search, single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures and diagrams scale to fit a page. Mermaid diagrams and KaTeX formulas use the page tone and display alternative text when rendering fails. Other tall blocks can be clipped through a line. |
 | Editor | Chapter search works on the current draft in Visual, Source, Split and Preview. Editing opens the first chapter in Visual. Chapters are listed and chosen by number and title. Visual supports tables, nested and task lists, quotes and code blocks. A link is made from selected or newly entered words and can lead to a chapter or a heading chosen by title. A picture is chosen from the thumbnails of the book or taken from a file, with a description, and put at the caret. The Contents section shows the contents and where they come from. The entries of a stored list are edited, added, nested and removed one by one, are kept in the order of the book, and are marked when they lead nowhere or are out of order. They follow their chapter when it moves or its file is renamed, and are removed with it. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Diagrams and Formulas have syntax-highlighted source dialogs, a preview and removal controls. Visual inserts figure references, and Preview and Split render them. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. A picture cannot be put into the text from Source, and choosing a contents entry opens its chapter at the top. Dropping a file on a chapter has not been tried outside of tests, which call the handler directly. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
-| Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. The installer is compiled on macOS and Windows. |
+| Updates | The banner sits below the window controls, and update notifications appear at the bottom. The check and the installation are written and tested against scripted releases and signed archives made by the tests. The installer is compiled on macOS and Windows. |
 | Release workflow | The workflow produced installers and update archives for v0.1.0. The Trusted Publishing step awaits its first run. The macOS and Windows x64 jobs make NASM available before building. |
 | Typeface | Literata is available when installed locally. The fallback chain supplies another installed serif family when possible. Bundled fonts are unimplemented. |
 | Transitions | Page turns within a chapter slide and fade, and the reading controls fade. Screen navigation and chapter changes are immediate. Reduced motion uses immediate transitions. |
@@ -1257,6 +1259,7 @@ asks:
 | Key of a book | A UUID made at import | The `id` of the metadata | That `id` is any string and may be edited. |
 | Directories | `dirs`, handed in by the shell | Paths built in the library | Decided by the format author; handing them in keeps tests and mobile shells possible. |
 | Installing updates | `self_update`, blocking transport on the background | Its asynchronous transport | Decided by the format author to use the crate. The blocking transport needs no Tokio runtime beside GPUI. |
+| Update banner placement | Below the title bar | Above the whole page | Native macOS window controls stay at the top of the window when the banner appears. |
 | AVIF decoder | `avif-decode` on `rav1d` | dav1d in C | Decided by the format author. No C toolchain; the same reason as for the encoder in RFC 0003. |
 | Minimum Rust version | 1.100 for this package | The 1.89 of the workspace | Decided by the format author. `avif-decode` needs 1.98 and `redb` 1.90; an application is built by its maintainers, not by users of a library. |
 | Typeface of books | Literata when installed, then local serif fallbacks; any installed family in settings | A fixed set of bundled fonts | The fallback chain keeps book typography available without font assets in the repository. |

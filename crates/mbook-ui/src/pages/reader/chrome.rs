@@ -25,6 +25,7 @@ use super::keys::{
 use super::pagination::Layout;
 use super::{Panel, Phase, ReaderEvent, ReaderPage};
 use crate::features::appearance::Appearance;
+use crate::features::update_banner;
 use crate::shared::actions::{Find, GoBack};
 use crate::shared::layout::SizeClass;
 use crate::shared::ui::{
@@ -123,6 +124,7 @@ impl Render for ReaderPage {
             )
             .child(Self::pointer_activity(cx))
             .child(self.header(class, (page, ink), presence, cx))
+            .children(update_banner(cx))
             .children(
                 self.search
                     .render(Self::step_search, Self::close_search, cx),

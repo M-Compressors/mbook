@@ -397,10 +397,9 @@ fn update_banner(stage: &mut Stage) -> Result<()> {
     let banner = stage.with_window(|window, cx| {
         let banner = cx.new(|cx| UpdateBanner::scripted(true, Ok(Some("0.2.0")), window, cx));
         UpdateBanner::install(banner.clone(), cx);
+        window.refresh();
         banner
     })?;
     stage.with_app(|cx| banner.update(cx, UpdateBanner::check_now));
-    let root = stage.root()?;
-    stage.with_app(|cx| root.update(cx, |_, cx| cx.notify()));
     stage.settle()
 }

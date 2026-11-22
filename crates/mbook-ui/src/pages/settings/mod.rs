@@ -34,6 +34,7 @@ use crate::entities::catalogue::{CatalogueError, Settings};
 use crate::features::appearance::Appearance;
 #[cfg(feature = "self-update")]
 use crate::features::auto_update::UpdateBanner;
+use crate::features::update_banner;
 use crate::shared::actions::GoBack;
 use crate::shared::layout::SizeClass;
 use crate::shared::theme::PageTone;
@@ -607,6 +608,7 @@ impl Render for SettingsPage {
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Close))),
                 ),
             )
+            .children(update_banner(cx))
             .child(
                 div()
                     .id("settings-scroll")

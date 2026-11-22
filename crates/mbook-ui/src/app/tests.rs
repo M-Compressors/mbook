@@ -624,46 +624,72 @@ mod updates {
 
     /// Puts a banner that offers `0.2.0` in the place of the real one, and
     /// lets it ask.
-    fn offer_an_update(started: &Started, root: &Entity<Root>, cx: &mut TestAppContext) {
+    fn offer_an_update(started: &Started, cx: &mut TestAppContext) {
         testing::frame(cx, started.window, |window, cx| {
             let banner = cx.new(|cx| UpdateBanner::scripted(true, Ok(Some("0.2.0")), window, cx));
             banner.update(cx, UpdateBanner::check_now);
             UpdateBanner::install(banner, cx);
+            window.refresh();
         });
-        root.update(cx, |_, cx| cx.notify());
         cx.run_until_parked();
     }
 
     #[gpui_kit::test]
-    fn the_banner_stands_above_the_page_and_leaves_it_the_rest(cx: &mut TestAppContext) {
-        let started = start(cx, 1200.0, &["Dune"]);
-        let root = finish(&started, cx);
-        offer_an_update(&started, &root, cx);
+    fn the_banner_stands_between_the_title_bar_and_the_content(cx: &mut TestAppContext) {
+        let started = start(cx, 390.0, &["Dune"]);
+        let _root = finish(&started, cx);
+        offer_an_update(&started, cx);
         testing::frame(cx, started.window, |window, _| {
+            let title_bar = window.find("title-bar").bounds();
             let banner = window.find("update-banner").bounds();
-            let page = window.find("library-page").bounds();
-            assert!(banner.origin.y < page.origin.y, "{banner:?} {page:?}");
+            let content = window.find("shelf-heading").bounds();
+            assert_eq!(title_bar.origin.y, gpui_kit::px(0.0));
             assert!(
-                banner.origin.y + banner.size.height <= page.origin.y + gpui_kit::px(0.5),
-                "{banner:?} {page:?}"
+                title_bar.bottom() <= banner.origin.y,
+                "{title_bar:?} {banner:?}"
             );
-            let height = window.bounds().size.height;
-            assert!(page.origin.y + page.size.height <= height + gpui_kit::px(0.5));
+            assert!(
+                banner.bottom() <= content.origin.y,
+                "{banner:?} {content:?}"
+            );
         });
     }
 
     #[gpui_kit::test]
-    fn the_banner_stays_above_every_screen(cx: &mut TestAppContext) {
+    fn the_update_notification_stays_near_the_bottom_above_the_library_tabs(
+        cx: &mut TestAppContext,
+    ) {
+        let started = start(cx, 390.0, &[]);
+        let _root = finish(&started, cx);
+        offer_an_update(&started, cx);
+        testing::frame(cx, started.window, |window, _| {
+            let notice = window.find("notification").bounds();
+            let tabs = window.find("library-tabs").bounds();
+            assert!(
+                notice.origin.y > window.bounds().size.height / 2.0,
+                "{notice:?}"
+            );
+            assert!(notice.bottom() <= tabs.origin.y, "{notice:?} {tabs:?}");
+        });
+    }
+
+    #[gpui_kit::test]
+    fn the_banner_stays_below_the_title_bar_when_switching_screens(cx: &mut TestAppContext) {
         let started = start(cx, 1200.0, &[]);
-        let root = finish(&started, cx);
-        offer_an_update(&started, &root, cx);
+        let _root = finish(&started, cx);
+        offer_an_update(&started, cx);
         testing::frame(cx, started.window, |window, cx| {
             window.dispatch_action(OpenSettings.boxed_clone(), cx);
         });
         cx.run_until_parked();
         testing::frame(cx, started.window, |window, _| {
-            assert!(window.try_find("update-banner").is_some());
             assert!(window.try_find("settings-page").is_some());
+            let title_bar = window.find("title-bar").bounds();
+            let banner = window.find("update-banner").bounds();
+            assert!(
+                title_bar.bottom() <= banner.origin.y,
+                "{title_bar:?} {banner:?}"
+            );
         });
     }
 

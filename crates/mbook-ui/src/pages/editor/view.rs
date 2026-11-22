@@ -16,6 +16,7 @@ use super::sections::control;
 use super::session::{Level, Phase, Section};
 use crate::entities::catalogue::Library;
 use crate::features::appearance::Appearance;
+use crate::features::update_banner;
 use crate::shared::actions::{Find, GoBack, Save};
 use crate::shared::layout::SizeClass;
 use crate::shared::ui::{back_button, empty_state, page_header, status_line};
@@ -252,6 +253,7 @@ impl Render for EditorPage {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .child(header)
+            .children(update_banner(cx))
             .children(save_error.map(|message| {
                 status_line("save-error", message)
                     .px_3()

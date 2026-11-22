@@ -14,8 +14,6 @@ use gpui_kit::{
 };
 
 use crate::entities::catalogue::Library;
-#[cfg(feature = "self-update")]
-use crate::features::auto_update::UpdateBanner;
 use crate::features::import_book::BOOK_FILE_EXTENSIONS;
 use crate::pages::editor::{EditorEvent, EditorPage};
 use crate::pages::library::{LibraryEvent, LibraryPage};
@@ -343,11 +341,6 @@ pub(crate) fn show_about(_: &About, window: &mut Window, cx: &mut App) {
 
 impl Render for Root {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        // The bar that offers an update stands above every page.
-        #[cfg(feature = "self-update")]
-        let banner = UpdateBanner::try_global(cx).map(IntoElement::into_any_element);
-        #[cfg(not(feature = "self-update"))]
-        let banner: Option<AnyElement> = None;
         v_flex()
             .id("root")
             .key_context("Root")
@@ -360,7 +353,6 @@ impl Render for Root {
             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                 this.import(paths.paths().to_vec(), window, cx);
             }))
-            .children(banner)
             .child(
                 div()
                     .flex_1()
