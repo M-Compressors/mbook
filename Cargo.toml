@@ -53,3 +53,8 @@ allow_attributes_without_reason = "deny"
 lto = "fat"
 codegen-units = 1
 strip = "debuginfo"
+
+[profile.pre-release]
+inherits = "release"
+lto = "off"
+codegen-units = 16

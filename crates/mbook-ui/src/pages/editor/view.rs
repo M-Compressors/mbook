@@ -107,6 +107,12 @@ impl EditorPage {
                     .child(self.render_cover(cx))
                     .into_any_element(),
             ),
+            Section::Landmarks => scrolled(
+                v_flex()
+                    .child(heading)
+                    .child(self.render_landmarks(cx))
+                    .into_any_element(),
+            ),
             Section::Pictures => scrolled(
                 v_flex()
                     .child(heading)

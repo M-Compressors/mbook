@@ -13,7 +13,7 @@ use gpui_kit::{
 use markdown_editor::{
     BlockKind, BlockPosition, BlockSelection, ColumnAlign, EditorCommand, TableEdit,
 };
-use mbook::{Book, BookReader};
+use mbook::{Book, BookReader, Landmark};
 
 use super::commands::{ChapterOp, Origin, TYPING_PAUSE};
 use super::encode::Target;
@@ -211,6 +211,154 @@ fn saved_titles_and_texts(setup: &Setup) -> (String, Vec<String>) {
 fn dialog_is_open(setup: &Setup, cx: &mut TestAppContext) -> bool {
     cx.update_window(setup.window, |_, window, cx| window.has_active_dialog(cx))
         .unwrap()
+}
+
+#[gpui_kit::test]
+fn the_notes_dialog_saves_a_landmark_at_the_selected_chapter_and_anchor(cx: &mut TestAppContext) {
+    let setup = start_with(
+        cx,
+        1280.0,
+        &[
+            ("ch01.md", "# Start\n"),
+            ("extras/end.md", "Back matter.\n\n## Notes\n"),
+        ],
+    );
+    cx.run_until_parked();
+    click(&setup, "section-landmarks", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("section-heading").label(), Some("Landmarks"));
+    });
+    click(&setup, "add-note", cx);
+    click_named(&setup, "Title (optional)", cx);
+    frame(&setup, cx, |window, cx| {
+        window.input("Explanatory notes", cx);
+    });
+    click_named(&setup, "Chapter, ch01.md", cx);
+    click_named(&setup, "extras/end.md", cx);
+    click_named(&setup, "Anchor name (optional)", cx);
+    frame(&setup, cx, |window, cx| window.input("notes", cx));
+    click_named(&setup, "Add", cx);
+    click(&setup, "save", cx);
+    let mut reader = BookReader::open(setup.fixture.roots.book(setup.key)).unwrap();
+    let entries = reader.read_landmarks().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].kind, "notes");
+    assert_eq!(entries[0].title, "Explanatory notes");
+    assert_eq!(
+        entries[0].position.chapter,
+        reader.find_chapter("extras/end.md").unwrap().id
+    );
+    assert_eq!(entries[0].position.offset, 14);
+}
+
+fn editor_with_landmarks(cx: &mut TestAppContext, landmarks: Vec<Landmark>) -> Setup {
+    let fixture = Fixture::new();
+    let key = write_book(&fixture.roots, &CHAPTERS);
+    let path = fixture.roots.book(key);
+    let mut book = Book::open(&path).unwrap();
+    book.set_landmarks(landmarks).unwrap();
+    book.save(&path).unwrap();
+    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    let setup = open(cx, fixture, key, 1280.0);
+    cx.run_until_parked();
+    setup
+}
+
+#[gpui_kit::test]
+fn retargeting_notes_preserves_the_order_and_targets_of_other_landmarks(cx: &mut TestAppContext) {
+    let start = Landmark::new("start", "", "ch01.md");
+    let notes = Landmark::new("notes", "", "ch02.md");
+    let appendix = Landmark::new("appendix", "Appendix", "ch03.md");
+    let setup = editor_with_landmarks(cx, vec![start.clone(), notes, appendix.clone()]);
+    let path = setup.fixture.roots.book(setup.key);
+    click(&setup, "section-landmarks", cx);
+    click_named(&setup, "Edit Notes, ch02.md", cx);
+    click_named(&setup, "Chapter, ch02.md", cx);
+    click_named(&setup, "ch03.md", cx);
+    click_named(&setup, "Apply", cx);
+    click(&setup, "save", cx);
+    let edited = Book::open(&path).unwrap();
+    assert_eq!(
+        edited.landmarks(),
+        [start, Landmark::new("notes", "", "ch03.md"), appendix,]
+    );
+}
+
+#[gpui_kit::test]
+fn removing_one_notes_landmark_keeps_the_other_entries(cx: &mut TestAppContext) {
+    let glossary = Landmark::new("glossary", "", "ch01.md");
+    let notes = Landmark::new("notes", "", "ch02.md");
+    let endnotes = Landmark::new("notes", "Endnotes", "ch03.md");
+    let setup = editor_with_landmarks(cx, vec![glossary.clone(), notes, endnotes.clone()]);
+    let path = setup.fixture.roots.book(setup.key);
+    click(&setup, "section-landmarks", cx);
+    click_named(&setup, "Remove Notes, ch02.md", cx);
+    click_named(&setup, "Remove", cx);
+    click(&setup, "save", cx);
+    assert_eq!(Book::open(&path).unwrap().landmarks(), [glossary, endnotes]);
+}
+
+#[gpui_kit::test]
+fn a_notes_landmark_with_a_missing_anchor_blocks_save(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-landmarks", cx);
+    click(&setup, "add-note", cx);
+    click_named(&setup, "Anchor name (optional)", cx);
+    frame(&setup, cx, |window, cx| window.input("missing", cx));
+    click_named(&setup, "Add", cx);
+    click(&setup, "save", cx);
+    assert_eq!(
+        state(&setup, cx, |page| page.session.section),
+        Section::Problems
+    );
+    assert!(state(&setup, cx, |page| {
+        page.session.problems().iter().any(|problem| {
+            problem
+                .message
+                .contains(r#"landmark "notes" leads nowhere"#)
+        })
+    }));
+    let unchanged = Book::open(setup.fixture.roots.book(setup.key)).unwrap();
+    assert_eq!(unchanged.landmarks(), []);
+}
+
+#[gpui_kit::test]
+fn an_empty_book_explains_that_notes_need_a_chapter(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[]);
+    cx.run_until_parked();
+    click(&setup, "section-landmarks", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("no-notes").label(),
+            Some("Add a chapter before adding a notes landmark.")
+        );
+    });
+    click(&setup, "add-note", cx);
+    assert!(!dialog_is_open(&setup, cx));
+}
+
+#[gpui_kit::test]
+fn a_refused_landmark_update_shows_the_problem_in_landmarks(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-landmarks", cx);
+    act(&setup, cx, |page, window, cx| {
+        page.session.landmarks_pending = true;
+        page.send(
+            Command::SetLandmarks(vec![Landmark::new("", "", "ch01.md")]),
+            Origin::Landmarks,
+            window,
+            cx,
+        );
+    });
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("landmarks-error").label(),
+            Some(
+                r#"The book refused the change: invalid landmarks: "" is not a valid kind of landmark."#
+            )
+        );
+    });
+    assert!(!state(&setup, cx, |page| page.session.has_unsaved()));
 }
 
 #[gpui_kit::test]
@@ -1078,6 +1226,48 @@ fn the_save_key_saves_while_the_visual_editor_has_focus(cx: &mut TestAppContext)
         saved_titles_and_texts(&setup).1[0],
         "# Chapter One\n\nFirst text.\n"
     );
+}
+
+#[gpui_kit::test]
+fn save_builds_an_empty_contents_from_a_new_heading(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "")]);
+    cx.run_until_parked();
+    let path = setup.fixture.roots.book(setup.key);
+    assert_eq!(BookReader::open(&path).unwrap().toc(), []);
+
+    click(&setup, "mode-source", cx);
+    focus_editor(&setup, cx);
+    frame(&setup, cx, |window, cx| window.input("# Hello", cx));
+    click(&setup, "save", cx);
+
+    let reader = BookReader::open(&path).unwrap();
+    let titles: Vec<_> = reader
+        .toc()
+        .iter()
+        .map(|entry| entry.title.as_str())
+        .collect();
+    assert_eq!(titles, ["Hello"]);
+}
+
+#[gpui_kit::test]
+fn save_keeps_the_title_of_a_stored_contents_item_when_a_heading_changes(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[("ch01.md", "# Original\n")]);
+    cx.run_until_parked();
+    click(&setup, "mode-source", cx);
+    act(&setup, cx, |page, window, cx| {
+        page.text.update(cx, |editor, cx| {
+            editor.replace_all("# Revised\n", window, cx);
+        });
+    });
+    click(&setup, "save", cx);
+
+    let reader = BookReader::open(setup.fixture.roots.book(setup.key)).unwrap();
+    let titles: Vec<_> = reader
+        .toc()
+        .iter()
+        .map(|entry| entry.title.as_str())
+        .collect();
+    assert_eq!(titles, ["Original"]);
 }
 
 #[gpui_kit::test]

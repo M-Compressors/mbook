@@ -1,6 +1,6 @@
 //! What the main thread knows of the book being edited.
 
-use mbook::{Book, Chapter, Problems};
+use mbook::{Book, Chapter, Landmark, Problems};
 
 /// The state of the book after a command: its metadata, the paths and sizes of
 /// its parts and the problems last reported.
@@ -10,6 +10,8 @@ pub(crate) struct Outline {
     pub(crate) meta: MetaOutline,
     /// The chapters in reading order.
     pub(crate) chapters: Vec<ChapterOutline>,
+    /// The landmarks in their stored order.
+    pub(crate) landmarks: Vec<Landmark>,
     /// The pictures in the order they were added.
     pub(crate) pictures: Vec<PictureOutline>,
     /// The problems of the last `Check` or `Save`; empty after any change.
@@ -112,6 +114,7 @@ impl Outline {
                     heading: first_heading(chapter),
                 })
                 .collect(),
+            landmarks: book.landmarks().to_vec(),
             pictures: book
                 .pictures()
                 .iter()

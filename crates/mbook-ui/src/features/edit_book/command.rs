@@ -13,6 +13,8 @@ pub(crate) enum Command {
     Load,
     /// Changes one key of the metadata.
     SetMeta(MetaChange),
+    /// Replaces the book's list of landmarks.
+    SetLandmarks(Vec<mbook::Landmark>),
     /// Replaces the text of a chapter.
     SetChapterText {
         /// The path of the chapter.
@@ -67,13 +69,11 @@ pub(crate) enum Command {
         /// The AVIF file.
         avif: Vec<u8>,
     },
-    /// Builds the contents from the headings of the chapters, as a new book
-    /// has them, in place of the list the file stored.
+    /// Switches the book to automatic contents from chapter headings.
     ///
-    /// A book that was opened keeps the contents of its file, item by item.
-    /// Removing or moving a chapter then leaves items that lead nowhere or
-    /// stand in the wrong order, and the book cannot be saved; this command
-    /// is the way out.
+    /// A book with a stored, nonempty list keeps its entries. When edits
+    /// invalidate those entries, this command replaces the list and records
+    /// the choice for future sessions.
     ContentsFromHeadings,
     /// Runs `Book::check`; the problems are in the outline. Nothing else
     /// changes.

@@ -5,9 +5,12 @@ use super::error::{EditError, OpenFailure};
 use super::outline::{Outline, ProblemOutline};
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
-use mbook::{Book, Meta};
+use mbook::{Book, Meta, Toc};
 use std::future::Future;
 use std::path::PathBuf;
+
+const CONTENTS_MODE: &str = "x-mbook-ui-contents";
+const HEADINGS: &str = "headings";
 
 /// Starts a session for the book at `path`.
 ///
@@ -102,9 +105,17 @@ enum State {
 }
 
 impl State {
-    /// Opens the book at `path`.
+    /// Opens the book at `path` and restores any automatic contents.
     fn open(path: PathBuf) -> Self {
-        match Book::open(&path) {
+        let book = Book::open(&path).and_then(|mut book| {
+            if book.meta().get(CONTENTS_MODE) == Some(HEADINGS)
+                || matches!(book.toc(), Toc::Explicit(items) if items.is_empty())
+            {
+                contents_from_headings(&mut book)?;
+            }
+            Ok(book)
+        });
+        match book {
             Ok(book) => Self::Open(Box::new(Session {
                 book,
                 path,
@@ -209,6 +220,7 @@ impl Session {
         let book = &mut self.book;
         match change {
             Command::SetMeta(change) => set_meta(book.meta_mut(), change)?,
+            Command::SetLandmarks(landmarks) => book.set_landmarks(landmarks)?,
             Command::SetChapterText { path, text } => {
                 book.chapter_mut(&path)
                     .ok_or(EditError::NoSuchPath(path))?
@@ -233,11 +245,20 @@ impl Session {
             Command::SetCover { path, avif } => {
                 book.set_cover(path, avif)?;
             }
-            Command::ContentsFromHeadings => book.set_toc(mbook::Toc::default()),
+            Command::ContentsFromHeadings => contents_from_headings(book)?,
             Command::Load | Command::Check | Command::Save => {}
         }
         Ok(())
     }
+}
+
+/// Selects automatic contents and records the choice for the next session.
+fn contents_from_headings(book: &mut Book) -> mbook::Result<()> {
+    if book.meta().get(CONTENTS_MODE) != Some(HEADINGS) {
+        book.meta_mut().set(CONTENTS_MODE, HEADINGS)?;
+    }
+    book.set_toc(Toc::default());
+    Ok(())
 }
 
 /// Changes the metadata; on error it is as it was, which matters for the

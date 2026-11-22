@@ -1,4 +1,4 @@
-//! The editor: the metadata, chapters and pictures of a book.
+//! The editor: the metadata, chapters, landmarks and pictures of a book.
 //!
 //! The whole `mbook::Book` is owned by one background task, the actor of
 //! [`crate::features::edit_book`]. The page holds an
@@ -9,7 +9,7 @@
 //!
 //! - `view` composes the page for each size class,
 //! - `sections` is the list of sections and chapters,
-//! - `details`, `chapter`, `panels` are the sections,
+//! - `details`, `chapter`, `landmarks`, `panels` are the sections,
 //! - `preview` makes the reader's chapter view that shows the text being
 //!   edited,
 //! - `commands`, `files` and `prompts` are what the controls do.
@@ -20,6 +20,7 @@ mod details;
 mod encode;
 mod files;
 mod keys;
+mod landmarks;
 mod panels;
 mod picture_prompt;
 mod preview;

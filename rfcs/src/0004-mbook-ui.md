@@ -16,7 +16,7 @@ It has three screens:
 | --- | --- | --- |
 | **Library** | Shows the books the application keeps, as covers | The catalogue; `BookReader::open` and `read_cover` |
 | **Reader** | Shows one page of a chapter at a time | `BookReader`, read lazily |
-| **Editor** | Changes the metadata, chapters and pictures of a book | `Book`, in memory |
+| **Editor** | Changes the metadata, chapters, notes landmarks and pictures of a book | `Book`, in memory |
 
 Opening a file that is not yet in the library adds it: an mbook file is
 copied, a file in any format of RFC 0003 is converted first. Everything that
@@ -205,6 +205,7 @@ Expanded
 | > ch01.md    |                                                          |
 |   ch02.md    | It was then that the second act began.                   |
 |   [ + ]      |                                                          |
+| Landmarks    |                                                          |
 | Pictures     |                                                          |
 | Problems  2  |                                                          |
 +--------------+----------------------------------------------------------+
@@ -233,14 +234,20 @@ Compact: a stack that opens in the chapter. Back reaches the chapters and sectio
 - **Details** is a form over the metadata of RFC 0001: title, authors,
   language, series, publisher, date, annotation.
 - **Chapters** are a list in reading order: add, remove, move up and down.
+- **Landmarks** lists the book's [`notes` landmarks](0001-mbook-format.md#landmarks-1)
+  and lets the editor add, edit or remove them. Each entry points to the
+  start of a selected chapter or to a named anchor in it. Its title is
+  optional. The chapter editor is where the text of the notes is written.
 - **Pictures** shows a gallery with a preview, dimensions, size and a remove
   control for each picture. Pictures and the **Cover** accept AVIF, JPEG,
   PNG, GIF, WebP and BMP. The add dialog accepts quality and maximum output
   dimensions. It starts at quality 80 and the original dimensions.
 - **Problems** lists what `Book::check` reports, each with its chapter and
   place; choosing one opens that place. A book with problems is not saved.
-- **Save** replaces the book in the library. Use Command+S on macOS or
-  Ctrl+S on other platforms. On macOS the File menu also offers Save.
+- **Save** replaces the book in the library. For a book with automatic
+  contents, Save builds the contents from the current chapter headings.
+  Use Command+S on macOS or Ctrl+S on other platforms. On macOS the File
+  menu also offers Save.
 
 ### Settings
 
@@ -738,8 +745,8 @@ sequenceDiagram
   them **in the order they were sent**. A save therefore always includes the
   edits made before it.
 - The main thread holds an *outline*: the metadata, the paths and sizes of
-  chapters and pictures, the contents, the problems last reported. The task
-  sends a new outline after each command that changes it.
+  chapters and pictures, the landmarks, and the problems last reported.
+  The task sends a new outline after each command that changes it.
 - The Markdown text of the chapter is in the source editor of GPUI Kit.
   Source and Split use its Tree-sitter Markdown grammar.
 - Visual uses `gpui-kit-markdown-editor` with the GPUI Fast engine. Enter
@@ -767,13 +774,22 @@ sequenceDiagram
   After a save the row of `books` and the thumbnail are made again.
 - Undo inside a chapter is the editor's own. Removing a chapter or a picture
   asks first and cannot be undone.
+- Changes in Landmarks replace the landmark list through `Book::set_landmarks`.
+  The editor keeps the other landmarks and their order. If a chapter or
+  anchor no longer exists, the next check or save reports the dangling
+  landmark. The Landmarks section can retarget or remove it.
 - A chapter moves to another path by being removed and inserted at the same
   position, since `Book` has no rename; the links that broke are then among
   the problems.
-- A book that was opened keeps the contents of its file, item by item.
-  After a chapter is removed or moved, an item may lead nowhere or stand out
-  of order, and the book cannot be saved. The editor then offers to build
-  the contents from the headings again, as a new book has them.
+- A book with an empty contents list uses automatic contents when opened
+  in the editor. Save builds the list from the current chapter headings
+  and records the mode in the private metadata key
+  `x-mbook-ui-contents` with value `headings`. Reopening such a book in
+  the editor restores the mode for subsequent edits.
+- A book with entries and no automatic mode keeps the contents of its file,
+  item by item. Removing or moving a chapter can make an item lead nowhere
+  or fall out of order and block the save. The editor then offers to switch
+  to automatic contents from headings.
 - Text that `Chapter::set_text` refused stays in the editor as a draft, and
   the book is not saved while a draft exists: nothing typed is dropped.
 - A picture, or a cover, is added from a file in AVIF, JPEG, PNG, GIF, WebP
@@ -949,7 +965,7 @@ can break in its middle.
 | Library | **New book…** creates a titled book and opens its first chapter in the editor. Cover tiles show a new badge, reading percentage or completion status below the cover. The card of the book being read shows how far it was read, not the name of its chapter: the catalogue stores the path of a chapter, not its title. A change of the catalogue that failed is followed by a reload, and a reload that succeeds clears the message, so that failure may pass unseen. |
 | Import | "Add a book…" and the Open key show a picker filtered to supported book extensions. Files can also be dropped on the window. Opening a file with the application from the system, and a file named on the command line, are not handled. |
 | Reader | Single-page reading, whole-book page numbers with estimates until all chapters are measured, and auto-hiding controls with a position slider that appears on hover or while in use. Pictures scale to fit a page. Other tall blocks can be clipped through a line. |
-| Editor | Editing opens the first chapter in Visual. Visual supports tables, nested and task lists, quotes, code blocks, chapter link selection, and a picture preview. The picture gallery shows thumbnails and picture import offers encoding settings. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. |
+| Editor | Editing opens the first chapter in Visual. Visual supports tables, nested and task lists, quotes, code blocks, chapter link selection, and a picture preview. The Landmarks section adds, edits and removes `notes` landmarks. The picture gallery shows thumbnails and picture import offers encoding settings. Footnotes and reference definitions are edited in Source. Source and Split highlight Markdown syntax. The platform Save shortcut works while editing. |
 | Settings | As designed. The size of the interface is applied when the slider is released, because it moves the slider. |
 | Updates | The check and the installation are written and tested against scripted releases and signed archives made by the tests. The installer is compiled on macOS and Windows. No real release exists, so neither has met the network. |
 | Release workflow | Written; never run. The macOS and Windows x64 jobs make NASM available before building. A local `cargo bundle` on macOS produces the application with its icon. |

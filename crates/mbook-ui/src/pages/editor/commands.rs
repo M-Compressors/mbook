@@ -47,6 +47,8 @@ pub(super) enum Origin {
     Load,
     /// A field of the Details form.
     Meta(MetaField),
+    /// The list of landmarks was changed in the Landmarks section.
+    Landmarks,
     /// The text of a chapter.
     Text {
         /// The chapter.
@@ -116,6 +118,17 @@ impl EditorPage {
             }
             (Origin::Meta(field), Err(error)) => {
                 self.fail(Control::Meta(field), &error, cx);
+            }
+            (Origin::Landmarks, result) => {
+                self.session.landmarks_pending = false;
+                match result {
+                    Ok(outline) => {
+                        self.session.clear_error(&Control::Landmarks);
+                        self.take(seq, outline, window, cx);
+                        cx.notify();
+                    }
+                    Err(error) => self.fail(Control::Landmarks, &error, cx),
+                }
             }
             (Origin::Text { path, .. }, Ok(outline)) => {
                 self.session.text_accepted(&path);

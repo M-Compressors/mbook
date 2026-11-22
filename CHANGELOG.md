@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- The book editor's Landmarks section can add, edit and remove `notes`
+  landmarks with a chapter, an optional anchor and an optional title.
+
+### Fixed
+
+- Saving a book with an empty contents list builds it from chapter headings.
+  The editor remembers the automatic mode when the book is reopened.
+
 ## [v0.1.0](https://github.com/M-Compressors/mbook/releases/tag/v0.1.0) - 2026-11-22
 
 ### Changed

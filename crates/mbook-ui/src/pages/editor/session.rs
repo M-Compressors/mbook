@@ -25,6 +25,8 @@ pub(super) enum Section {
     Cover,
     /// The list of chapters and the chapter being edited.
     Chapters,
+    /// Landmarks that lead to the book's notes.
+    Landmarks,
     /// The pictures of the book.
     Pictures,
     /// What the last check or save found.
@@ -33,10 +35,11 @@ pub(super) enum Section {
 
 impl Section {
     /// Every section, in the order the list shows them.
-    pub(super) const ALL: [Self; 5] = [
+    pub(super) const ALL: [Self; 6] = [
         Self::Details,
         Self::Cover,
         Self::Chapters,
+        Self::Landmarks,
         Self::Pictures,
         Self::Problems,
     ];
@@ -47,6 +50,7 @@ impl Section {
             Self::Details => "Details",
             Self::Cover => "Cover",
             Self::Chapters => "Chapters",
+            Self::Landmarks => "Landmarks",
             Self::Pictures => "Pictures",
             Self::Problems => "Problems",
         }
@@ -58,6 +62,7 @@ impl Section {
             Self::Details => "section-details",
             Self::Cover => "section-cover",
             Self::Chapters => "section-chapters",
+            Self::Landmarks => "section-landmarks",
             Self::Pictures => "section-pictures",
             Self::Problems => "section-problems",
         }
@@ -158,6 +163,8 @@ pub(super) enum Control {
     ChapterText,
     /// Adding, moving, renaming or removing a chapter.
     Chapters,
+    /// Changing the landmarks in the Landmarks section.
+    Landmarks,
     /// Adding or removing a picture.
     Pictures,
     /// Replacing the cover.
@@ -215,6 +222,8 @@ pub(super) struct Session {
     errors: HashMap<Control, String>,
     /// Pictures that are queued or being encoded.
     pub(super) encoding: usize,
+    /// A replacement of the landmarks is waiting for its outline.
+    pub(super) landmarks_pending: bool,
     /// The request number of the outline that was taken last.
     applied: u64,
     /// The place of a problem in words, by chapter and offset.
@@ -236,6 +245,7 @@ impl Session {
             drafts: BTreeMap::new(),
             errors: HashMap::new(),
             encoding: 0,
+            landmarks_pending: false,
             applied: 0,
             places: HashMap::new(),
         }
@@ -287,6 +297,13 @@ impl Session {
             .map_or(&[], |outline| outline.chapters.as_slice())
     }
 
+    /// The landmarks in the order they are stored in the book.
+    pub(super) fn landmarks(&self) -> &[mbook::Landmark] {
+        self.outline
+            .as_ref()
+            .map_or(&[], |outline| outline.landmarks.as_slice())
+    }
+
     /// The pictures of the book.
     pub(super) fn pictures(&self) -> &[PictureOutline] {
         self.outline
@@ -319,13 +336,14 @@ impl Session {
     }
 
     /// Whether leaving would lose something: a change of the book, a text
-    /// that was typed, a text the book refused, or a picture on its way.
+    /// that was typed, a text the book refused, or an edit still in flight.
     pub(super) fn has_unsaved(&self) -> bool {
         self.outline.as_ref().is_some_and(|outline| outline.unsaved)
             || !self.edited.is_empty()
             || self.pending.is_some()
             || !self.drafts.is_empty()
             || self.encoding > 0
+            || self.landmarks_pending
     }
 
     /// The words of the header about the state of the book.

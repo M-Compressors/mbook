@@ -28,6 +28,7 @@ fn outline(paths: &[&str], unsaved: bool) -> Outline {
     Outline {
         meta: meta(),
         chapters: paths.iter().map(|path| chapter(path)).collect(),
+        landmarks: Vec::new(),
         pictures: Vec::new(),
         problems: Vec::new(),
         unsaved,
@@ -54,6 +55,14 @@ fn a_new_session_is_loading_and_has_nothing_unsaved() {
     assert_eq!(session.phase, Phase::Loading);
     assert!(!session.has_unsaved());
     assert_eq!(session.status(false), None);
+    assert_eq!(session.landmarks(), []);
+}
+
+#[test]
+fn a_notes_change_counts_as_unsaved_until_the_actor_replies() {
+    let mut session = session_with(&["chapter.md"]);
+    session.landmarks_pending = true;
+    assert!(session.has_unsaved());
 }
 
 #[test]
@@ -312,7 +321,10 @@ fn split_is_drawn_as_source_below_an_expanded_window() {
 fn every_section_has_a_name_and_an_identifier_of_its_own() {
     let labels: BTreeSet<_> = Section::ALL.iter().map(|section| section.label()).collect();
     let ids: BTreeSet<_> = Section::ALL.iter().map(|section| section.id()).collect();
-    assert_eq!((labels.len(), ids.len()), (5, 5));
+    assert_eq!(
+        (labels.len(), ids.len()),
+        (Section::ALL.len(), Section::ALL.len())
+    );
 }
 
 #[test]

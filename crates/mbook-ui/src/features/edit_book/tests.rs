@@ -267,6 +267,32 @@ fn removing_a_key_the_book_does_not_have_succeeds() -> Result {
 // Chapters
 
 #[test]
+fn a_new_chapter_is_added_to_automatic_contents_after_reopening() -> Result {
+    let folder = tempfile::tempdir()?;
+    let path = folder.path().join("book.mbook");
+    let mut book = mbook::Book::new("The Example", "en")?;
+    book.add_chapter("ch01.md", "")?;
+    book.save(&path)?;
+    run(&path, |h| async move {
+        send(&h, set_text("ch01.md", "# First\n")).await?;
+        send(&h, Command::Save).await
+    })?;
+    run(&path, |h| async move {
+        send(&h, add("ch02.md", "# Second\n")).await?;
+        send(&h, Command::Save).await
+    })?;
+
+    let reader = mbook::BookReader::open(&path)?;
+    let titles: Vec<_> = reader
+        .toc()
+        .iter()
+        .map(|entry| entry.title.as_str())
+        .collect();
+    assert_eq!(titles, ["First", "Second"]);
+    Ok(())
+}
+
+#[test]
 fn a_chapter_text_change_is_visible_in_the_outline_and_in_the_file() -> Result {
     let (_folder, path) = sample()?;
     let outline = run(&path, |h| async move {
