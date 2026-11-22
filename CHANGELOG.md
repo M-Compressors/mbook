@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [v0.1.0](https://github.com/M-Compressors/mbook/releases/tag/v0.1.0) - 2026-11-22
+
 ### Changed
 
 - Open the first chapter in Visual when editing a book, including in

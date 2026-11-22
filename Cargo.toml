@@ -48,3 +48,8 @@ print_stderr = "deny"
 # `#[allow]`.
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "debuginfo"
