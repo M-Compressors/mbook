@@ -70,11 +70,11 @@ undoc = { version = "0.28", default-features = false, features = ["docx"], optio
 # The writers share a stream of CommonMark events.
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
 pulldown-cmark-to-cmark = { version = "23", optional = true }
-html-escape = { version = "0.2", optional = true }
+html-escape = { version = "0.3", optional = true }
 xmlwriter = { version = "0.1", optional = true }
 epub-builder = { version = "0.8", default-features = false, features = ["zip-library"], optional = true }
 docx-rs = { version = "0.4.22", default-features = false, optional = true }
-krilla = { version = "0.7", optional = true }
+krilla = { version = "0.8", optional = true }
 textwrap = { version = "0.16", optional = true }
 avif-decode = { workspace = true, optional = true }
 avif-parse = { version = "2.1", optional = true }

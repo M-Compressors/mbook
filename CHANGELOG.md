@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [v0.3.0](https://github.com/M-Compressors/mbook/releases/tag/v0.3.0) - 2026-11-23
+
 - Export a saved book from the library’s book menu as EPUB, DOCX, PDF, FB2,
   CBZ, HTML, Markdown or plain text.
 - `mbook-converter` exposes `Converter::export` for an existing `Book` and
