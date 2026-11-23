@@ -239,44 +239,21 @@ fn a_failed_open_keeps_the_reason() {
 }
 
 #[test]
-fn showing_a_section_is_a_screen_of_its_own() {
+fn showing_a_section_puts_it_in_front() {
     let mut session = session_with(&["a.md"]);
     session.show_section(Section::Details);
-    assert_eq!(
-        (session.section, session.level),
-        (Section::Details, Level::Section)
-    );
+    assert_eq!(session.section, Section::Details);
 }
 
 #[test]
-fn opening_a_chapter_shows_the_chapters_and_the_chapter_screen() {
+fn opening_a_chapter_shows_the_chapters_with_that_chapter() {
     let mut session = session_with(&["a.md", "b.md"]);
     session.show_section(Section::Details);
     session.show_chapter("b.md");
     assert_eq!(
-        (session.section, session.level, session.open.as_deref()),
-        (Section::Chapters, Level::Chapter, Some("b.md"))
+        (session.section, session.open.as_deref()),
+        (Section::Chapters, Some("b.md"))
     );
-}
-
-#[test]
-fn stepping_back_goes_from_a_chapter_or_a_section_to_the_list() {
-    let mut session = session_with(&["a.md"]);
-    session.show_chapter("a.md");
-    assert!(session.step_back());
-    assert_eq!(session.level, Level::Sections);
-    assert!(!session.step_back());
-    session.show_section(Section::Pictures);
-    assert!(session.step_back());
-    assert_eq!(session.level, Level::Sections);
-}
-
-#[test]
-fn showing_the_chapters_is_the_screen_of_the_chapter() {
-    let mut session = session_with(&["a.md"]);
-    session.step_back();
-    session.show_section(Section::Chapters);
-    assert_eq!(session.level, Level::Chapter);
 }
 
 #[test]

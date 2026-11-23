@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Android 15 draws an application that targets API 35 under the system
+      bars and leaves the content view the whole screen, so gpui-mobile, which
+      measures the bars from the content view, would see none. Opting out
+      keeps the content view inside the bars; the window still covers the
+      screen, and mbook-ui pads its shell by the bars gpui-mobile measures.
+      An application that targets API 36 cannot opt out: moving to it needs
+      gpui-mobile to report the insets of the system (mbook-ui docs, "Design").
+    -->
+    <style name="MbookTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>

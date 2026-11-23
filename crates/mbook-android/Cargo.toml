@@ -1,0 +1,58 @@
+[package]
+name = "mbook-android"
+description = "The Android shell of the mbook application: the library its activity loads"
+version.workspace = true
+edition.workspace = true
+# The rust-version of mbook-ui, which this crate starts.
+rust-version = "1.100"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+# Installed as an APK from the releases of the repository
+# (`crates/mbook-android/android.sh`).
+publish = false
+
+[lib]
+name = "mbook_android"
+# The activity loads `libmbook_android.so`.
+crate-type = ["cdylib"]
+
+# Everything is for Android; on another target the library is empty.
+[target.'cfg(target_os = "android")'.dependencies]
+# Without its updater: an APK is replaced by installing a newer one.
+mbook-ui = { path = "../mbook-ui", default-features = false }
+gpui-kit = { version = "0.10", features = ["tree-sitter-markdown"] }
+# The same commit as in mbook-ui; see the comment there.
+gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/longbridge/gpui-mobile", rev = "d8945a826e4012b43a46b53d7e72b6beae24cc80", default-features = false }
+# The glue of `NativeActivity`, which calls `android_main`.
+android-activity = { version = "0.6", features = ["native-activity"] }
+# `log` records reach logcat under the tag `mbook`.
+android_logger = "0.15"
+log = "0.4"
+mimalloc3 = "0.1"
+
+# The lints of the workspace, with one difference: `unsafe_code` is denied
+# instead of forbidden, because `android-activity` finds the entry point by
+# its unmangled name, and `#[unsafe(no_mangle)]` is unsafe code. A table of
+# the workspace cannot be partly overridden, so it is repeated here; keep the
+# two in step (mbook-ui docs, "Design").
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+unreachable_pub = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"

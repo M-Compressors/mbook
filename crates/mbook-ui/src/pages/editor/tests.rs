@@ -27,7 +27,7 @@ use super::files::{NEW_CHAPTER_LABEL, RENAME_LABEL, record_save};
 use super::link_prompt::{ADDRESS_LABEL, TEXT_LABEL};
 use super::panels::OPEN_CONTENTS;
 use super::picture_prompt::DESCRIPTION_LABEL;
-use super::session::{Control, Level, Phase, Section, ViewMode};
+use super::session::{Control, Phase, Section, ViewMode};
 use super::visual_pictures::{CHOOSE_FIRST, INSERT, NO_PICTURES};
 use super::{EditorEvent, EditorPage};
 use crate::entities::catalogue::{Library, Store};
@@ -1252,15 +1252,18 @@ fn a_medium_window_offers_the_source_or_the_preview(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn a_compact_window_is_a_stack_that_starts_in_visual(cx: &mut TestAppContext) {
+fn a_compact_window_opens_the_sections_from_its_menu_button(cx: &mut TestAppContext) {
     let setup = started(cx, 390.0);
     frame(&setup, cx, |window, _| {
         assert!(window.try_find("visual-viewport").is_some());
+        assert!(window.try_find("sections").is_none());
+        let menu = window.find("open-sections");
+        assert_eq!(menu.role(), Some(Role::Button));
+        assert_eq!(menu.label(), Some("Book and chapters"));
     });
-    click(&setup, "back", cx);
+    click(&setup, "open-sections", cx);
     frame(&setup, cx, |window, _| {
         assert!(window.try_find("sections").is_some());
-        assert!(window.try_find("chapter-source").is_none());
         assert!(
             window.try_find("chapter-ch01.md").is_some(),
             "the list holds the chapters too"
@@ -1269,40 +1272,37 @@ fn a_compact_window_is_a_stack_that_starts_in_visual(cx: &mut TestAppContext) {
     click(&setup, "section-details", cx);
     frame(&setup, cx, |window, _| {
         assert_eq!(window.find("section-heading").label(), Some("Details"));
-        assert!(window.try_find("section-details").is_none());
+        assert!(window.try_find("sections").is_none(), "the sheet closed");
     });
-    click(&setup, "back", cx);
-    frame(&setup, cx, |window, _| {
-        assert!(window.try_find("sections").is_some());
-    });
-    assert!(
-        setup.events.borrow().is_empty(),
-        "back steps through the stack first"
-    );
+    assert!(setup.events.borrow().is_empty());
 }
 
 #[gpui_kit::test]
-fn a_compact_window_goes_from_the_chapters_to_a_chapter_and_back(cx: &mut TestAppContext) {
+fn a_compact_window_opens_a_chapter_from_the_sheet(cx: &mut TestAppContext) {
     let setup = started(cx, 390.0);
-    click(&setup, "back", cx);
-    frame(&setup, cx, |window, _| {
-        assert!(window.try_find("chapter-ch02.md").is_some());
-        assert!(window.try_find("add-chapter").is_some());
-    });
+    click(&setup, "open-sections", cx);
     click(&setup, "chapter-ch02.md", cx);
-    assert_eq!(state(&setup, cx, |page| page.session.level), Level::Chapter);
     frame(&setup, cx, |window, _| {
         assert!(window.try_find("visual-viewport").is_some());
-        assert!(window.try_find("chapter-text").is_none());
+        assert!(window.try_find("sections").is_none());
     });
     assert_eq!(editor_text(&setup, cx), CHAPTERS[1].1);
-    click(&setup, "back", cx);
-    assert_eq!(
-        state(&setup, cx, |page| page.session.level),
-        Level::Sections
-    );
+}
+
+#[gpui_kit::test]
+fn back_in_a_compact_window_leaves_the_editor(cx: &mut TestAppContext) {
+    let setup = started(cx, 390.0);
     click(&setup, "back", cx);
     assert_eq!(setup.events.borrow().as_slice(), [EditorEvent::Close]);
+}
+
+#[gpui_kit::test]
+fn an_expanded_window_shows_the_sections_beside_the_chapter(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("open-sections").is_none());
+        assert!(window.try_find("sections").is_some());
+    });
 }
 
 #[gpui_kit::test]

@@ -643,13 +643,7 @@ impl EditorPage {
     /// The header's Back control: a compact window steps back through its
     /// screens first.
     pub(super) fn back(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        let compact = Self::class(window, cx) == crate::shared::layout::SizeClass::Compact;
-        if compact && self.session.step_back() {
-            self.search.hide();
-            cx.notify();
-        } else {
-            self.request_leave(window, cx);
-        }
+        self.request_leave(window, cx);
     }
 
     /// Saves and then leaves.

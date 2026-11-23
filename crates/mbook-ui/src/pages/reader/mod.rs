@@ -80,6 +80,15 @@ struct Spot {
     offset: u32,
 }
 
+/// Whether scrolling a text from `previous` to `now` brings the hidden
+/// controls back: scrolling back within a chapter, as a reader looking for
+/// them does, or reaching its end, where the next chapter is a control away.
+/// Scrolling on hides nothing and shows nothing.
+fn reveals(previous: Spot, now: Spot, at_end: bool) -> bool {
+    let back = previous.chapter == now.chapter && now.offset < previous.offset;
+    back || at_end
+}
+
 /// Where a chapter is opened.
 enum Arrival {
     Offset(u32),
@@ -200,6 +209,10 @@ pub(crate) struct ReaderPage {
     handles: Handles,
     /// The title shown while the book opens; then the title of the book.
     title: SharedString,
+    /// The hitbox of the middle of the page, as it was last drawn: a tap
+    /// there that something else covers, such as a notification, is not the
+    /// reader's.
+    body_hitbox: std::rc::Rc<std::cell::RefCell<Option<gpui_kit::Hitbox>>>,
     phase: Phase,
     view: Entity<ChapterView>,
     keeper: Entity<PositionKeeper>,
@@ -268,6 +281,9 @@ impl ReaderPage {
             cx.subscribe(&view, |this, _, event, cx| match event {
                 ChapterViewEvent::Moved => this.sample(cx),
                 ChapterViewEvent::Turn(direction) => this.screen(*direction, cx),
+                ChapterViewEvent::Chapter(direction) => {
+                    this.chapter_step(*direction == Direction::Forward, cx);
+                }
             }),
         ];
         let wake_task = cx.spawn(async move |this, cx| {
@@ -283,6 +299,7 @@ impl ReaderPage {
             focus_handle: cx.focus_handle(),
             handles,
             title,
+            body_hitbox: std::rc::Rc::default(),
             phase: Phase::Opening,
             view,
             keeper: PositionKeeper::entity(key, cx),
@@ -856,15 +873,24 @@ impl ReaderPage {
             return;
         }
         let chapter = reading.chapter;
-        let (offset, at_end, number) = {
+        let (offset, at_end, number, paged) = {
             let view = self.view.read(cx);
-            (view.top_offset(cx), view.at_end(cx), view.page_number())
+            (
+                view.top_offset(cx),
+                view.at_end(cx),
+                view.page_number(),
+                view.is_paged(),
+            )
         };
         if let Some((_, count)) = number {
             self.pages.record(chapter, count);
         }
         let snapshot = Arc::clone(&reading.snapshot);
+        let previous = self.spot;
         self.spot = Spot { chapter, offset };
+        if !paged && reveals(previous, self.spot, at_end) {
+            self.touch(cx);
+        }
         let previous = Library::global(cx)
             .read(cx)
             .book(self.key)

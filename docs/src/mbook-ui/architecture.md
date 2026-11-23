@@ -8,22 +8,34 @@ or a review keeps.
 ## Crate and workspace
 
 `crates/mbook-ui` is one package with a library and a binary.
+`crates/mbook-android` is the shell of Android.
 
 | Target | Contains |
 | --- | --- |
-| Library `mbook_ui` | Every model and view, and `run(Application, Roots)`. It names no platform. |
-| Binary | The allocator, the platform of the desktop, the directories from `dirs`, a call to `run`. |
+| Library `mbook_ui` | Every model and view, and `run(Application, Roots)`. It names no platform, except where Android has no counterpart of a desktop crate: the file picker and the insets of the window. |
+| Binary `mbook` | The allocator, the platform of the desktop, the directories from `dirs`, a call to `run`. Empty when built for Android. |
+| Library `mbook_android`, a `cdylib` | The allocator, `android_main`, the platform of gpui-mobile, the roots from the files of the application, a call to `run` ([Android](android.md#the-shell)). Empty on every other target. |
 
-- The binary must stay a shell: it sets the global allocator, builds the
-  `Application`, and passes it on. A mobile shell is a second small crate
-  that supplies its own platform to the same `run`.
-- `gpui-kit` is used with the feature `gpui-fast`; application code imports
-  `gpui_kit::*` only and never names `gpui` or `gpui-fast`.
-- The allocator is set in the binary, not in the library, so that tests and
+- A shell must stay a shell: it sets the global allocator, builds the
+  `Application` and the roots, and passes them on.
+- The engine is chosen per target in the manifest. On the desktop
+  `gpui-kit` and `gpui-kit-markdown-editor` are used with the feature
+  `gpui-fast`; on Android without it, on gpui-pre, which is the engine
+  gpui-mobile implements its platform for. Cargo leaves the features of a
+  target table out of a build for another target, so one build never holds
+  both engines. Application code imports `gpui_kit::*` only and never names
+  `gpui`, `gpui-fast` or `gpui-pre`.
+- Code for one platform is chosen by `cfg(target_os = "android")`. It is kept
+  to the file picker, the insets, the export that ends in the share sheet,
+  and the bar of a page; the desktop counterpart is the code without the
+  attribute.
+- The allocator is set in the shells, not in the library, so that tests and
   other shells choose their own.
-- The package sets its own `rust-version`, 1.100, and is not published to
-  crates.io. `mbook` and `mbook-converter` keep the 1.89 of the workspace.
-- The lints of the workspace apply unchanged.
+- Both packages set their own `rust-version`, 1.100, and are not published
+  to crates.io. `mbook` and `mbook-converter` keep the 1.89 of the workspace.
+- The lints of the workspace apply unchanged to `mbook-ui`. `mbook-android`
+  repeats them with `unsafe_code` denied instead of forbidden, for the
+  unmangled name of `android_main`, which has the one `#[expect]`.
 
 The modules follow the layers of Feature-Sliced Design. A layer uses only
 the layers below it.
@@ -100,6 +112,8 @@ dirs::cache_dir()/mbook/           may be deleted at any time
   root.
 - When `dirs` knows no directory for the platform, the shell supplies the
   roots itself. Tests pass temporary directories.
+- On Android the roots are `mbook/` and `cache/` in the private folder of
+  the files of the application ([Android](android.md#where-it-differs-from-the-desktop)).
 
 ## The catalogue
 
@@ -190,6 +204,11 @@ format to a temporary file in the destination directory. The finished file
 is published only if the destination name is available. The application
 announces success or failure in the window.
 
+Android has no save dialog that returns a path. There the format is written
+under the same name into a folder of its own, `<cache>/share/export-*/`, and
+the file goes to the share sheet as **Share** sends a book; saving to a
+folder is one of its targets. A failure is announced; a shown sheet is not.
+
 ## Share
 
 The library book menu offers **Share**. The library file,
@@ -212,13 +231,42 @@ sheet is shown:
 - on Windows the `DataTransferManager` of the foreground window, with the
   file as a storage item;
 - on Linux `robius-share` hands the file to the desktop portal or to
-  `xdg-open`; there is no Linux build of the application yet.
+  `xdg-open`; there is no Linux build of the application yet;
+- on Android an `ACTION_SEND` chooser, which `robius-share` does not take
+  part in. A file of the application cannot be read by another app, so the
+  interface asks `MbookActivity` through JNI to share it: the activity lends
+  it through `MbookFiles`, a read-only content provider of its own that
+  serves only `<cache>/share`, and starts the chooser on its own thread.
+  The call returns at once ([Android](android.md#where-it-differs-from-the-desktop)).
 
 The application learns nothing of what the reader chooses in the sheet. A
 copy that cannot be made, or a sheet that cannot be shown, is announced in
 the window with its cause; a shown sheet is not announced. The file is shared as it is in the library,
 not converted: a reader needs an mbook reader to open it, and
 **Export** gives the other formats.
+
+## Opening files from the system
+
+The application registers itself for the book formats, so that a file
+manager offers it for a book and a double click or **Open with** starts it
+with the file. The formats are those of `BOOK_FILE_EXTENSIONS`, the list
+the picker filters by.
+
+| System | Where the formats are declared | How a file arrives |
+| --- | --- | --- |
+| macOS | The `Info.plist` of the bundle: `assets/macos/document-types.plist`, which cargo-bundle adds (`osx_info_plist_exts`). It exports the type `io.github.m-compressors.mbook.book` for `.mbook`, which the application owns, and makes it an alternative viewer of the other extensions. | `application:openURLs:`, which GPUI hands to `on_open_urls` as `file:` URLs, also when the file starts the application. |
+| Windows | The registry of the current user, written by the application at each start on the background executor, since the installer registers nothing: the program identifier `mbook.Book` with the command `"mbook.exe" "%1"`, `.mbook` owned by it, and `mbook.Book` under `OpenWithProgids` of every other extension, which adds the application to **Open with** and leaves the default program as the user chose it. | The command line of a new process. |
+| Android | The manifest: `VIEW` intents of `content:` and `file:` URIs, and `SEND` and `SEND_MULTIPLE`, for the MIME types of the formats and `application/octet-stream`, the type an mbook file comes with. | `MbookActivity` copies the document into `<cache>/opened/<n>/<name>` on a thread of its own; the interface takes the paths once a second ([Android](android.md#opening-a-document-from-another-app)). |
+| Linux | Nothing: there is no Linux build. | The command line. |
+
+- `run` takes the files of the command line, and registers for the URLs of
+  the platform. A `file:` URL is decoded to its path; a URL of another
+  scheme, or a file of another host, is left out.
+- The files wait in a global until the library is open, and are then added
+  as dropped files are: one file opens its book once it is in the library,
+  and a book whose `id` is already there is opened instead of added again.
+- A second start on Windows opens a second window: nothing passes the file
+  to the running application.
 
 ## Reading
 
@@ -540,7 +588,11 @@ sequenceDiagram
 - What a pointer reveals by hovering must also be reachable without
   one: by a tap, a long press or a visible control.
 - On a touch device every control is at least 44 px in both directions.
-- Views keep clear of the safe-area insets the window reports.
+- Views keep clear of the safe-area insets of the window, which they get
+  from `shared::safe_area::insets`: the larger of what GPUI reports and, on
+  Android, what gpui-mobile measures, since it does not report them to GPUI
+  yet. The bar of a page and the bottom bars draw their background under
+  the system bars and keep their content clear of them.
 
 | Element | Compact | Medium | Expanded |
 | --- | --- | --- | --- |
@@ -548,7 +600,7 @@ sequenceDiagram
 | Columns of the shelf | As many covers of 104 px as fit | Covers of 132 px | Covers of 132 px |
 | Contents of a book | A sheet | A sheet | A popover |
 | Text column | Available width less 20 px per side, or 16 px at widths up to 340 px | Default 60 zero-glyph advances with at least 32 px per side | Default 60 zero-glyph advances with at least 32 px per side |
-| Editor | A stack; the list of sections and chapters, then Visual, Source or Preview | Visual, Source or Preview; the list slides over | The list beside Visual, Source, Split or Preview |
+| Editor | Visual, Source or Preview; the list slides over from a menu button in the header | Visual, Source or Preview; the list slides over | The list beside Visual, Source, Split or Preview |
 | Menu of a book | A long press | A long press, or `…` | A right click, or `…` |
 
 ## Updates

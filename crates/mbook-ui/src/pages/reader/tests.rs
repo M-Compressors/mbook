@@ -639,6 +639,90 @@ impl UpdateInWindow for Entity<ReaderPage> {
     }
 }
 
+/// Hides the controls of the reader by leaving them alone.
+fn hide_the_controls(started: &Started, cx: &mut TestAppContext) {
+    rest_the_pointer(started, cx);
+    cx.executor().advance_clock(HIDE_AFTER * 2);
+    settle(started, cx);
+}
+
+/// The bottom of the element `id` and the height of the window.
+fn bottom_of(started: &Started, id: &str, cx: &mut TestAppContext) -> (f32, f32) {
+    let id = id.to_owned();
+    testing::frame(cx, started.window, move |window, _| {
+        let bounds = window.find(id).bounds();
+        (
+            bounds.bottom().as_f32(),
+            window.viewport_size().height.as_f32(),
+        )
+    })
+}
+
+#[gpui_kit::test]
+fn the_footer_of_a_scrolling_text_stays_when_the_header_hides(cx: &mut TestAppContext) {
+    let started = start_with_mode(cx, 390.0, &two_chapters(), None, false).unwrap();
+    settle(&started, cx);
+
+    hide_the_controls(&started, cx);
+
+    assert!(!has(&started, "back", cx), "the header hides");
+    assert!(has(&started, "reader-footer-strip", cx));
+    assert!(has(&started, "next-page", cx));
+    let (text, window) = bottom_of(&started, "chapter-text", cx);
+    assert!((text - window).abs() < 0.5, "{text} of {window}");
+}
+
+#[gpui_kit::test]
+fn the_footer_of_a_scrolling_text_lies_over_the_text(cx: &mut TestAppContext) {
+    let started = start_with_mode(cx, 390.0, &two_chapters(), None, false).unwrap();
+    settle(&started, cx);
+
+    let (text, window) = bottom_of(&started, "chapter-text", cx);
+    let (footer, _) = bottom_of(&started, "reader-footer-strip", cx);
+
+    assert!((text - window).abs() < 0.5, "{text} of {window}");
+    assert!((footer - window).abs() < 0.5, "{footer} of {window}");
+}
+
+#[gpui_kit::test]
+fn a_paged_text_keeps_the_room_of_its_footer_while_the_controls_are_hidden(
+    cx: &mut TestAppContext,
+) {
+    let started = start(cx, 390.0).unwrap();
+    settle(&started, cx);
+
+    hide_the_controls(&started, cx);
+
+    assert!(has(&started, "reader-footer-strip", cx));
+    let (text, window) = bottom_of(&started, "chapter-text", cx);
+    assert!(text < window - 40.0, "{text} of {window}");
+}
+
+#[gpui_kit::test]
+fn a_sideways_swipe_over_a_scrolling_text_opens_the_next_and_the_previous_chapter(
+    cx: &mut TestAppContext,
+) {
+    let started = start_with_mode(cx, 390.0, &two_chapters(), None, false).unwrap();
+    settle(&started, cx);
+    let swipe = |x: f32, cx: &mut TestAppContext| {
+        cx.update_window(started.window, |_, window, cx| {
+            window.scroll(
+                "chapter-text",
+                gpui_kit::ScrollDelta::Pixels(gpui_kit::point(gpui_kit::px(x), gpui_kit::px(0.0))),
+                cx,
+            );
+        })
+        .unwrap();
+        settle(&started, cx);
+    };
+
+    swipe(-120.0, cx);
+    assert_eq!(chapter_of(&started, cx), 1);
+    cx.executor().advance_clock(Duration::from_secs(1));
+    swipe(120.0, cx);
+    assert_eq!(chapter_of(&started, cx), 0);
+}
+
 #[gpui_kit::test]
 fn a_tap_on_the_edges_moves_a_screen_and_a_tap_in_the_middle_shows_the_controls(
     cx: &mut TestAppContext,
@@ -661,6 +745,84 @@ fn a_tap_on_the_edges_moves_a_screen_and_a_tap_in_the_middle_shows_the_controls(
     assert!(!has(&started, "back", cx));
     tap(&started, 195.0, cx);
     assert!(has(&started, "back", cx));
+}
+
+#[test]
+fn scrolling_back_or_reaching_the_end_brings_the_controls_back() {
+    let at = |chapter, offset| super::Spot { chapter, offset };
+    assert!(super::reveals(at(0, 900), at(0, 400), false), "back");
+    assert!(super::reveals(at(0, 400), at(0, 900), true), "the end");
+    assert!(!super::reveals(at(0, 400), at(0, 900), false), "on");
+    assert!(!super::reveals(at(0, 400), at(0, 400), false), "still");
+    assert!(
+        !super::reveals(at(1, 900), at(0, 100), false),
+        "another chapter is not scrolling back"
+    );
+}
+
+#[gpui_kit::test]
+fn scrolling_a_text_back_shows_the_hidden_controls(cx: &mut TestAppContext) {
+    let started = start_with_mode(cx, 390.0, &two_chapters(), None, false).unwrap();
+    settle(&started, cx);
+    started
+        .page
+        .update(cx, |page, cx| page.load_chapter(1, Arrival::Start, cx));
+    settle(&started, cx);
+    let down = |y: f32, cx: &mut TestAppContext| {
+        cx.update_window(started.window, |_, window, cx| {
+            window.scroll(
+                "chapter-text",
+                gpui_kit::ScrollDelta::Pixels(gpui_kit::point(gpui_kit::px(0.0), gpui_kit::px(y))),
+                cx,
+            );
+        })
+        .unwrap();
+        settle(&started, cx);
+    };
+    down(-400.0, cx);
+    assert!(top(&started, cx) > 0);
+    hide_the_controls(&started, cx);
+    assert!(!has(&started, "back", cx));
+
+    down(200.0, cx);
+
+    assert!(has(&started, "back", cx));
+}
+
+#[gpui_kit::test]
+fn a_tap_on_a_notification_over_the_text_does_not_turn_the_page(cx: &mut TestAppContext) {
+    let started = start(cx, 390.0).unwrap();
+    settle(&started, cx);
+    started
+        .page
+        .update(cx, |page, cx| page.load_chapter(1, Arrival::Start, cx));
+    settle(&started, cx);
+    cx.update_window(started.window, |_, window, cx| {
+        crate::shared::ui::announce("Added Dune", window, cx);
+    })
+    .unwrap();
+    settle(&started, cx);
+    let notice = testing::frame(cx, started.window, |window, _| {
+        window.find("notification").bounds()
+    });
+    let at = top(&started, cx);
+
+    // The right end of the notification lies in the zone that turns forward.
+    let x = notice.right().as_f32() - 8.0;
+    let y = notice.center().y.as_f32();
+    started
+        .page
+        .update_in_window(cx, started.window, move |page, window, cx| {
+            let event = ClickEvent::Touch(TouchClickEvent {
+                position: gpui_kit::point(gpui_kit::px(x), gpui_kit::px(y)),
+                tap_count: 1,
+                long_press: false,
+            });
+            page.on_tap(&event, window, cx);
+        });
+    settle(&started, cx);
+
+    assert_eq!(top(&started, cx), at);
 }
 
 #[gpui_kit::test]

@@ -5,6 +5,7 @@ use gpui_kit::component::Icon;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{App, Context, WeakEntity, Window};
 use mbook_converter::Format;
 
@@ -19,6 +20,9 @@ pub(super) const OPEN: &str = "Open";
 pub(super) const EDIT: &str = "Edit";
 /// Show the file of the book in the file manager of the platform.
 pub(super) const SHOW_FILE: &str = "Show the file";
+/// Whether the platform has a file manager that can show a book of the
+/// library.
+const SHOWS_FILES: bool = !cfg!(target_os = "android");
 /// Save a copy in another format.
 pub(super) const EXPORT: &str = "Export";
 /// Send the file of the book through the share sheet of the platform.
@@ -61,14 +65,18 @@ pub(super) fn book_menu(
             .icon(IconName::Pencil)
             .on_click(emit(LibraryEvent::Edit(key))),
     )
-    .item(
-        PopupMenuItem::new(SHOW_FILE)
-            .icon(IconName::FolderOpen)
-            .on_click(move |_, _, cx| {
-                let path = Store::global(cx).roots.book(key);
-                cx.reveal_path(&path);
-            }),
-    )
+    // The library of Android is in the private storage of the application,
+    // which no file manager shows; its file leaves through Share and Export.
+    .when(SHOWS_FILES, |menu| {
+        menu.item(
+            PopupMenuItem::new(SHOW_FILE)
+                .icon(IconName::FolderOpen)
+                .on_click(move |_, _, cx| {
+                    let path = Store::global(cx).roots.book(key);
+                    cx.reveal_path(&path);
+                }),
+        )
+    })
     .submenu_with_icon(
         Some(Icon::new(IconName::Download)),
         EXPORT,
@@ -79,7 +87,10 @@ pub(super) fn book_menu(
                 let title = export_title.clone();
                 menu.item(PopupMenuItem::new(export::label(format)).on_click(
                     move |_, window, cx| {
+                        #[cfg(not(target_os = "android"))]
                         export::choose(key, &title, format, window, cx, export::pick);
+                        #[cfg(target_os = "android")]
+                        export::share(key, &title, format, window, cx);
                     },
                 ))
             })

@@ -9,9 +9,8 @@ use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation as _;
 
 use super::EditorPage;
-use super::session::{Level, Section, ViewMode};
+use super::session::{Section, ViewMode};
 use crate::features::search_text::{self, Cursor, RenderedMatch};
-use crate::shared::layout::SizeClass;
 use crate::shared::ui::search_bar::TYPING_PAUSE;
 
 enum Draft {
@@ -35,11 +34,7 @@ pub(super) struct ChapterMatch {
 
 impl EditorPage {
     pub(super) fn show_search(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
-        if self.session.section != Section::Chapters
-            || self.loaded.is_none()
-            || (Self::class(window, cx) == SizeClass::Compact
-                && self.session.level == Level::Sections)
-        {
+        if self.session.section != Section::Chapters || self.loaded.is_none() {
             cx.propagate();
             return;
         }

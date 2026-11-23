@@ -870,3 +870,38 @@ fn the_window_of_the_application_opens_and_starts_the_library(cx: &mut TestAppCo
     assert!(shell.read_with(cx, |shell, _| shell.root().is_some()));
     assert_eq!(cx.update(|cx| cx.windows().len()), 1);
 }
+
+// Opening files from the system
+
+fn received(root: &Entity<Root>, cx: &TestAppContext) -> Vec<std::path::PathBuf> {
+    root.read_with(cx, |root, cx| {
+        root.library_page()
+            .map_or_else(Vec::new, |page| page.read(cx).received().to_vec())
+    })
+}
+
+#[gpui_kit::test]
+fn a_file_handed_over_before_the_library_opens_is_added_once_it_is_open(cx: &mut TestAppContext) {
+    let file = std::path::PathBuf::from("/books/Dune.epub");
+    cx.update(|cx| super::opened::Opened::push(vec![file.clone()], cx));
+
+    let started = start(cx, 1200.0, &["Dune"]);
+    let root = finish(&started, cx);
+
+    assert_eq!(received(&root, cx), [file]);
+    let left = cx.update(super::opened::Opened::take);
+    assert_eq!(left, Vec::<std::path::PathBuf>::new());
+}
+
+#[gpui_kit::test]
+fn a_file_handed_over_while_the_library_is_open_is_added(cx: &mut TestAppContext) {
+    let started = start(cx, 1200.0, &["Dune"]);
+    let root = finish(&started, cx);
+    assert_eq!(received(&root, cx), Vec::<std::path::PathBuf>::new());
+
+    let file = std::path::PathBuf::from("/books/Solaris.fb2");
+    cx.update(|cx| super::opened::Opened::push(vec![file.clone()], cx));
+    cx.run_until_parked();
+
+    assert_eq!(received(&root, cx), [file]);
+}

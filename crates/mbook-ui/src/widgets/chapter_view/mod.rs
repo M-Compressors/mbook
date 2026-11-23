@@ -86,7 +86,7 @@ use crate::entities::catalogue::{ReadingFlow, Settings};
 use crate::entities::figure::{FigureSources, Figures, Palette};
 use crate::entities::picture::Bitmap;
 use crate::features::appearance::Appearance;
-use crate::shared::ui::page_colors;
+use crate::shared::ui::{Side, Sideways, page_colors};
 
 pub(crate) use enlarge::{EnlargeHandler, Enlarged};
 pub(crate) use layout::picture_size;
@@ -146,6 +146,9 @@ pub(crate) enum ChapterViewEvent {
     /// with a click beside the text. The owner turns it, since past the last
     /// page it is the owner who knows what follows.
     Turn(Direction),
+    /// The reader swiped sideways over a scrolling text, for the next or the
+    /// previous chapter.
+    Chapter(Direction),
 }
 
 /// The turn of a page that is being drawn.
@@ -242,6 +245,8 @@ pub(crate) struct ChapterView {
     search: Option<Range<usize>>,
     applied_search: Option<Hsla>,
     observed_scroll: Rc<Cell<Option<ListOffset>>>,
+    /// A sideways swipe over the scrolling text, between its events.
+    sideways: Sideways,
     blocks_task: Option<Task<()>>,
     alt_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
@@ -361,6 +366,7 @@ impl ChapterView {
             search: None,
             applied_search: None,
             observed_scroll: Rc::default(),
+            sideways: Sideways::default(),
             blocks_task: None,
             alt_task: None,
             _subscriptions: subscriptions,
@@ -1076,6 +1082,51 @@ impl ChapterView {
         }
     }
 
+    /// A finger or a trackpad moved over the scrolling text. The text
+    /// scrolls as it always does; a swipe sideways also asks for another
+    /// chapter.
+    fn on_sideways(&mut self, event: &ScrollEvent, cx: &mut Context<'_, Self>) {
+        let ScrollDelta::Pixels(pixels) = event.delta else {
+            return;
+        };
+        let begins = event.touch_phase == TouchPhase::Started;
+        let now = cx.background_executor().now();
+        let swiped = self
+            .sideways
+            .feed(pixels.x.as_f32(), pixels.y.as_f32(), begins, now);
+        if let Some(side) = swiped {
+            // Swiped to the left, the text goes on, as a page of a book does.
+            let direction = match side {
+                Side::Left => Direction::Forward,
+                Side::Right => Direction::Back,
+            };
+            cx.emit(ChapterViewEvent::Chapter(direction));
+        }
+    }
+
+    /// Watches the wheel over a scrolling text for a sideways swipe, without
+    /// taking the event from the list, which scrolls with it. Its hitbox
+    /// blocks nothing; a swipe over something drawn over the text, such as a
+    /// notification, misses it and is not counted.
+    fn sideways_catcher(cx: &mut Context<'_, Self>) -> AnyElement {
+        let view = cx.entity().downgrade();
+        canvas(
+            |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+            move |_, hitbox, window, _| {
+                window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Capture
+                        && hitbox.is_hovered_at(event.position, window)
+                    {
+                        view.update(cx, |view, cx| view.on_sideways(event, cx)).ok();
+                    }
+                });
+            },
+        )
+        .absolute()
+        .inset_0()
+        .into_any_element()
+    }
+
     /// The source of one image of the text.
     fn image_source(
         &self,
@@ -1177,7 +1228,7 @@ pub(crate) fn reading_column(
     let zero = system
         .advance(system.resolve_font(&font), px(settings.text_size), '0')
         .map_or(settings.text_size * 0.54, |advance| advance.width.as_f32());
-    let insets = window.insets().effective();
+    let insets = crate::shared::safe_area::insets(window);
     let viewport = (window.viewport_size().width - insets.left - insets.right).as_f32();
     layout::column_width(viewport, zero, settings.reading.column, class)
 }
@@ -1307,7 +1358,8 @@ impl Render for ChapterView {
                 .relative()
                 .justify_center()
                 .child(div().h_full().w(px(column)).child(view))
-                .child(self.watch_scroll(cx));
+                .child(self.watch_scroll(cx))
+                .child(Self::sideways_catcher(cx));
         }
         let hints = (viewport - column) / 2.0 >= MARGIN_HINT;
         article

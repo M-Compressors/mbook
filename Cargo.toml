@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/mbook", "crates/mbook-converter", "crates/mbook-ui"]
+members = ["crates/mbook", "crates/mbook-converter", "crates/mbook-ui", "crates/mbook-android"]
 
 [workspace.package]
 version = "0.3.2"

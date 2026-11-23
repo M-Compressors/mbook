@@ -6,19 +6,20 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{ActiveTheme as _, Icon, Sizable as _, v_flex};
 use gpui_kit::{
-    AnyElement, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render,
+    AnyElement, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Pixels, Render,
     Styled as _, Subscription, Task, Window,
 };
 use std::error::Error as _;
 
-use super::open::{OpenError, Opened, open_catalogue};
+use super::open::{OpenError, Opened as OpenedCatalogue, open_catalogue};
+use super::opened::Opened;
 use super::root::Root;
 use crate::entities::catalogue::{Library, Store};
 use crate::features::appearance::Appearance;
 #[cfg(feature = "self-update")]
 use crate::features::auto_update::UpdateBanner;
 use crate::shared::roots::Roots;
-use crate::shared::ui::{announce, empty_state, status_line};
+use crate::shared::ui::{announce, empty_state, fit_notifications, status_line};
 
 /// What the user is told once when the index of the library could not be read
 /// and was made again from the books.
@@ -51,6 +52,8 @@ pub(crate) struct Shell {
     /// The opening in flight, held so that dropping the shell cancels it.
     opening: Option<Task<()>>,
     subscriptions: Vec<Subscription>,
+    /// The width and top margin this window last gave the notifications.
+    notifications: Option<(Pixels, Pixels)>,
 }
 
 impl Shell {
@@ -61,6 +64,7 @@ impl Shell {
             state: State::Opening,
             models: None,
             opening: None,
+            notifications: None,
             subscriptions: vec![
                 cx.observe_window_appearance(window, |_, window, cx| {
                     if let Some(appearance) = Appearance::try_global(cx) {
@@ -68,6 +72,10 @@ impl Shell {
                             appearance.set_system(window.appearance(), cx);
                         });
                     }
+                }),
+                // Files handed over while the window is open.
+                cx.observe_global_in::<Opened>(window, |this, window, cx| {
+                    this.hand_over(window, cx);
                 }),
                 cx.observe_window_bounds(window, |_, window, cx| {
                     if let Some(appearance) = Appearance::try_global(cx) {
@@ -114,13 +122,13 @@ impl Shell {
 
     fn opened(
         &mut self,
-        opened: Result<Opened, OpenError>,
+        opened: Result<OpenedCatalogue, OpenError>,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
         match opened {
             Err(error) => self.state = State::Failed(error),
-            Ok(Opened { catalogue, damaged }) => {
+            Ok(OpenedCatalogue { catalogue, damaged }) => {
                 if damaged {
                     announce(DAMAGED_NOTICE, window, cx);
                 }
@@ -174,7 +182,20 @@ impl Shell {
         }
         let root = cx.new(|cx| Root::new(window, cx));
         self.state = State::Ready(root);
+        self.hand_over(window, cx);
         cx.notify();
+    }
+
+    /// Gives the files handed over by the system to the library, once it is
+    /// open; until then they wait.
+    fn hand_over(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let State::Ready(root) = &self.state else {
+            return;
+        };
+        let files = Opened::take(cx);
+        if !files.is_empty() {
+            root.update(cx, |root, cx| root.import(files, window, cx));
+        }
     }
 
     fn loading(cx: &Context<'_, Self>) -> AnyElement {
@@ -232,6 +253,7 @@ impl Render for Shell {
         if let Some(appearance) = Appearance::try_global(cx) {
             appearance.read(cx).sync_window(window);
         }
+        fit_notifications(window, &mut self.notifications, cx);
         match &self.state {
             State::Opening => Self::loading(cx),
             State::Failed(error) => Self::failed_view(error, cx),

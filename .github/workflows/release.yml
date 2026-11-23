@@ -20,6 +20,16 @@ name: Release
 #   BINARY_SIGN_PASSWORD   the password of that file
 #   ZIPSIGN_KEY            the private key of zipsign, in Base64; its public
 #                          half is crates/mbook-ui/assets/update.pub
+#   ANDROID_KEYSTORE       the PKCS #12 keystore that signs the APK, in
+#                          Base64, holding one key under the alias `mbook`
+#   ANDROID_KEYSTORE_PASSWORD
+#                          the password of the keystore and of its key
+#
+# Every APK of the application must be signed with the same key, or Android
+# refuses it as an update. The keystore is made once:
+#
+#   keytool -genkeypair -keystore android.p12 -storetype PKCS12 -alias mbook \
+#     -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=mbook"
 on: workflow_dispatch
 
 permissions:
@@ -325,6 +335,52 @@ jobs:
           zipsign sign tar "$archive" "$RUNNER_TEMP/update.key"
           rm -f "$RUNNER_TEMP/update.key"
           zipsign verify tar "$archive" crates/mbook-ui/assets/update.pub
+          ls -l dist
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/* --clobber
+
+  android:
+    name: android-arm64
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # This job holds the signing secrets, so it runs no action of a third
+      # party and restores no cache. The runner image has rustup, the Android
+      # SDK and NDK, and a JDK, which is all `android.sh` needs.
+      - name: Install the Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustup target add aarch64-linux-android
+
+      # An APK has no updater of its own: Android installs a newer one over it
+      # when both are signed with the same key.
+      - name: Build and sign the APK
+        # `bash` rather than the default shell: it sets pipefail, so a failed
+        # build is not hidden by `tail`.
+        shell: bash
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          MBOOK_APK_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE" ] || [ -z "$MBOOK_APK_KEYSTORE_PASSWORD" ]; then
+            echo "::error::The secrets ANDROID_KEYSTORE and ANDROID_KEYSTORE_PASSWORD are needed"
+            exit 1
+          fi
+          export MBOOK_APK_KEYSTORE="$RUNNER_TEMP/android.p12"
+          trap 'rm -f "$MBOOK_APK_KEYSTORE"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE" | tr -d '[:space:]' | base64 --decode > "$MBOOK_APK_KEYSTORE"
+          apk="$(crates/mbook-android/android.sh apk --release | tail -n 1)"
+          mkdir dist
+          # Named like the other files of the release.
+          mv "$apk" "dist/$APP_NAME-$TAG-android-arm64.apk"
           ls -l dist
 
       - name: Upload to the release

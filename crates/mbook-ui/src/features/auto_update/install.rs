@@ -33,6 +33,13 @@ const DOWNLOAD_TIME: Duration = Duration::from_mins(15);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Installed {
     /// The files are replaced: start again (macOS).
+    #[cfg_attr(
+        not(any(target_os = "macos", test, feature = "visual")),
+        expect(
+            dead_code,
+            reason = "only macOS replaces the files of the running application"
+        )
+    )]
     Restart,
     /// The installer of the system was started and brings the new version
     /// up: just leave (Windows).

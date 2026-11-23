@@ -3,8 +3,8 @@
 | | |
 | --- | --- |
 | **Package** | `mbook-ui`, the application called mbook; not published to crates.io |
-| **Installers** | [GitHub Releases](https://github.com/M-Compressors/mbook/releases): macOS on arm64 and x86-64, Windows on x86-64 |
-| **Source** | [`crates/mbook-ui`](https://github.com/M-Compressors/mbook/tree/main/crates/mbook-ui) |
+| **Installers** | [GitHub Releases](https://github.com/M-Compressors/mbook/releases): macOS on arm64 and x86-64, Windows on x86-64, Android on arm64 |
+| **Source** | [`crates/mbook-ui`](https://github.com/M-Compressors/mbook/tree/main/crates/mbook-ui); the Android shell in [`crates/mbook-android`](https://github.com/M-Compressors/mbook/tree/main/crates/mbook-android) |
 | **Builds on** | [`mbook`](../mbook/index.md); [`mbook-converter`](../mbook-converter/index.md) |
 | **Minimum Rust** | 1.100 |
 | **Status** | A first version; see [Status and verification](status.md) |
@@ -25,9 +25,11 @@ converted first. Everything that
 reads a file, decodes, parses, converts or encodes runs on the background
 executor of GPUI; the main thread only draws and reacts.
 
-The interface is built with GPUI Kit on the GPUI Fast engine. Window
-width selects the compact, medium or expanded layout. The application
-currently has desktop shells.
+The interface is built with GPUI Kit: on the GPUI Fast engine on the
+desktop, and on gpui-pre with the platform of gpui-mobile on Android. Window
+width selects the compact, medium or expanded layout. The application has
+shells for the desktop and for Android ([Android](android.md)); there is no
+iOS shell.
 
 A first version exists. [What is implemented](status.md#what-is-implemented) says
 what it does, where it differs from these pages, and what has not been
@@ -44,6 +46,7 @@ The AVIF decoder needs NASM at build time on x86 and x86-64.
 | [Using the application](guide.md) | What do the library, the reader, the editor and the settings do? |
 | [Architecture](architecture.md) | Where does each piece of work run, what is stored where, and how do import, reading, editing and updates work? |
 | [Appearance and accessibility](appearance.md) | Which colours, type and motion does the interface use, and what does it promise to assistive technology? |
+| [Android](android.md) | How is the APK built and released, and where does the Android application differ from the desktop? |
 | [Status and verification](status.md) | What exists today, where does it fall short, and how was it checked? |
 | [Design](design.md) | Which decisions are confirmed, which crates are used, what does the design cost, and why does it look this way? |
 
@@ -98,5 +101,5 @@ that depends on them.
 - **Annotations**: highlights, notes and bookmarks.
 - **A streaming editor.** [`mbook`](../mbook/index.md#non-goals) has none;
   a book is edited as a whole `Book`.
-- **Mobile shells.** The design keeps them possible; the first version ships
-  for desktop.
+- **An iOS shell.** The design keeps it possible; the application ships for
+  the desktop and for Android.

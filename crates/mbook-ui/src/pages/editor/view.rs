@@ -1,5 +1,6 @@
 //! The page: its header, and its layout for each size class.
 
+use gpui_kit::assets::IconName;
 use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Placement, WindowExt as _, h_flex, v_flex,
@@ -13,13 +14,13 @@ use gpui_kit::{
 use super::EditorPage;
 use super::keys::{LeaveEditor, LeaveEditorBackward, PAGE_CONTEXT};
 use super::sections::control;
-use super::session::{Level, Phase, Section};
+use super::session::{Phase, Section};
 use crate::entities::catalogue::Library;
 use crate::features::appearance::Appearance;
 use crate::features::update_banner;
 use crate::shared::actions::{Find, GoBack, Save};
 use crate::shared::layout::SizeClass;
-use crate::shared::ui::{back_button, empty_state, page_header, status_line};
+use crate::shared::ui::{back_button, empty_state, icon_button, page_header, status_line};
 
 /// The width of the sidebar of an expanded window.
 const SIDEBAR_WIDTH: f32 = 260.0;
@@ -182,18 +183,11 @@ impl EditorPage {
                     .child(div().flex_1().min_h_0().child(content))
                     .into_any_element()
             }
+            // The list of sections and chapters opens from the menu button
+            // of the header.
             SizeClass::Compact => {
-                if self.session.level == Level::Sections {
-                    div()
-                        .id("sections-screen")
-                        .size_full()
-                        .overflow_y_scroll()
-                        .child(self.render_sections(cx))
-                        .into_any_element()
-                } else {
-                    let content = self.render_section(class, window, cx);
-                    div().size_full().child(content).into_any_element()
-                }
+                let content = self.render_section(class, window, cx);
+                div().size_full().child(content).into_any_element()
             }
         }
     }
@@ -205,9 +199,23 @@ impl Render for EditorPage {
         let title = self.header_title(cx);
         let ready = self.session.phase == Phase::Ready;
         let status = self.session.status(self.saving.active());
-        let mut header = page_header(title).leading(
-            back_button("back").on_click(cx.listener(|this, _, window, cx| this.back(window, cx))),
-        );
+        let back =
+            back_button("back").on_click(cx.listener(|this, _, window, cx| this.back(window, cx)));
+        let leading = if class == SizeClass::Compact && ready {
+            // A phone has no room for the row of a medium window: the list of
+            // sections and chapters is behind the menu button beside back.
+            h_flex()
+                .gap_1()
+                .child(back)
+                .child(
+                    icon_button("open-sections", IconName::Menu, "Book and chapters")
+                        .on_click(cx.listener(|_, _, window, cx| Self::open_sections(window, cx))),
+                )
+                .into_any_element()
+        } else {
+            back.into_any_element()
+        };
+        let mut header = page_header(title).leading(leading);
         if let Some(status) = status {
             header = header.trailing(status_line("editor-status", status).text_sm());
         }

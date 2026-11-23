@@ -15,14 +15,16 @@ files: a library of books, a reader and an editor, built with GPUI Kit.
 - **Reader and editor in one.** What the editor previews is what the reader
   shows.
 
-**[Using the application][guide]** · [Architecture][architecture] · [Appearance and accessibility][appearance] · [Status][status] · [Design][design]
+**[Using the application][guide]** · [Architecture][architecture] · [Appearance and accessibility][appearance] · [Android][android] · [Status][status] · [Design][design]
 
 ## Install
 
-Installers for macOS (arm64 and x86-64) and Windows (x86-64) are on
-[GitHub Releases](https://github.com/M-Compressors/mbook/releases). They are
-signed with a self-signed certificate, so Gatekeeper and SmartScreen warn at
-the first start. There is no Linux build yet.
+Installers for macOS (arm64 and x86-64) and Windows (x86-64), and an APK for
+Android 8.0 or later on arm64, are on
+[GitHub Releases](https://github.com/M-Compressors/mbook/releases). The
+desktop installers are signed with a self-signed certificate, so Gatekeeper
+and SmartScreen warn at the first start. The APK installs once installing
+apps from that source is allowed. There is no Linux or iOS build yet.
 
 ## Run from source
 
@@ -38,11 +40,20 @@ on x86 and x86-64. The executable is called `mbook`.
 | `self-update` | yes | Checking the releases of the repository for a newer version and installing it; a build for a store or a package manager leaves it off |
 | `visual` | no | Rendering every screen to a PNG file in a headless window, for `tests/visual.rs` |
 
+The Android application is the shell `crates/mbook-android` around the same
+library. With the Android SDK, the NDK and a JDK installed, this builds a
+signed APK into `target/android/` ([Android][android] lists what it needs):
+
+```sh
+rustup target add aarch64-linux-android
+crates/mbook-android/android.sh apk
+```
+
 ## What it does
 
 | Screen | What you do there |
 | --- | --- |
-| **Library** | Keep books as covers on a shelf, search and sort them, add files with `+` or by dropping them on the window, create a new book, export one in any of eight formats, send its file through the share sheet of the system |
+| **Library** | Keep books as covers on a shelf, search and sort them, add files with `+`, by dropping them on the window or by opening them with mbook from a file manager, create a new book, export one in any of eight formats, send its file through the share sheet of the system |
 | **Reader** | Read one scrolling column or one page at a time from where the text begins, follow links and footnotes and return, go to the notes, the glossary or the index the book marks, open a picture or a diagram over the whole window and zoom it, search the whole book, choose typeface, size and one of five page tones |
 | **Editor** | Write chapters as blocks, as Markdown source or side by side with a preview; put in pictures, links, diagrams and formulas; edit the details, the cover, the contents and the landmarks; see what `Book::check` reports |
 | **Settings** | Typography, page tone, the size of the interface, motion and updates |
@@ -98,8 +109,8 @@ to look at; the renderer exists on macOS only.
 
 ## Status
 
-A first version. Screen-reader use and native builds on Windows and Linux
-still need verification; [Status and verification][status] lists what
+A first version. Screen-reader use, native builds on Windows and Linux, and
+picking, exporting and sharing books on Android still need verification; [Status and verification][status] lists what
 exists, where it falls short of the design and how it was checked.
 
 ## License
@@ -114,6 +125,7 @@ at your option.
 [guide]: https://m-compressors.github.io/mbook/mbook-ui/guide.html
 [architecture]: https://m-compressors.github.io/mbook/mbook-ui/architecture.html
 [appearance]: https://m-compressors.github.io/mbook/mbook-ui/appearance.html
+[android]: https://m-compressors.github.io/mbook/mbook-ui/android.html
 [status]: https://m-compressors.github.io/mbook/mbook-ui/status.html
 [design]: https://m-compressors.github.io/mbook/mbook-ui/design.html
 [measured]: https://m-compressors.github.io/mbook/rfcs/0001-mbook-format.html#a-converted-book

@@ -325,7 +325,7 @@ impl Render for PictureViewer {
             window.defer(cx, move |window, cx| handle.focus(window, cx));
         }
         let viewport = window.viewport_size();
-        let insets = window.insets().effective();
+        let insets = crate::shared::safe_area::insets(window);
         let room = (
             viewport.width.as_f32() - insets.left.as_f32() - insets.right.as_f32() - 2.0 * MARGIN,
             viewport.height.as_f32()

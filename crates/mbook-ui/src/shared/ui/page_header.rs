@@ -1,6 +1,8 @@
 //! The bar at the top of a page.
 
-use gpui_kit::component::{ActiveTheme as _, TitleBar, h_flex};
+#[cfg(not(target_os = "android"))]
+use gpui_kit::component::TitleBar;
+use gpui_kit::component::{ActiveTheme as _, h_flex};
 
 use super::target_size;
 use gpui_kit::{
@@ -15,9 +17,9 @@ pub(crate) const BAR_HEIGHT: f32 = 48.0;
 /// The bar at the top of a page: a control on the left, usually the back
 /// control, the title as the heading of the page, and actions on the right.
 ///
-/// It is the title bar of the Kit, so it stands in the row of the buttons of
-/// the window, leaves them their room on every platform, and moves the window
-/// when it is dragged. It keeps clear of the safe area the window reports at
+/// On the desktop it is the title bar of the Kit, so it stands in the row of
+/// the buttons of the window, leaves them their room on every platform, and
+/// moves the window when it is dragged; on Android it is a plain bar. It keeps clear of the safe area the window reports at
 /// the top (a notch, a status bar). The title is the heading of the page for
 /// assistive technology.
 #[derive(IntoElement)]
@@ -97,7 +99,7 @@ impl PageHeader {
 
 impl RenderOnce for PageHeader {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let top = window.insets().effective().top;
+        let top = crate::shared::safe_area::insets(window).top;
         let theme = cx.theme();
         let (background, ink, line) = match self.paper {
             Some((page, ink)) => (page, ink, page),
@@ -152,7 +154,7 @@ impl RenderOnce for PageHeader {
                 .child(heading)
                 .children(trailing)
         };
-        TitleBar::new()
+        bar()
             .h(px(BAR_HEIGHT) + top)
             .pt(top)
             .bg(background)
@@ -160,6 +162,25 @@ impl RenderOnce for PageHeader {
             .text_color(ink)
             .child(content)
     }
+}
+
+/// The title bar of the Kit, which holds the buttons of the window and moves
+/// the window when it is dragged.
+#[cfg(not(target_os = "android"))]
+fn bar() -> TitleBar {
+    TitleBar::new()
+}
+
+/// A phone has no buttons to leave room for and no window to move: the bar
+/// is a plain row with the border of the title bar.
+#[cfg(target_os = "android")]
+fn bar() -> gpui_kit::Stateful<gpui_kit::Div> {
+    h_flex()
+        .id("title-bar")
+        .flex_shrink_0()
+        .w_full()
+        .items_center()
+        .border_b_1()
 }
 
 #[cfg(test)]

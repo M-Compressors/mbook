@@ -93,7 +93,10 @@ element is reported when it has an identifier and a role.
   update that is ready. A change that follows from an action is announced by
   the element that changed. GPUI has no live regions: an announcement is a
   notification with the alert role, and text that changes in place has the
-  status role.
+  status role. An announcement stays until it is dismissed: by its close
+  button, which a pointer reveals, or by a tap or a sideways swipe on a
+  touch screen. Notifications are as wide as the window allows, up to
+  382 px, and start below the system bars of a phone.
 - An identifier of an element must stay the same while the element
   means the same thing: the identifier of a book is its key, of a chapter
   its path. Assistive technology then does not hear a list as replaced when

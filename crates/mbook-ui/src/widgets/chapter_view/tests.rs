@@ -14,20 +14,40 @@ use crate::entities::figure::{FigureKind, FigureSource, ImageReference};
 use crate::features::appearance::Appearance;
 use crate::testing::{self, Fixture};
 
-/// A window whose only content is a view.
+/// A window whose content is a view, with something drawn over the top of
+/// it when `covered`, as a notification is.
 struct Host {
     view: Entity<ChapterView>,
+    covered: bool,
 }
 
 impl Render for Host {
     fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
-        self.view.clone()
+        use gpui_kit::{InteractiveElement as _, ParentElement as _, Styled as _};
+        gpui_kit::div()
+            .relative()
+            .size_full()
+            .child(self.view.clone())
+            .when(self.covered, |host| {
+                host.child(
+                    gpui_kit::div()
+                        .id("cover")
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .w_full()
+                        .h(gpui_kit::px(120.0))
+                        .occlude()
+                        .test_support(),
+                )
+            })
     }
 }
 
 struct Started {
     _fixture: Fixture,
     window: AnyWindowHandle,
+    host: Entity<Host>,
     view: Entity<ChapterView>,
 }
 
@@ -69,11 +89,13 @@ fn start_with(
     cx.run_until_parked();
     let (window, host) = testing::open(cx, width, height, |window, cx| Host {
         view: cx.new(|cx| build(window, cx)),
+        covered: false,
     });
     let view = host.read_with(cx, |host, _| host.view.clone());
     Started {
         _fixture: fixture,
         window,
+        host,
         view,
     }
 }
@@ -770,7 +792,7 @@ fn turns(events: &Arc<Mutex<Vec<ChapterViewEvent>>>) -> Vec<Direction> {
         .iter()
         .filter_map(|event| match event {
             ChapterViewEvent::Turn(direction) => Some(*direction),
-            ChapterViewEvent::Moved => None,
+            ChapterViewEvent::Moved | ChapterViewEvent::Chapter(_) => None,
         })
         .collect()
 }
@@ -794,6 +816,98 @@ fn the_wheel_scrolls_the_preview_without_turning_a_page(cx: &mut TestAppContext)
     settle(&started, cx);
     assert!(top(&started, cx) > 0);
     assert_eq!(turns(&seen), Vec::<Direction>::new());
+}
+
+fn chapters(events: &Arc<Mutex<Vec<ChapterViewEvent>>>) -> Vec<Direction> {
+    events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match event {
+            ChapterViewEvent::Chapter(direction) => Some(*direction),
+            ChapterViewEvent::Moved | ChapterViewEvent::Turn(_) => None,
+        })
+        .collect()
+}
+
+/// Scrolls the text by `x` and `y` pixels in one event.
+fn swipe(started: &Started, x: f32, y: f32, cx: &mut TestAppContext) {
+    cx.update_window(started.window, |_, window, cx| {
+        window.scroll(
+            "chapter-text",
+            gpui_kit::ScrollDelta::Pixels(gpui_kit::point(gpui_kit::px(x), gpui_kit::px(y))),
+            cx,
+        );
+    })
+    .unwrap();
+    settle(started, cx);
+}
+
+#[gpui_kit::test]
+fn a_sideways_swipe_over_a_scrolling_text_asks_for_the_next_chapter(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    started.view.update(cx, |view, cx| {
+        view.set_text(&long_chapter(12), cx);
+    });
+    settle(&started, cx);
+    let seen = events(&started, cx);
+
+    swipe(&started, -120.0, 0.0, cx);
+
+    assert_eq!(chapters(&seen), vec![Direction::Forward]);
+    assert_eq!(turns(&seen), Vec::<Direction>::new());
+}
+
+#[gpui_kit::test]
+fn a_sideways_swipe_over_what_covers_the_text_asks_for_no_chapter(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    started.view.update(cx, |view, cx| {
+        view.set_text(&long_chapter(12), cx);
+    });
+    started.host.update(cx, |host, cx| {
+        host.covered = true;
+        cx.notify();
+    });
+    settle(&started, cx);
+    let seen = events(&started, cx);
+
+    cx.update_window(started.window, |_, window, cx| {
+        window.scroll(
+            "cover",
+            gpui_kit::ScrollDelta::Pixels(gpui_kit::point(gpui_kit::px(-120.0), gpui_kit::px(0.0))),
+            cx,
+        );
+    })
+    .unwrap();
+    settle(&started, cx);
+
+    assert_eq!(chapters(&seen), Vec::<Direction>::new());
+}
+
+#[gpui_kit::test]
+fn scrolling_down_a_text_asks_for_no_chapter(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    started.view.update(cx, |view, cx| {
+        view.set_text(&long_chapter(12), cx);
+    });
+    settle(&started, cx);
+    let seen = events(&started, cx);
+
+    swipe(&started, -20.0, -160.0, cx);
+
+    assert_eq!(chapters(&seen), Vec::<Direction>::new());
+    assert!(top(&started, cx) > 0);
+}
+
+#[gpui_kit::test]
+fn a_sideways_swipe_over_a_paged_text_turns_a_page_not_a_chapter(cx: &mut TestAppContext) {
+    let started = paged_with(cx, &long_chapter(12));
+    let seen = events(&started, cx);
+
+    swipe(&started, 120.0, 0.0, cx);
+
+    assert_eq!(turns(&seen), vec![Direction::Back]);
+    assert_eq!(chapters(&seen), Vec::<Direction>::new());
 }
 
 #[gpui_kit::test]

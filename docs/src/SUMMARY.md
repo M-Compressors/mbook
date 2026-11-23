@@ -36,5 +36,6 @@
   - [Using the application](mbook-ui/guide.md)
   - [Architecture](mbook-ui/architecture.md)
   - [Appearance and accessibility](mbook-ui/appearance.md)
+  - [Android](mbook-ui/android.md)
   - [Status and verification](mbook-ui/status.md)
   - [Design](mbook-ui/design.md)

@@ -35,6 +35,8 @@ open.
 | Saving an edit replaces the book in the library | Confirmed |
 | The editor accepts pictures that are not AVIF and encodes them with the `image` crate | Confirmed |
 | The catalogue is a `redb` database | Confirmed |
+| The application is built for Android; there it runs on gpui-pre with the platform of gpui-mobile, while the desktop stays on GPUI Fast | Confirmed on 2026-11-23 |
+| The release workflow builds an APK | Confirmed on 2026-11-23 |
 
 ## Dependencies
 
@@ -46,7 +48,7 @@ several packages share.
 | --- | --- | --- | --- |
 | `gpui-kit`, feature `gpui-fast` | 0.10.0, 2026-11-16 | Apache-2.0 | The interface; brings GPUI Fast 0.1 |
 | `rfd` | 0.17.2 | MIT | Native book and picture pickers with extension filters |
-| `robius-share` | 0.3.0, 2026-07-18; Project Robius, repository pushed 2026-11-13 | MIT | The share sheet of the platform; Rust 1.77. On Windows it brings `windows` 0.56 beside the versions GPUI uses |
+| `robius-share`, desktop only | 0.3.0, 2026-07-18; Project Robius, repository pushed 2026-11-13 | MIT | The share sheet of the platform; Rust 1.77. On Windows it brings `windows` 0.56 beside the versions GPUI uses |
 | `mimalloc3` | 0.1.61, 2026-11-17 | MIT | The allocator of the binary |
 | `dirs` | 7.0.0, 2026-09-05 | MIT OR Apache-2.0 | The roots on desktop |
 | `self_update` | 1.3.3, 2026-10-27 | MIT | Updates; Rust 1.88 |
@@ -56,6 +58,18 @@ several packages share.
 | `futures` | already in the tree of GPUI | MIT OR Apache-2.0 | The channel of the editing task |
 | `tree-sitter-mermaid`, `codebook-tree-sitter-latex` | 0.3.5 and 0.6.1 | MIT | Syntax highlighting in the Mermaid and KaTeX source dialogs |
 | `uuid`, `tempfile`, `thiserror`, `markdown` | The versions of the workspace | | Keys; files of imports; errors; block offsets |
+| `gpui-pre-mobile` (gpui-mobile), Android only | Commit `d8945a8` of [longbridge/gpui-mobile#56](https://github.com/longbridge/gpui-mobile/pull/56), opened 2026-11-11; repository pushed 2026-11-03 | GPL-3.0-or-later OR AGPL-3.0-or-later OR Apache-2.0, used under Apache-2.0 | The GPUI platform of Android: window, input, renderer, document picker; its Java activities and emoji font go into the APK |
+| `android-activity`, `android_logger`, `log` (in `mbook-android`) | 0.6, 0.15, 0.4 | MIT OR Apache-2.0 | `NativeActivity` glue that calls `android_main`; logcat |
+| `jni`, `log`, Android only | 0.22, the version gpui-mobile uses; 0.4 | MIT OR Apache-2.0 | Asking the activity for the documents it received; logging a Java exception |
+| `windows-registry`, Windows only | 0.6.1, of windows-rs; already in the tree of GPUI | MIT OR Apache-2.0 | Registering the book formats for the current user; a safe API, so the crate keeps `unsafe_code` forbidden |
+
+gpui-mobile is taken from its repository, pinned to a commit: its only
+release on crates.io, 0.1.0, is built for gpui-pre 0.3.5, and GPUI Kit 0.10
+pins gpui-pre 0.3.12. The pull request moves it to 0.3.12 without changes to
+its code. Its default features bring about thirty platform modules (camera,
+contacts, location, notifications…); they are off. Its README calls it an
+experimental platform release: composition through the keyboard of the
+system and the lifecycle of an activity are incomplete.
 
 `avif-decode` brings `rav1d` (BSD-2-Clause, a port of dav1d to Rust; last
 release 1.1.0 of 2025-05-07) and `avif-parse` (MPL-2.0). The assembly
@@ -72,6 +86,10 @@ Ruled out:
 | `rusqlite` | See [Rationale and alternatives](#rationale-and-alternatives) |
 | `kael_share` 0.4.1 | Calls a named sharing service directly instead of showing the picker, and shares no file on Windows |
 | `istmo-share` 0.1.1-alpha | An alpha whose API changes between releases; needs the window registry and runtime of the istmo framework |
+| `gpui-mobile` 0.1.0 on crates.io (itsbalamurali/gpui-mobile) | Declares no dependency, not even on GPUI: it implements no platform for the GPUI of the Kit |
+| `cargo-apk`, `xbuild` | `cargo-apk` is deprecated in favour of `xbuild` and packs no Java code, which the activities of gpui-mobile are; `xbuild` packs it through Gradle. `android.sh` compiles them with the tools of the SDK |
+| `cargo-ndk` | Sets the same four variables `android.sh` sets; a tool to install on every machine for no other gain |
+| A Gradle project | Gradle and the Android Gradle plugin are downloaded on every clean build, for an APK of one activity without AndroidX |
 
 ## Drawbacks
 
@@ -93,14 +111,40 @@ Ruled out:
   library.
 - **A stored place is approximate after an edit** of its chapter.
 - **A second minimum Rust version** in the workspace.
-- **Android has no backend** in this stack today; see
-  [Settled and open questions](#settled-and-open-questions).
+- **Two engines.** Android runs on gpui-pre, the desktop on GPUI Fast. The
+  code is the same and the tests run on GPUI Fast only; a difference of the
+  engines shows on a phone first.
+- **A platform from a pull request.** gpui-mobile is a pinned commit of an
+  open pull request, an experimental release by its own account, mostly the
+  work of one author. Its Java activities and emoji font are taken from its
+  example application, whose layout may change.
+- **Android limits** listed under [Android](android.md#limits): arm64 only, a
+  theme that does not work for API 36, a black screen after the activity is
+  recreated.
+- **A content provider of this repository** lends shared files on Android:
+  a small amount of Java to keep, because the FileProvider of AndroidX
+  needs Gradle.
 
 ## Rationale and alternatives
 
 | Decision | Chosen | Rejected | Why |
 | --- | --- | --- | --- |
 | Toolkit | GPUI Kit on GPUI Fast | | Decided by the format author. |
+| Engine on Android | gpui-pre, with the platform of gpui-mobile | GPUI Fast with a platform of this repository | GPUI Fast has no Android platform; for iOS its platform crate takes the iOS crate of gpui-pre. gpui-mobile is the only Android platform for GPUI and is written for gpui-pre; writing one is most of gpui-mobile again. The application compiles and its tests pass on gpui-pre unchanged. |
+| The Android entry point | A crate of its own, `mbook-android`, with the lints of the workspace but `unsafe_code` denied, and one `#[expect]` on `android_main` | `android_main` in `mbook-ui`; the host-driven entry point of gpui-mobile | `#[unsafe(no_mangle)]` is unsafe code, which `mbook-ui` forbids, and a forbidden lint cannot be expected. The host-driven entry point survives a recreated activity but needs JNI functions of this crate and an activity of its own. |
+| Packing the APK | `android.sh`: `javac`, `d8`, `aapt2`, `zipalign` and `apksigner` of the SDK | Gradle; `cargo-apk`; `xbuild` | See Ruled out under [Dependencies](#dependencies). |
+| System bars on Android | Opt out of the edge-to-edge layout of API 35, and pad views by the bars gpui-mobile measures | `targetSdkVersion` 34; JNI code of this crate that reads `WindowInsets` | gpui-mobile reads the bars from the content view, which edge-to-edge makes the whole screen. API 34 leaves the current target of Google Play behind; JNI code needs a second Java activity. |
+| Export on Android | The converted file goes to the share sheet | `prompt_for_new_path`; the save picker of gpui-mobile | gpui-mobile answers `prompt_for_new_path` with no path, and its save picker returns a `content:` URI, which `std::fs` cannot write. |
+| Share on Android | `MbookActivity.share` with `MbookFiles`, a read-only content provider of this repository, started on the thread of the activity without waiting | `robius-share`, as on the desktop; the share module of gpui-mobile; the FileProvider of AndroidX | `robius-share` showed no sheet on the phone it was tried on: it copied the file to `Download/Robius Share/`, left it there, and blocked the thread of the interface on a latch until the thread of the activity had run, which android-activity's handshakes can make wait for the interface. It also never clears a Java exception it causes. The share module of gpui-mobile shares text only, and the FileProvider of AndroidX needs Gradle. |
+| A sideways swipe over a scrolling text | Steps to the next or the previous chapter; one swipe steps once, and a movement mostly up or down never does | Nothing; a tap at the edge as for a page | A phone reader expects a swipe to turn; the chapter is the page of a scrolling text. GPUI reports a pan as scrolling, so the same code serves a trackpad. |
+| The footer of a scrolling text | Fixed over the text, which runs under it and fades into the paper behind the controls | Its room kept below the text; over the text only while the controls are shown; fully transparent | On a phone the kept room was a sixth of the screen with nothing in it, and a footer that hid left no way to the next chapter while scrolling. Fully transparent, its arrows and status were lost in the lines under them. The text view of the Kit cannot pad the end of its list, so the last lines of a chapter pass under the footer. A paged text keeps the room, since its pages are cut to the height above the footer. |
+| Bringing the hidden controls back while scrolling | Scrolling back, and the end of a chapter | Only a tap or the pointer | A reader who wants the controls scrolls back, as in other readers; at the end of a chapter the next one is what a reader wants. |
+| A tap or a swipe on something over the text | Belongs to what is on top: the reader checks the hitbox of its text at the point | The bounds of the text | A notification lies over the text; a tap on it turned the page and a swipe over it changed the chapter. |
+| Dismissing an announcement on a touch screen | A tap, or a sideways swipe over it | Its close button; hiding it after a time | The close button of the Kit shows on hover only, which a touch screen has not. A time limit would fail WCAG 2.2.1 for a message the user did not cause. |
+| Registering the formats on Windows | The application writes them to the registry of the current user at each start | Entries of the installer; nothing | The installer of cargo-bundle cannot hold file types, and writing the WiX source of the installer by hand is a second build to keep. The price is that uninstalling leaves the entries, which then point at a missing program. |
+| Registering the formats other than mbook | **Open with** and an alternative handler, never the default | Making mbook the default for EPUB, PDF and the rest | The user chose a program for those; mbook converts them on the way in. |
+| Documents handed to the Android activity | Copied into the cache by an activity of this repository, and taken by the interface once a second | A JNI function the activity calls; the deep links of gpui-mobile | A JNI function is a second unmangled entry point in `mbook-android`; the deep links of gpui-mobile go to its example activity and carry URLs, not readable files. |
+| The sections of the editor in a compact window | A sheet from a menu button beside Back, as in a medium window | A screen of its own that Back returns to | Back that first opened the list and only then left the editor read as a bug; a menu button says what it opens. |
 | File picker filters | Native dialogs through `rfd` | GPUI file prompts | GPUI Kit 0.10 cannot pass extension filters to its platform picker. |
 | Sending a book to other people | The share sheet of the platform through `robius-share`, with the mbook file | Share links of social networks; code of this crate on AppKit and WinRT | A share link carries text and a web address, and a library book has no address. Calling the platform directly needs `unsafe`, which the workspace forbids; `robius-share` keeps it in a maintained crate. |
 | Export destination | Native save dialog and temporary file in the destination directory | Convert directly into the chosen file | The completed file is published in one operation and an existing file cannot be overwritten. |
@@ -172,6 +216,12 @@ Ruled out:
 | Notarising the macOS build, and a certificate of an authority for Windows | Not done: the certificate is self-signed |
 | A release for Linux | Not built |
 | The limits of conversion and of the picture cache on a compact device | Not chosen |
+| The Android package name | `io.github.m_compressors.mbook`: the identifier of the bundle, with `_`, since a package name has no `-` |
+| The oldest Android | API 26, where Vulkan is part of the platform, as gpui-mobile chose |
+| The architectures of the APK | arm64-v8a only |
+| The keystore of the APK | A PKCS #12 keystore generated for the project, kept as the secret `ANDROID_KEYSTORE`; not yet generated |
+| A pre-release on Android | Gets the `versionCode` of its release, so the release does not replace it; releases are tagged `vX.Y.Z` only |
+| The formats registered | All of `BOOK_FILE_EXTENSIONS`, `.zip` and `.txt` among them; mbook owns `.mbook` only |
 
 Needs a change outside this crate:
 
@@ -188,7 +238,7 @@ The first version answered the questions a spike was to answer:
 | Does the Markdown view of GPUI Kit tell which block is at the top? | It lays out one item per top-level block, in the order of the source, but does not give its offset. The application keeps the offsets `markdown` finds and maps one to the other. |
 | Does it reserve the size of a picture that is loading? | No: a pending picture is measured as a small square. The application hands it a transparent picture of the final size first. |
 | Can GPUI announce a message, and give an element a language? | It has no live regions and no language. See [Accessibility](appearance.md#accessibility) and [What is implemented](status.md#what-is-implemented). |
-| Is there a GPUI backend for Android? | Not looked at: the first version is for desktop. |
+| Is there a GPUI backend for Android? | Not for GPUI Fast. gpui-mobile is one for gpui-pre, and the application runs on it: checked on 2026-11-23 on a phone with Android 16. |
 
 Not answered: how the Markdown view behaves with one chapter of several
 megabytes, and whether the system's setting for more contrast reaches the
@@ -198,7 +248,12 @@ application.
 
 - **Two-page spreads**, which need two independently positioned columns.
 - **Scrolling from one chapter into the next.**
-- **Shells for iOS and Android.**
+- **A shell for iOS.** gpui-mobile has an iOS platform too; it needs an
+  Xcode project and the scenes the iOS 27 SDK requires
+  ([longbridge/gpui-mobile#44](https://github.com/longbridge/gpui-mobile/pull/44)).
+- **The insets of the system from gpui-mobile**, which would lift the API 35
+  limit of the theme, and **its host-driven entry point**, which survives a
+  recreated activity.
 - **Highlights, notes and bookmarks**, stored beside the reading place.
 - **Collections** in the library.
 - **A journal of unsaved edits**, replayed after a crash.

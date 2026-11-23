@@ -65,7 +65,9 @@ Compact
   book: AirDrop, Messages and Mail on macOS, Nearby Sharing and installed
   apps on Windows, and the messengers and social networks installed there
   that accept a file. What happens next is up to the app chosen.
-- Files are added with `+` or by dropping them on the window. The system
+- Files are added with `+`, by dropping them on the window, or by opening
+  them with mbook from a file manager or another app, which offers mbook for
+  every format it reads; one file opened this way opens its book. The system
   picker lists mbook and the extensions accepted by the converter.
 - **New book…** asks for a title. Confirming creates a book in the library
   and opens its empty first chapter in the Markdown editor. The title and
@@ -75,14 +77,21 @@ Compact
 
 - Read in one scrolling column. Page Up and Page Down move by a screen;
   Home and End move to the chapter boundaries. The footer and chapter
-  shortcuts can advance to the next chapter. **Read one page at a time**
-  adds page turns and book-wide page numbers. A number is approximate
-  until the reader has measured every chapter at the current typography.
+  shortcuts can advance to the next chapter, and so does a swipe to the
+  left, with a finger or two on a trackpad; a swipe to the right goes to
+  the previous one. **Read one page at a time** adds page turns and
+  book-wide page numbers; there a swipe turns a page. A number is
+  approximate until the reader has measured every chapter at the current
+  typography.
 - The reading slider previews the chapter and progress while seeking.
   It appears on hover, while in use, or on keyboard focus. Progress can
-  be hidden from the appearance panel. The header and footer reserve
-  their space while the controls are hidden. Move the pointer or press
-  a key to show the controls.
+  be hidden from the appearance panel. While the controls are hidden, the
+  header keeps its space, and so does the footer of one page at a time. A
+  scrolling text runs to the bottom of the window under its footer, which
+  stays; the text fades into the page behind its buttons and status. Move the
+  pointer, tap the middle of the text, scroll back or press a key to show
+  the controls; they also come back at the end of a chapter. A tap or a
+  swipe on a notification is the notification's, not the text's.
 - A book opened for the first time opens where its text begins, past the
   cover and the title page, when the book marks that place. After that it
   reopens where it was left.
@@ -141,7 +150,8 @@ Expanded
 +------------------+--------------------------------------------------------+
 
 Medium: the list slides over the content from "Book and chapters".
-Compact: a stack. It opens in the chapter; Back reaches the same list.
+Compact: it opens in the chapter; the menu button beside Back slides the
+same list over it. Back leaves the editor.
 ```
 
 **Finding the way.** One list holds everything: the sections about the whole

@@ -13,10 +13,12 @@ mod icon_button;
 mod page_header;
 pub(crate) mod search_bar;
 mod status_line;
+mod swipe;
 
 pub(crate) use colors::{ChromeColors, page_colors};
 pub(crate) use empty_state::empty_state;
 pub(crate) use focus::focus_ring;
 pub(crate) use icon_button::{back_button, icon_button, target_size};
 pub(crate) use page_header::{BAR_HEIGHT, page_header};
-pub(crate) use status_line::{announce, status_line};
+pub(crate) use status_line::{announce, fit_notifications, status_line};
+pub(crate) use swipe::{Side, Sideways};

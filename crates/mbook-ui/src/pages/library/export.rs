@@ -1,6 +1,11 @@
 //! Saving a copy of a library book in another format.
+//!
+//! The desktop asks where to save it. Android has no save dialog a path comes
+//! back from: the copy is made in the folder of shared files and offered to
+//! the share sheet, whose targets include saving to a folder.
 
 use std::fs::File;
+#[cfg(not(target_os = "android"))]
 use std::future::Future;
 use std::io::{self, BufReader, BufWriter, Write as _};
 use std::path::{Path, PathBuf};
@@ -30,6 +35,7 @@ pub(super) fn label(format: Format) -> &'static str {
 }
 
 /// Offers the platform save dialog for the selected format.
+#[cfg(not(target_os = "android"))]
 pub(super) async fn pick(name: String, format: Format) -> Option<PathBuf> {
     rfd::AsyncFileDialog::new()
         .set_title("Export book")
@@ -41,6 +47,7 @@ pub(super) async fn pick(name: String, format: Format) -> Option<PathBuf> {
 }
 
 /// Waits for the selected destination and performs the export in the background.
+#[cfg(not(target_os = "android"))]
 pub(super) fn choose<F>(
     key: BookKey,
     title: &str,
@@ -74,6 +81,54 @@ pub(super) fn choose<F>(
             .ok();
         })
         .detach();
+}
+
+/// Makes a copy of the book `key`, called `title`, in `format` on the
+/// background executor, and offers it to the share sheet of the platform.
+/// A failure is announced; a shown sheet is not.
+#[cfg(target_os = "android")]
+pub(super) fn share(key: BookKey, title: &str, format: Format, window: &Window, cx: &App) {
+    let roots = &Store::global(cx).roots;
+    let source = roots.book(key);
+    let folder = roots.shared();
+    let name = file_name(title, format);
+    let title = title.to_owned();
+    let executor = cx.background_executor().clone();
+    window
+        .spawn(cx, async move |cx| {
+            let staged = executor
+                .spawn(async move { stage(&source, &folder, &name, format) })
+                .await;
+            cx.update(|window, cx| {
+                let message = match staged {
+                    Ok(path) => match super::share::present(&path, &title) {
+                        Ok(()) => return,
+                        Err(error) => {
+                            format!("Could not export {title}. {}.", error_chain(&error))
+                        }
+                    },
+                    Err(error) => format!("Could not export {title}. {}.", error_chain(&error)),
+                };
+                announce(message, window, cx);
+            })
+            .ok();
+        })
+        .detach();
+}
+
+/// Saves the book at `source` in `format` as `name` in a new folder under
+/// `folder`, and returns its path. Each export has a folder of its own, as
+/// each share does.
+#[cfg(any(target_os = "android", test))]
+fn stage(source: &Path, folder: &Path, name: &str, format: Format) -> Result<PathBuf, ExportError> {
+    std::fs::create_dir_all(folder)?;
+    let own = tempfile::Builder::new()
+        .prefix("export-")
+        .tempdir_in(folder)?
+        .keep();
+    let path = own.join(name);
+    save(source, &path, format)?;
+    Ok(path)
 }
 
 fn file_name(title: &str, format: Format) -> String {
@@ -118,6 +173,7 @@ pub(super) fn base_name(title: &str) -> String {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn with_extension(path: PathBuf, format: Format) -> PathBuf {
     let extension = format.extension();
     if path
@@ -240,6 +296,59 @@ mod tests {
                 .unwrap()
                 .contains("data:image/png;base64,")
         );
+    }
+
+    #[test]
+    fn a_staged_export_has_a_folder_of_its_own_under_the_shared_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("book.mbook");
+        let shared = dir.path().join("cache/share");
+        let mut book = Book::new("The Example", "en").unwrap();
+        book.add_chapter("one.md", "Text.\n").unwrap();
+        book.save(&source).unwrap();
+
+        let first = stage(&source, &shared, "The Example.txt", Format::Text).unwrap();
+        let second = stage(&source, &shared, "The Example.txt", Format::Text).unwrap();
+
+        assert_ne!(first, second);
+        for path in [&first, &second] {
+            assert!(path.starts_with(&shared));
+            assert_eq!(path.file_name().unwrap(), "The Example.txt");
+            assert_eq!(
+                std::fs::read_to_string(path).unwrap(),
+                "The Example\n\nText.\n"
+            );
+        }
+    }
+
+    #[test]
+    fn a_staged_export_of_an_unreadable_book_fails_without_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("share");
+
+        let error = stage(
+            &dir.path().join("missing.mbook"),
+            &shared,
+            "a.txt",
+            Format::Text,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, ExportError::Book(_)));
+        let left: Vec<_> = walk(&shared);
+        assert!(left.iter().all(|path| path.is_dir()), "{left:?}");
+    }
+
+    fn walk(folder: &Path) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        for entry in std::fs::read_dir(folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                found.extend(walk(&path));
+            }
+            found.push(path);
+        }
+        found
     }
 
     #[test]

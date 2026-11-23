@@ -248,7 +248,7 @@ impl LibraryPage {
 
     /// The bar of a compact window: Reading, Library, Search.
     fn render_bar(&self, window: &Window, cx: &mut Context<'_, Self>) -> AnyElement {
-        let bottom = window.insets().effective().bottom;
+        let bottom = crate::shared::safe_area::insets(window).bottom;
         let tab = |id: &'static str, label: &'static str, icon: IconName, tab: Tab| {
             let active = self.tab == tab;
             Button::new(id)

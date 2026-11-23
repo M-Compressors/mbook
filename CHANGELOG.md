@@ -2,6 +2,63 @@
 
 ## Unreleased
 
+### Added
+
+- The application runs on Android. `crates/mbook-android` is its shell, and
+  `crates/mbook-android/android.sh` builds an APK for arm64 with the tools of
+  the Android SDK. The release workflow builds and signs one for each
+  release, as `mbook-vX.Y.Z-android-arm64.apk`; continuous integration lints
+  the Android build and keeps a debug-signed APK of every run. On Android
+  the interface runs on gpui-pre with the platform of gpui-mobile, pinned to
+  a commit of longbridge/gpui-mobile#56; the desktop stays on GPUI Fast.
+- On Android, books and pictures are chosen with the document picker of the
+  system, and **Export** sends the converted file to the share sheet, from
+  which it can be saved to a folder. **Share** works as on the desktop.
+
+- The reader goes to the next chapter with a swipe to the left over a
+  scrolling text, and to the previous one with a swipe to the right, with a
+  finger or two on a trackpad.
+- An announcement is dismissed with a tap or a sideways swipe, since a touch
+  screen never shows its close button.
+- The application registers itself for the book formats it reads. Finder,
+  Explorer and the file managers and apps of Android offer it for an mbook
+  file, which it owns, and under **Open with** for EPUB, FB2, PDF, comic
+  archives, Word, HTML, Markdown and text. A file opened with it, or named on
+  its command line, is added to the library, and one file opens its book.
+  macOS reads the formats from the bundle, Android from the manifest, and on
+  Windows the application writes them to the registry of the current user
+  when it starts.
+
+### Changed
+
+- Views keep clear of the system bars that gpui-mobile measures on Android,
+  in addition to the insets GPUI reports. On Android the bar at the top of a
+  page has no window buttons.
+- A scrolling text runs to the bottom of the reader, under a footer that
+  stays; the text fades into the page behind its buttons and status. A paged text
+  keeps the room of its footer. Hidden controls come back when the text is
+  scrolled back and at the end of a chapter.
+- `mbook_ui::run` takes the files to open as a third argument.
+- In a compact window, the editor's list of sections and chapters opens as a
+  sheet from a menu button beside Back, and Back leaves the editor. Back used
+  to open the list first.
+- Notifications are as wide as the window allows, up to their own width, and
+  start below the system bars of a phone.
+
+### Fixed
+
+- A Linux build of `mbook-ui` with its default features compiled with a
+  warning about an unused variant of the updater; continuous integration now
+  lints that build.
+- On Android, **Share** and **Export** showed no share sheet. They now go
+  through the activity of `mbook-android`, which lends the file with a
+  read-only content provider and no longer leaves a copy in
+  `Download/Robius Share/`.
+- A tap or a sideways swipe on a notification over the reader turned the
+  page or changed the chapter as well.
+- On Android, **Show the file** in the book menu did nothing; it is left
+  out there, since no file manager can see the library of the application.
+
 ## [v0.3.2](https://github.com/M-Compressors/mbook/releases/tag/v0.3.2) - 2026-11-23
 
 ### Added

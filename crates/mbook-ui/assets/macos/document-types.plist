@@ -1,0 +1,70 @@
+<!--
+  Entries cargo-bundle adds to the Info.plist of the macOS bundle
+  (`osx_info_plist_exts`), as they are, inside its top dictionary.
+
+  The application owns the mbook format, which it declares as a type of its
+  own, and is an alternative viewer for the formats it converts. Keep the
+  extensions in step with BOOK_FILE_EXTENSIONS: a test compares them.
+-->
+<key>CFBundleDocumentTypes</key>
+<array>
+    <dict>
+        <key>CFBundleTypeName</key>
+        <string>mbook book</string>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>LSHandlerRank</key>
+        <string>Owner</string>
+        <key>LSItemContentTypes</key>
+        <array>
+            <string>io.github.m-compressors.mbook.book</string>
+        </array>
+    </dict>
+    <dict>
+        <key>CFBundleTypeName</key>
+        <string>Book</string>
+        <key>CFBundleTypeRole</key>
+        <string>Viewer</string>
+        <key>LSHandlerRank</key>
+        <string>Alternate</string>
+        <key>CFBundleTypeExtensions</key>
+        <array>
+            <string>epub</string>
+            <string>fb2</string>
+            <string>fbz</string>
+            <string>zip</string>
+            <string>pdf</string>
+            <string>cbz</string>
+            <string>docx</string>
+            <string>html</string>
+            <string>htm</string>
+            <string>xhtml</string>
+            <string>md</string>
+            <string>markdown</string>
+            <string>mkd</string>
+            <string>txt</string>
+            <string>text</string>
+        </array>
+    </dict>
+</array>
+<key>UTExportedTypeDeclarations</key>
+<array>
+    <dict>
+        <key>UTTypeIdentifier</key>
+        <string>io.github.m-compressors.mbook.book</string>
+        <key>UTTypeDescription</key>
+        <string>mbook book</string>
+        <key>UTTypeConformsTo</key>
+        <array>
+            <string>public.data</string>
+            <string>public.content</string>
+        </array>
+        <key>UTTypeTagSpecification</key>
+        <dict>
+            <key>public.filename-extension</key>
+            <array>
+                <string>mbook</string>
+            </array>
+        </dict>
+    </dict>
+</array>

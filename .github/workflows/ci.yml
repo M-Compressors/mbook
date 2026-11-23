@@ -46,7 +46,9 @@ jobs:
             cargo clippy -p mbook-converter --all-targets --no-default-features --features "$features" --locked -- -D warnings
             echo "::endgroup::"
           done
-          # The application without its updater, as a store would build it.
+          # The application with its default features, and without its
+          # updater, as a store would build it.
+          cargo clippy -p mbook-ui --all-targets --locked -- -D warnings
           cargo clippy -p mbook-ui --all-targets --no-default-features --locked -- -D warnings
       - name: docs for every feature set
         env:
@@ -104,7 +106,33 @@ jobs:
         with:
           toolchain: 1.89.0
       - uses: Swatinem/rust-cache@v2
-      # The application and the converter's export feature use a newer
-      # compiler. The libraries' default features support Rust 1.89.
-      - run: cargo check --workspace --exclude mbook-ui --all-targets --locked
-      - run: cargo test --workspace --exclude mbook-ui --locked
+      # The application, its Android shell and the converter's export
+      # feature use a newer compiler. The libraries' default features support
+      # Rust 1.89.
+      - run: cargo check --workspace --exclude mbook-ui --exclude mbook-android --all-targets --locked
+      - run: cargo test --workspace --exclude mbook-ui --exclude mbook-android --locked
+
+  android:
+    name: Android lint and APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      # The runner image has the Android SDK with its platforms and
+      # build-tools (ANDROID_HOME), an NDK (ANDROID_NDK_LATEST_HOME) and a
+      # JDK (JAVA_HOME), which is all `android.sh` needs.
+      - name: clippy for Android
+        run: crates/mbook-android/android.sh clippy
+      # Signed with a debug key made for this run: it installs, but cannot
+      # update or be updated by a release APK.
+      - name: APK
+        run: crates/mbook-android/android.sh apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mbook-android-arm64
+          path: target/android/*.apk
+          if-no-files-found: error

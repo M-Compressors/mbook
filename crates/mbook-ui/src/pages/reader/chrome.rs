@@ -1,5 +1,7 @@
 //! What the reader draws: the controls, the text, the panels.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName;
@@ -11,10 +13,10 @@ use gpui_kit::component::{
     ActiveTheme as _, Icon, Placement, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
 use gpui_kit::{
-    Anchor, AnyElement, ClickEvent, Context, DispatchPhase, Div, Hsla, InteractiveElement as _,
-    IntoElement, KeyContext, MouseButton, MouseMoveEvent, ParentElement as _, Render, Role,
-    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
-    canvas, div, px, relative,
+    Anchor, AnyElement, ClickEvent, Context, DispatchPhase, Div, Hitbox, HitboxBehavior, Hsla,
+    InteractiveElement as _, IntoElement, KeyContext, MouseButton, MouseMoveEvent,
+    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
+    TestSupportExt as _, Window, canvas, div, linear_color_stop, linear_gradient, px, relative,
 };
 
 use super::controls::{chapter_title, status_text};
@@ -41,6 +43,9 @@ const SEEK_STRIP: f32 = 24.0;
 const COMPACT_STATUS: f32 = 20.0;
 /// How long the reading controls take to fade.
 const FADE: Duration = Duration::from_millis(160);
+/// Where, from the top of the footer of a scrolling text, the text under it
+/// has faded into the paper.
+const FADE_TO_PAPER: f32 = 0.45;
 /// The width of the popover of a panel, in pixels.
 const POPOVER_WIDTH: f32 = 340.0;
 
@@ -57,7 +62,7 @@ impl Render for ReaderPage {
         let presence = Presence::new("reader-controls", show)
             .transition(Transition::new(FADE))
             .sample(window, cx);
-        let bottom = window.insets().effective().bottom;
+        let bottom = crate::shared::safe_area::insets(window).bottom;
         let footer = FOOTER.max(target_size() + SEEK_STRIP)
             + if class == SizeClass::Compact {
                 COMPACT_STATUS
@@ -137,16 +142,15 @@ impl Render for ReaderPage {
                     .min_h_0()
                     .w_full()
                     .on_click(cx.listener(Self::on_tap))
-                    .child(self.body(cx)),
+                    .child(self.body(cx))
+                    .child(Self::tap_area(&self.body_hitbox)),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .w_full()
-                    .h(px(footer) + bottom)
-                    .pb(bottom)
-                    .children(ready.then(|| self.footer(class, muted, presence, window, cx))),
-            )
+            .child({
+                let pinned = (!self.view.read(cx).is_paged()).then_some(page);
+                let content =
+                    ready.then(|| self.footer(class, muted, presence, pinned, window, cx));
+                self.footer_box(footer, bottom, page, content, cx)
+            })
             .children(self.viewer.as_ref().map(|viewer| viewer.entity.clone()))
     }
 }
@@ -184,6 +188,20 @@ impl ReaderPage {
                         reader.update(cx, Self::touch).ok();
                     }
                 });
+            },
+        )
+        .absolute()
+        .inset_0()
+    }
+
+    /// Records the hitbox of the middle of the page, over everything in it.
+    /// It blocks nothing; it tells whether a point of the page is covered.
+    fn tap_area(slot: &Rc<RefCell<Option<Hitbox>>>) -> impl IntoElement {
+        let slot = Rc::clone(slot);
+        canvas(
+            |bounds, window, _| window.insert_hitbox(bounds, HitboxBehavior::Normal),
+            move |_, hitbox, _, _| {
+                slot.replace(Some(hitbox));
             },
         )
         .absolute()
@@ -362,7 +380,7 @@ impl ReaderPage {
         let appearance = Appearance::global(cx).read(cx);
         let settings = appearance.settings();
         let viewport = window.viewport_size();
-        let insets = window.insets().effective();
+        let insets = crate::shared::safe_area::insets(window);
         let height = viewport.height - insets.top - insets.bottom - px(BAR_HEIGHT + footer);
         let font = appearance.reading_font(cx);
         self.pages.set_layout(Layout {
@@ -404,18 +422,66 @@ impl ReaderPage {
     }
 
     /// The current page number and the controls around it.
+    /// The strip of the footer below the text. A paged text keeps the room
+    /// for it, since its pages are cut to the height above it. A scrolling
+    /// text runs under it: the strip stays over the text, with its controls
+    /// shown whether the header is or not, and the text fades into the
+    /// paper behind them, so that both stay legible.
+    fn footer_box(
+        &self,
+        footer: f32,
+        bottom: gpui_kit::Pixels,
+        page: Hsla,
+        content: Option<AnyElement>,
+        cx: &Context<'_, Self>,
+    ) -> AnyElement {
+        let strip = div()
+            .id("reader-footer-strip")
+            .role(Role::Toolbar)
+            .aria_label("Reading controls")
+            .test_support()
+            .flex_none()
+            .w_full()
+            .h(px(footer) + bottom)
+            .pb(bottom)
+            .children(content);
+        if self.view.read(cx).is_paged() {
+            strip.into_any_element()
+        } else {
+            strip
+                .absolute()
+                .bottom_0()
+                .left_0()
+                .bg(linear_gradient(
+                    180.0,
+                    linear_color_stop(page.opacity(0.0), 0.0),
+                    linear_color_stop(page, FADE_TO_PAPER),
+                ))
+                .into_any_element()
+        }
+    }
+
+    /// The controls below the text. `pinned` is `Some` for a scrolling text,
+    /// whose controls stay over it while the text runs under them; a paged
+    /// text gets `None`, and its controls fade with the header.
     fn footer(
         &self,
         class: SizeClass,
         muted: Hsla,
         presence: PresenceSample,
+        pinned: Option<Hsla>,
         window: &Window,
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         let Phase::Ready(reading) = &self.phase else {
             return div().into_any_element();
         };
-        let shown = presence.should_render();
+        let shown = pinned.is_some() || presence.should_render();
+        let fade = if pinned.is_some() {
+            1.0
+        } else {
+            presence.progress
+        };
         let progress_visible = !Appearance::global(cx)
             .read(cx)
             .settings()
@@ -447,6 +513,48 @@ impl ReaderPage {
                     .text_sm()
                     .text_color(muted)
             });
+        let (previous, next) = self.step_buttons(paged, cx);
+        let compact = class == SizeClass::Compact;
+        let status = || {
+            status_line("reader-status", text.clone())
+                .min_w_0()
+                .truncate()
+                .text_xs()
+                .text_color(muted)
+        };
+        let row = h_flex()
+            .w_full()
+            .min_h(px(target_size()))
+            .items_center()
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .opacity(fade)
+                    .children((progress_visible && shown && !compact).then(status)),
+            )
+            .children(
+                (shown && !self.history.is_empty()).then(|| self.return_control(cx).opacity(fade)),
+            )
+            .children(shown.then(|| previous.opacity(fade)))
+            .children(number)
+            .children(shown.then(|| next.opacity(fade)))
+            .child(div().flex_1().min_w_0());
+        Self::control_hover("reader-footer", cx)
+            .relative()
+            .size_full()
+            .px_5()
+            .child(row)
+            .children(
+                (progress_visible && shown && compact)
+                    .then(|| div().text_center().opacity(fade).child(status())),
+            )
+            .children(progress_visible.then(|| self.seek_strip(muted, window, cx)))
+            .into_any_element()
+    }
+
+    /// The buttons that move back and forward by a page or a screen.
+    fn step_buttons(&self, paged: bool, cx: &Context<'_, Self>) -> (Button, Button) {
         let previous = icon_button(
             "previous-page",
             IconName::ChevronLeft,
@@ -467,46 +575,7 @@ impl ReaderPage {
         .rounded_full()
         .track_focus(&self.handles.next)
         .on_click(cx.listener(|this, _, _, cx| this.screen(Direction::Forward, cx)));
-        let compact = class == SizeClass::Compact;
-        let status = || {
-            status_line("reader-status", text.clone())
-                .min_w_0()
-                .truncate()
-                .text_xs()
-                .text_color(muted)
-        };
-        let row = h_flex()
-            .w_full()
-            .min_h(px(target_size()))
-            .items_center()
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .opacity(presence.progress)
-                    .children((progress_visible && shown && !compact).then(status)),
-            )
-            .children(
-                (shown && !self.history.is_empty())
-                    .then(|| self.return_control(cx).opacity(presence.progress)),
-            )
-            .children(shown.then(|| previous.opacity(presence.progress)))
-            .children(number)
-            .children(shown.then(|| next.opacity(presence.progress)))
-            .child(div().flex_1().min_w_0());
-        Self::control_hover("reader-footer", cx)
-            .relative()
-            .size_full()
-            .px_5()
-            .child(row)
-            .children((progress_visible && shown && compact).then(|| {
-                div()
-                    .text_center()
-                    .opacity(presence.progress)
-                    .child(status())
-            }))
-            .children(progress_visible.then(|| self.seek_strip(muted, window, cx)))
-            .into_any_element()
+        (previous, next)
     }
 
     fn return_control(&self, cx: &Context<'_, Self>) -> Button {
@@ -594,6 +663,14 @@ impl ReaderPage {
         cx: &mut Context<'_, Self>,
     ) {
         if !matches!(event, ClickEvent::Touch(touch) if !touch.long_press) {
+            return;
+        }
+        let covered = self
+            .body_hitbox
+            .borrow()
+            .as_ref()
+            .is_some_and(|hitbox| !hitbox.is_hovered_at(event.position(), window));
+        if covered {
             return;
         }
         if !self.view.read(cx).is_paged() {

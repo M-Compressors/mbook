@@ -23,6 +23,8 @@ identifier = "io.github.m-compressors.mbook"
 icon = ["assets/icon.png", "assets/icon@2x.png"]
 category = "public.app-category.reference"
 osx_minimum_system_version = "11.0"
+# The book formats the application opens, as Finder offers them.
+osx_info_plist_exts = ["assets/macos/document-types.plist"]
 
 [lib]
 name = "mbook_ui"
@@ -56,18 +58,17 @@ unicode-segmentation = "1"
 tempfile.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
-# GPUI, its component library and their assets behind one name. `gpui-fast`
-# selects the GPUI Fast engine; application code imports `gpui_kit` only.
-gpui-kit = { version = "0.10", features = ["gpui-fast", "tree-sitter-markdown"] }
-gpui-kit-markdown-editor = { version = "0.3.1", features = ["gpui-fast"] }
+# GPUI, its component library and their assets behind one name; application
+# code imports `gpui_kit` only. The engine is chosen per target below: GPUI
+# Fast on the desktop, gpui-pre on Android, where gpui-mobile is the platform
+# (mbook-ui docs, "Design").
+gpui-kit = { version = "0.10", features = ["tree-sitter-markdown"] }
+gpui-kit-markdown-editor = "0.3.1"
 # Grammars for the diagram and formula source dialogs.
 tree-sitter-mermaid = "0.3.5"
 codebook-tree-sitter-latex = "0.6.1"
 # Keep original source blocks when updating Markdown from the visual editor.
 similar = { version = "3", default-features = false }
-mimalloc3 = "0.1"
-# The data and cache directories of the platform.
-dirs = "7"
 # The catalogue: reading places, settings and a copy of each book's metadata.
 redb = "5"
 # Decodes the AVIF pictures of a book; pure Rust, on `rav1d`. Without its
@@ -79,13 +80,36 @@ futures = "0.3"
 # runs inside a background task, so no second runtime is needed; `signatures`
 # verifies an archive against a key built into the application.
 self_update = { version = "1.3", default-features = false, features = ["ureq", "rustls", "github", "archive-tar", "compression-tar-gz", "signatures"], optional = true }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+# The GPUI Fast engine. Cargo leaves the features of a target table out of
+# a build for another target, so Android stays on gpui-pre.
+gpui-kit = { version = "0.10", features = ["gpui-fast", "tree-sitter-markdown"] }
+gpui-kit-markdown-editor = { version = "0.3.1", features = ["gpui-fast"] }
 # Native file pickers with extension filters.
 rfd = "0.18"
 # The share sheet of the platform: NSSharingServicePicker on macOS,
-# DataTransferManager on Windows (mbook-ui docs, "Design").
+# DataTransferManager on Windows. Android shares through the activity of
+# `mbook-android` (mbook-ui docs, "Design").
 robius-share = "0.3"
+# The allocator and the data and cache directories of the desktop `main`.
+mimalloc3 = "0.1"
+dirs = "7"
 
-[dev-dependencies]
+[target.'cfg(target_os = "android")'.dependencies]
+# The GPUI platform of Android: window, input, renderer, and the file picker
+# of the Storage Access Framework. Pinned to the commit of
+# longbridge/gpui-mobile#56, which moves it to the gpui-pre of gpui-kit 0.10;
+# crates.io has only a release for an older gpui-pre.
+gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/longbridge/gpui-mobile", rev = "d8945a826e4012b43a46b53d7e72b6beae24cc80", default-features = false }
+# Records reach logcat through the logger `mbook-android` installs.
+log = "0.4"
+# Calls the activity for the documents it received and for the share sheet;
+# the version of gpui-mobile, whose environment it runs in.
+jni = "0.22"
+
+# The tests run on the desktop only.
+[target.'cfg(not(target_os = "android"))'.dev-dependencies]
 gpui-kit = { version = "0.10", features = ["gpui-fast", "test-support"] }
 
 # The screens are rendered on the main thread, which a test harness does not
@@ -95,6 +119,11 @@ name = "visual"
 path = "tests/visual.rs"
 harness = false
 required-features = ["visual"]
+
+[target.'cfg(windows)'.dependencies]
+# Registers the book formats for the user who runs the application: the
+# installer registers none (mbook-ui docs, "Opening files from the system").
+windows-registry = "0.6"
 
 # The icon of the Windows executable (`build.rs`): the `.ico` is made from the
 # PNG of the bundle and compiled in as a resource.

@@ -20,8 +20,13 @@ pub(super) enum ShareError {
     #[error("a copy of the book could not be made")]
     Copy(#[from] io::Error),
     /// The share sheet of the platform could not be shown.
+    #[cfg(not(target_os = "android"))]
     #[error("the share sheet could not be shown")]
     Sheet(#[from] robius_share::Error),
+    /// The activity of Android could not show the share sheet.
+    #[cfg(target_os = "android")]
+    #[error("the share sheet could not be shown")]
+    Sheet(#[source] android::SheetError),
 }
 
 /// Shows the share sheet of the platform over the key window with the file at
@@ -30,6 +35,7 @@ pub(super) enum ShareError {
 ///
 /// It must be called on the main thread; it returns once the sheet is shown,
 /// not when the file has been sent.
+#[cfg(not(target_os = "android"))]
 pub(super) fn present(path: &Path, title: &str) -> Result<(), ShareError> {
     robius_share::ShareSheet::new()
         .set_title(title)
@@ -37,6 +43,70 @@ pub(super) fn present(path: &Path, title: &str) -> Result<(), ShareError> {
         .add_file(path)
         .share()
         .map_err(ShareError::from)
+}
+
+/// Asks the activity of Android to show the share sheet with the file at
+/// `path`, in the folder of shared files, called `title`. The activity lends
+/// the file through a provider of its own, and starts the sheet on its own
+/// thread: the call returns before the sheet is shown.
+#[cfg(target_os = "android")]
+pub(super) fn present(path: &Path, title: &str) -> Result<(), ShareError> {
+    android::share(path, title).map_err(ShareError::Sheet)
+}
+
+#[cfg(target_os = "android")]
+mod android {
+    use std::path::Path;
+
+    use gpui_mobile::android::jni::{activity, find_app_class, with_env};
+    use jni::objects::{JObject, JValue};
+
+    /// The activity of `mbook-android`, which shows the sheet.
+    const ACTIVITY: &str = "io.github.m_compressors.mbook.MbookActivity";
+
+    /// Why the activity did not show the sheet.
+    #[derive(Debug, thiserror::Error)]
+    pub(crate) enum SheetError {
+        /// A call into Java failed.
+        #[error("{0}")]
+        Java(String),
+        /// The file is not one the activity may lend.
+        #[error("the file is not in the folder of shared files")]
+        NotShared,
+    }
+
+    pub(super) fn share(path: &Path, title: &str) -> Result<(), SheetError> {
+        let path = path.to_string_lossy();
+        let shared = with_env(|env| {
+            let class = find_app_class(env, ACTIVITY)?;
+            let activity = activity(env)?;
+            let path = env
+                .new_string(path.as_ref())
+                .map_err(|error| error.to_string())?;
+            let title = env.new_string(title).map_err(|error| error.to_string())?;
+            env.call_static_method(
+                &class,
+                jni::jni_str!("share"),
+                jni::jni_sig!("(Landroid/app/Activity;Ljava/lang/String;Ljava/lang/String;)Z"),
+                &[
+                    JValue::Object(&activity),
+                    JValue::Object(&JObject::from(path)),
+                    JValue::Object(&JObject::from(title)),
+                ],
+            )
+            .and_then(jni::objects::JValueOwned::z)
+            .map_err(|error| {
+                env.exception_clear();
+                error.to_string()
+            })
+        })
+        .map_err(SheetError::Java)?;
+        if shared {
+            Ok(())
+        } else {
+            Err(SheetError::NotShared)
+        }
+    }
 }
 
 /// Offers the book `key`, called `title`, to `present` under a file named

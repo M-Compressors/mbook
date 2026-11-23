@@ -140,17 +140,6 @@ impl ViewMode {
     }
 }
 
-/// Where a compact window is in its stack of screens.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Level {
-    /// The list of sections and chapters.
-    Sections,
-    /// One section about the whole book.
-    Section,
-    /// One chapter.
-    Chapter,
-}
-
 /// A field of the Details form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum MetaField {
@@ -239,8 +228,6 @@ pub(super) struct Session {
     pub(super) outline: Option<Outline>,
     /// The section in front.
     pub(super) section: Section,
-    /// The screen of a compact window.
-    pub(super) level: Level,
     /// The chapter in the editor.
     pub(super) open: Option<String>,
     /// What the chapter area shows.
@@ -273,7 +260,6 @@ impl Session {
             phase: Phase::Loading,
             outline: None,
             section: Section::Chapters,
-            level: Level::Chapter,
             open: None,
             mode: ViewMode::Visual,
             edited: BTreeSet::new(),
@@ -511,33 +497,15 @@ impl Session {
         }
     }
 
-    /// Shows the section, in a compact window as its own screen.
+    /// Shows the section.
     pub(super) fn show_section(&mut self, section: Section) {
         self.section = section;
-        self.level = if section == Section::Chapters {
-            Level::Chapter
-        } else {
-            Level::Section
-        };
     }
 
     /// Opens a chapter in the editor.
     pub(super) fn show_chapter(&mut self, path: &str) {
         self.section = Section::Chapters;
-        self.level = Level::Chapter;
         self.open = Some(path.to_owned());
-    }
-
-    /// Goes one screen back in a compact window: from a chapter or a section
-    /// to the list that holds both; `false` when the list is in front.
-    pub(super) fn step_back(&mut self) -> bool {
-        match self.level {
-            Level::Chapter | Level::Section => {
-                self.level = Level::Sections;
-                true
-            }
-            Level::Sections => false,
-        }
     }
 
     /// Records what went wrong at a control.
