@@ -17,6 +17,7 @@ icon_assets!(
         Trash,
         FilePlus,
         Download,
+        Share,
         List,
         AArrowDown,
         AArrowUp,
@@ -119,6 +120,11 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn the_share_icon_of_the_book_menu_is_embedded() {
+        assert!(Assets.load("icons/share.svg").unwrap().is_some());
     }
 
     #[test]

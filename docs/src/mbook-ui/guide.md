@@ -60,7 +60,11 @@ Compact
 - A book that is still being converted is already on the shelf, with its
   file name and the state of the import.
 - The menu of a book (right click, the `…` button, or a long press): Open,
-  Edit, Show the file, Export, Remove.
+  Edit, Show the file, Export, Share, Remove.
+- **Share** opens the share sheet of the system with the mbook file of the
+  book: AirDrop, Messages and Mail on macOS, Nearby Sharing and installed
+  apps on Windows, and the messengers and social networks installed there
+  that accept a file. What happens next is up to the app chosen.
 - Files are added with `+` or by dropping them on the window. The system
   picker lists mbook and the extensions accepted by the converter.
 - **New book…** asks for a title. Confirming creates a book in the library

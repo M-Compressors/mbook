@@ -42,7 +42,7 @@ on x86 and x86-64. The executable is called `mbook`.
 
 | Screen | What you do there |
 | --- | --- |
-| **Library** | Keep books as covers on a shelf, search and sort them, add files with `+` or by dropping them on the window, create a new book, export one in any of eight formats |
+| **Library** | Keep books as covers on a shelf, search and sort them, add files with `+` or by dropping them on the window, create a new book, export one in any of eight formats, send its file through the share sheet of the system |
 | **Reader** | Read one scrolling column or one page at a time from where the text begins, follow links and footnotes and return, go to the notes, the glossary or the index the book marks, open a picture or a diagram over the whole window and zoom it, search the whole book, choose typeface, size and one of five page tones |
 | **Editor** | Write chapters as blocks, as Markdown source or side by side with a preview; put in pictures, links, diagrams and formulas; edit the details, the cover, the contents and the landmarks; see what `Book::check` reports |
 | **Settings** | Typography, page tone, the size of the interface, motion and updates |
@@ -83,6 +83,7 @@ beside the content.
     books/<key>.mbook       one file per book
 <cache dir>/mbook/          may be deleted at any time
     covers/<key>.jpg        thumbnails of covers
+    share/                  books handed to the share sheet, until the next start
 ```
 
 ## Testing

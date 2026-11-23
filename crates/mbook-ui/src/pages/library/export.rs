@@ -77,6 +77,12 @@ pub(super) fn choose<F>(
 }
 
 fn file_name(title: &str, format: Format) -> String {
+    format!("{}.{}", base_name(title), format.extension())
+}
+
+/// A file name without extension made of `title` that every platform accepts,
+/// or `Book` when nothing of the title is left.
+pub(super) fn base_name(title: &str) -> String {
     let mut safe = String::new();
     for character in title.chars() {
         let character = if character.is_control() || "/\\<>:\"|?*".contains(character) {
@@ -105,12 +111,11 @@ fn file_name(title: &str, format: Format) -> String {
                 )
             })
         });
-    let safe = if safe.is_empty() || reserved {
-        "Book"
+    if safe.is_empty() || reserved {
+        "Book".to_owned()
     } else {
-        safe
-    };
-    format!("{safe}.{}", format.extension())
+        safe.to_owned()
+    }
 }
 
 fn with_extension(path: PathBuf, format: Format) -> PathBuf {

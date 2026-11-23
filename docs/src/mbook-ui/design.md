@@ -46,6 +46,7 @@ several packages share.
 | --- | --- | --- | --- |
 | `gpui-kit`, feature `gpui-fast` | 0.10.0, 2026-11-16 | Apache-2.0 | The interface; brings GPUI Fast 0.1 |
 | `rfd` | 0.17.2 | MIT | Native book and picture pickers with extension filters |
+| `robius-share` | 0.3.0, 2026-07-18; Project Robius, repository pushed 2026-11-13 | MIT | The share sheet of the platform; Rust 1.77. On Windows it brings `windows` 0.56 beside the versions GPUI uses |
 | `mimalloc3` | 0.1.61, 2026-11-17 | MIT | The allocator of the binary |
 | `dirs` | 7.0.0, 2026-09-05 | MIT OR Apache-2.0 | The roots on desktop |
 | `self_update` | 1.3.3, 2026-10-27 | MIT | Updates; Rust 1.88 |
@@ -69,6 +70,8 @@ Ruled out:
 | `image` with `avif-native` | Needs the C library dav1d on the machine that builds and on the one that runs |
 | `zenavif`, `rav1d-safe` | AGPL-3.0, or a commercial license |
 | `rusqlite` | See [Rationale and alternatives](#rationale-and-alternatives) |
+| `kael_share` 0.4.1 | Calls a named sharing service directly instead of showing the picker, and shares no file on Windows |
+| `istmo-share` 0.1.1-alpha | An alpha whose API changes between releases; needs the window registry and runtime of the istmo framework |
 
 ## Drawbacks
 
@@ -99,6 +102,7 @@ Ruled out:
 | --- | --- | --- | --- |
 | Toolkit | GPUI Kit on GPUI Fast | | Decided by the format author. |
 | File picker filters | Native dialogs through `rfd` | GPUI file prompts | GPUI Kit 0.10 cannot pass extension filters to its platform picker. |
+| Sending a book to other people | The share sheet of the platform through `robius-share`, with the mbook file | Share links of social networks; code of this crate on AppKit and WinRT | A share link carries text and a web address, and a library book has no address. Calling the platform directly needs `unsafe`, which the workspace forbids; `robius-share` keeps it in a maintained crate. |
 | Export destination | Native save dialog and temporary file in the destination directory | Convert directly into the chosen file | The completed file is published in one operation and an existing file cannot be overwritten. |
 | Landmarks section | The start in a block of its own, then the other landmarks as a list | One row for every kind, filled or empty; one list with the start among the rest | The start is the one landmark a reader meets without asking and a book has one. Twenty-two rows would bury the few places a book has. |
 | Choosing the kind of a landmark | One menu grouped by what a reader looks for, the places looked up while reading first, with a line that says what the choice gives | An alphabetical menu; the identifiers of the format | Authors choose by purpose, and the line answers why a place is worth marking. |

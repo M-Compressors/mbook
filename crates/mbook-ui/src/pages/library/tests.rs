@@ -691,7 +691,7 @@ fn the_menu_of_a_book_opens_from_its_control(cx: &mut TestAppContext) {
     });
     harness.click(&format!("more-{key}"), cx);
     harness.frame(cx, |window, _| {
-        for label in ["Open", "Edit", "Show the file", "Export", "Remove"] {
+        for label in ["Open", "Edit", "Show the file", "Export", "Share", "Remove"] {
             assert!(window.try_find_by_label(label).is_some(), "{label}");
         }
     });
@@ -759,6 +759,74 @@ fn dismissing_the_export_picker_leaves_the_library_open(cx: &mut TestAppContext)
     assert_eq!(harness.visible(cx), [key]);
     harness.frame(cx, |window, _| {
         assert!(window.try_find("notification").is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn sharing_offers_a_copy_named_after_the_book_and_announces_nothing(cx: &mut TestAppContext) {
+    let harness = start(cx, 1280.0, &["Dune: Messiah"]);
+    let key = harness.keys[0];
+    let offered = Rc::new(RefCell::new(None));
+    let sink = offered.clone();
+    harness.frame(cx, |window, cx| {
+        super::share::choose(key, "Dune: Messiah", window, cx, move |path, title| {
+            let bytes = std::fs::read(path).map_err(super::share::ShareError::from)?;
+            sink.replace(Some((path.to_path_buf(), title.to_owned(), bytes)));
+            Ok(())
+        });
+    });
+    cx.run_until_parked();
+
+    let (path, title, bytes) = offered.take().expect("the sheet was offered");
+    let shared = harness.frame(cx, |_, cx| Store::global(cx).roots.shared());
+    assert!(path.starts_with(shared));
+    assert_eq!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("Dune_ Messiah.mbook")
+    );
+    assert_eq!(title, "Dune: Messiah");
+    assert_eq!(bytes, b"book");
+    harness.frame(cx, |window, _| {
+        assert!(window.try_find("notification").is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn a_share_sheet_that_cannot_be_shown_is_announced(cx: &mut TestAppContext) {
+    let harness = start(cx, 1280.0, &["Dune"]);
+    let key = harness.keys[0];
+    harness.frame(cx, |window, cx| {
+        super::share::choose(key, "Dune", window, cx, |_, _| {
+            Err(super::share::ShareError::from(
+                robius_share::Error::Unsupported,
+            ))
+        });
+    });
+    cx.run_until_parked();
+
+    harness.frame(cx, |window, _| {
+        assert!(window.find("notification").visible());
+    });
+}
+
+#[gpui_kit::test]
+fn a_book_whose_file_is_gone_is_announced_without_a_sheet(cx: &mut TestAppContext) {
+    let harness = start(cx, 1280.0, &["Dune"]);
+    let key = harness.keys[0];
+    let shown = Rc::new(Cell::new(false));
+    let sink = shown.clone();
+    harness.frame(cx, |window, cx| {
+        std::fs::remove_file(Store::global(cx).roots.book(key)).unwrap();
+        super::share::choose(key, "Dune", window, cx, move |_, _| {
+            sink.set(true);
+            Ok(())
+        });
+    });
+    cx.run_until_parked();
+
+    assert!(!shown.get());
+    harness.frame(cx, |window, _| {
+        assert!(window.find("notification").visible());
     });
 }
 

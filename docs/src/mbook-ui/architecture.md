@@ -88,6 +88,7 @@ dirs::data_dir()/mbook/            kept; backed up with the user's data
 dirs::cache_dir()/mbook/           may be deleted at any time
     covers/<key>.jpg               thumbnails of covers
     update/                        a downloaded update
+    share/share-*/<title>.mbook    books handed to the share sheet, until the next start
 ```
 
 - `<key>` is a UUID version 7 made when the book is added. It is not the
@@ -188,6 +189,36 @@ The background executor opens the saved library book and writes the chosen
 format to a temporary file in the destination directory. The finished file
 is published only if the destination name is available. The application
 announces success or failure in the window.
+
+## Share
+
+The library book menu offers **Share**. The library file,
+`books/<key>.mbook`, is named by its key, and that name is what a recipient
+would see. So the background executor first puts the book in a folder of its
+own, `<cache>/share/share-*/<title>.mbook`, under the name **Export**
+suggests: a hard link, or a copy where the cache is on another volume. The
+folder of each share is new, so two books of one title do not replace each
+other while an app still reads the first. The shares stay until the next
+start, when `Roots::prepare` removes them: the app a book is shared with
+reads the file after the sheet has closed.
+
+Back on the main thread, the path goes to the share sheet of the platform
+through [`robius-share`](https://docs.rs/robius-share), with the title of the
+book as the title and the subject of the share. The call returns once the
+sheet is shown:
+
+- on macOS an `NSSharingServicePicker` shown at the content view of the key
+  window, which puts it beside the window rather than at the menu;
+- on Windows the `DataTransferManager` of the foreground window, with the
+  file as a storage item;
+- on Linux `robius-share` hands the file to the desktop portal or to
+  `xdg-open`; there is no Linux build of the application yet.
+
+The application learns nothing of what the reader chooses in the sheet. A
+copy that cannot be made, or a sheet that cannot be shown, is announced in
+the window with its cause; a shown sheet is not announced. The file is shared as it is in the library,
+not converted: a reader needs an mbook reader to open it, and
+**Export** gives the other formats.
 
 ## Reading
 

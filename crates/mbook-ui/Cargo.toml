@@ -81,6 +81,9 @@ futures = "0.3"
 self_update = { version = "1.3", default-features = false, features = ["ureq", "rustls", "github", "archive-tar", "compression-tar-gz", "signatures"], optional = true }
 # Native file pickers with extension filters.
 rfd = "0.18"
+# The share sheet of the platform: NSSharingServicePicker on macOS,
+# DataTransferManager on Windows (mbook-ui docs, "Design").
+robius-share = "0.3"
 
 [dev-dependencies]
 gpui-kit = { version = "0.10", features = ["gpui-fast", "test-support"] }

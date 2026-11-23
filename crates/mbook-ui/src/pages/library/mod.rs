@@ -19,6 +19,7 @@ mod create;
 mod export;
 mod imports;
 mod menu;
+mod share;
 mod shelf;
 mod sidebar;
 mod view;

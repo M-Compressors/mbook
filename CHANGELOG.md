@@ -4,6 +4,10 @@
 
 ### Added
 
+- The book menu of the library has **Share**. It opens the share sheet of
+  the system with the mbook file of the book, named after its title, so it
+  can be sent through AirDrop, Messages, Mail, a messenger or a social
+  network. It uses the `robius-share` crate.
 - The reader uses the landmarks of a book. A book read for the first time
   opens at its `start` landmark instead of at its first page. The contents
   panel lists the landmarks under **Go to**, above the entries, and choosing

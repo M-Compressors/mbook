@@ -82,7 +82,15 @@ impl Roots {
         self.cache.join("update")
     }
 
-    /// Creates the folders and removes what unfinished imports left behind.
+    /// The folder of the copies of books handed to the share sheet, each
+    /// named after its book. They are kept until the next start: the app a
+    /// book is shared with reads it after the sheet has closed.
+    pub(crate) fn shared(&self) -> PathBuf {
+        self.cache.join("share")
+    }
+
+    /// Creates the folders and removes what unfinished imports and earlier
+    /// shares left behind.
     ///
     /// Touches the file system: call it on the background executor.
     ///
@@ -91,14 +99,20 @@ impl Roots {
     /// When a folder cannot be created or emptied.
     pub(crate) fn prepare(&self) -> io::Result<()> {
         let incoming = self.incoming();
-        match fs::remove_dir_all(&incoming) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
+        empty(&incoming)?;
+        empty(&self.shared())?;
         fs::create_dir_all(&incoming)?;
         fs::create_dir_all(self.covers())?;
         fs::create_dir_all(self.update())
+    }
+}
+
+/// Removes the folder `path` with what it holds; a missing one is fine.
+fn empty(path: &Path) -> io::Result<()> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
@@ -136,6 +150,7 @@ mod tests {
             Path::new("/cache/covers").join(format!("{key}.jpg"))
         );
         assert_eq!(roots.update(), Path::new("/cache/update"));
+        assert_eq!(roots.shared(), Path::new("/cache/share"));
     }
 
     #[test]
@@ -160,6 +175,17 @@ mod tests {
         roots.prepare()?;
         assert!(!roots.incoming().join("half").exists());
         assert!(roots.book(key).is_file());
+        Ok(())
+    }
+
+    #[test]
+    fn prepare_removes_the_copies_of_earlier_shares() -> io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let roots = Roots::new(dir.path().join("data"), dir.path().join("cache"));
+        fs::create_dir_all(roots.shared().join("share-1"))?;
+        fs::write(roots.shared().join("share-1/Dune.mbook"), b"a book")?;
+        roots.prepare()?;
+        assert!(!roots.shared().exists());
         Ok(())
     }
 

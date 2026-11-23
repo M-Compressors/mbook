@@ -8,8 +8,8 @@ use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::{App, Context, WeakEntity, Window};
 use mbook_converter::Format;
 
-use super::export;
 use super::{LibraryEvent, LibraryPage};
+use super::{export, share};
 use crate::entities::catalogue::{Library, Store};
 use crate::shared::model::BookKey;
 
@@ -21,6 +21,8 @@ pub(super) const EDIT: &str = "Edit";
 pub(super) const SHOW_FILE: &str = "Show the file";
 /// Save a copy in another format.
 pub(super) const EXPORT: &str = "Export";
+/// Send the file of the book through the share sheet of the platform.
+pub(super) const SHARE: &str = "Share";
 /// Remove the book from the library.
 pub(super) const REMOVE: &str = "Remove";
 
@@ -30,7 +32,7 @@ pub(super) fn remove_question(title: &str) -> String {
 }
 
 /// Fills `menu` with what can be done to the book `key`, called `title`:
-/// open, edit, show the file, export, remove.
+/// open, edit, show the file, export, share, remove.
 pub(super) fn book_menu(
     menu: PopupMenu,
     key: BookKey,
@@ -47,6 +49,7 @@ pub(super) fn book_menu(
     };
     let title = title.to_owned();
     let export_title = title.clone();
+    let share_title = title.clone();
     let page_for_remove = page.clone();
     menu.item(
         PopupMenuItem::new(OPEN)
@@ -81,6 +84,13 @@ pub(super) fn book_menu(
                 ))
             })
         },
+    )
+    .item(
+        PopupMenuItem::new(SHARE)
+            .icon(IconName::Share)
+            .on_click(move |_, window, cx| {
+                share::choose(key, &share_title, window, cx, share::present);
+            }),
     )
     .separator()
     .item(
