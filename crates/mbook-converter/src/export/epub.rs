@@ -1,5 +1,7 @@
 //! EPUB 3 with one XHTML document per chapter.
 
+mod landmarks;
+
 use std::collections::HashMap;
 use std::io::Write;
 use std::rc::Rc;
@@ -12,6 +14,7 @@ use super::markup::{
     CSS, DENSITY, Embedded, Layout, TEXT, chapter_file, chapter_html, contents, title_and_language,
 };
 use super::{Format, Result, export_error, picture};
+use landmarks::COVER_PAGE;
 
 pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
     let epub_error = |error| export_error(Format::Epub, error);
@@ -39,6 +42,7 @@ pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
         )
     };
     let mut pictures = HashMap::new();
+    let mut cover = false;
     for (index, source) in book.pictures().iter().enumerate() {
         let name = format!("image-{}.png", index + 1);
         let png = picture::png(source, Format::Epub)?;
@@ -47,11 +51,12 @@ pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
                 .map_err(epub_error)?;
             let page = document(&format!("<p><img src=\"{name}\" alt=\"Cover\" /></p>"));
             epub.add_content(
-                EpubContent::new("cover.xhtml", page.as_bytes())
+                EpubContent::new(COVER_PAGE, page.as_bytes())
                     .title("Cover")
                     .reftype(ReferenceType::Cover),
             )
             .map_err(epub_error)?;
+            cover = true;
         } else {
             epub.add_resource(&name, png.bytes.as_slice(), "image/png")
                 .map_err(epub_error)?;
@@ -101,8 +106,8 @@ pub(super) fn write(book: &Book, sink: &mut impl Write) -> Result<()> {
         epub.add_resource(name, drawn.png.bytes.as_slice(), "image/png")
             .map_err(epub_error)?;
     }
-    epub.generate(sink).map_err(|error| match error {
-        epub_builder::Error::IoError { cause, .. } => cause.into(),
-        other => epub_error(other),
-    })
+    let mut generated = Vec::new();
+    epub.generate(&mut generated).map_err(epub_error)?;
+    let generated = landmarks::with_marks(generated, &landmarks::marks(book, cover))?;
+    sink.write_all(&generated).map_err(Into::into)
 }

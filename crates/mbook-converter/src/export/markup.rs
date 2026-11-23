@@ -146,6 +146,27 @@ pub(super) fn chapter_file(chapter: usize) -> String {
     format!("chapter-{}.xhtml", chapter + 1)
 }
 
+/// The address in the EPUB of a place of the book: the file of the chapter
+/// at `path`, followed by the identifier of its anchor `name`. `None` when
+/// the book has no such chapter or the chapter no such anchor.
+pub(super) fn epub_href(book: &Book, path: &str, name: Option<&str>) -> Option<String> {
+    let chapter = book
+        .chapters()
+        .iter()
+        .position(|chapter| chapter.path() == path)?;
+    let Some(name) = name else {
+        return Some(chapter_file(chapter));
+    };
+    let anchor = anchors(&book.chapters()[chapter]).position(|anchor| anchor.name == name)?;
+    Some(
+        Place {
+            chapter,
+            anchor: Some(anchor),
+        }
+        .href(&Layout::Epub),
+    )
+}
+
 fn anchors(chapter: &Chapter) -> impl Iterator<Item = &mbook::Anchor> {
     chapter.anchors().iter().chain(chapter.extra_anchors())
 }

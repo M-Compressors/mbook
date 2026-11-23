@@ -90,7 +90,7 @@ independently of the Rust 1.89 minimum for the default import build.
 
 | Format | Output |
 | --- | --- |
-| EPUB | EPUB 3 with XHTML chapters in reading order, contents, links, footnotes, metadata, a PNG cover and illustrations, and diagrams and formulas as PNG resources. |
+| EPUB | EPUB 3 with XHTML chapters in reading order, contents, [landmarks](#landmarks-in-an-epub), links, footnotes, metadata, a PNG cover and illustrations, and diagrams and formulas as PNG resources. |
 | DOCX | Editable Word paragraphs and headings, basic inline styles, PNG pictures, diagrams and formulas, and core metadata. Tables and lists are flattened into paragraphs. |
 | FB2 | FictionBook 2 XML with chapter sections, basic inline styles, metadata and Base64-encoded PNG pictures, diagrams and formulas. |
 | PDF | A paginated document with selectable text, PNG illustrations, diagrams and formulas, and embedded Noto Sans. Glyph coverage is limited to the bundled font. A formula inside a line is drawn on a line of its own. |
@@ -104,6 +104,33 @@ writers flatten links to their visible text. When an output needs PNG, the
 decoder uses the coded AVIF pixels. AVIF container crop, rotation and mirror properties are
 not applied by these writers. Markdown embeds the original AVIF. Export does
 not fetch network resources.
+
+### Landmarks in an EPUB
+
+The [landmarks](../rfcs/0001-mbook-format.md#landmarks-1) of the book are
+listed in the `landmarks` navigation of the EPUB, after the cover page when
+the book has a cover, and, for the kinds that EPUB 2 has a type for, in the
+guide of the package as well. No other writer keeps them.
+
+- A kind is written as its type of the EPUB structural semantics
+  vocabulary: `start` as `bodymatter`, `notes` as `endnotes`,
+  `acknowledgements` as `acknowledgments`, `title-page` as `titlepage`,
+  `list-of-figures` and `list-of-tables` as `loi` and `lot`, `copyright` as
+  `copyright-page`, and every other kind by its own name. In the guide,
+  `start` is `text`, `notes` is `notes`, and `introduction`, `prologue`,
+  `epilogue`, `conclusion`, `afterword` and `appendix` have no reference.
+- A landmark leads to the document of its chapter, and to the anchor it
+  names in it.
+- A landmark without a title gets the name of its kind in English, such as
+  `Start` or `Index`, since a link of the navigation must have text.
+- Left out are `about-the-author` and the kinds for private use (`x-…`),
+  which EPUB has no type for, and a landmark whose chapter or anchor the
+  book does not have.
+- A book with neither landmarks nor a cover has no `landmarks` navigation.
+
+An EPUB exported this way gives the same landmarks when it is
+[imported](conversion.md#landmarks) again, except that a landmark without a
+title gets the name it was written with.
 
 Diagrams and formulas are drawn by [`figure`](#diagrams-and-formulas) in
 dark ink on a white page and written as PNG pictures, except in plain text.

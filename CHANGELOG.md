@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- `mbook-converter`: an exported EPUB lists the landmarks of the book. They
+  go into its `landmarks` navigation, with their anchors, and those with an
+  EPUB 2 type into the guide. `about-the-author`, private kinds and
+  landmarks that lead nowhere are left out, and a landmark without a title
+  is given the name of its kind.
+
 ### Changed
 
 - The APK holds only the Java classes of gpui-mobile that mbook uses, and
@@ -12,6 +20,8 @@
 
 ### Fixed
 
+- An EPUB exported from a book without a cover no longer has an empty
+  `landmarks` navigation, which EPUB does not allow.
 - Scrolled to the end of a chapter, the last lines of a scrolling text no
   longer lie under the controls at the bottom of the reader: the text is
   followed by room as tall as them, so its end stops above them.

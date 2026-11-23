@@ -2,7 +2,7 @@
 
 #![cfg(feature = "export")]
 
-use mbook_converter::mbook::{Book, Toc, TocItem};
+use mbook_converter::mbook::{Book, Landmark, Toc, TocItem};
 use mbook_converter::{ConvertOptions, Converter, Error, Format};
 
 type Outcome = Result<(), Box<dyn std::error::Error>>;
@@ -263,6 +263,154 @@ fn an_html_contents_list_follows_the_headings_of_a_new_book() -> Outcome {
     let bytes = export(&book, Format::Html)?;
     let html = std::str::from_utf8(&bytes)?;
     assert!(html.contains("<a href=\"#chapter-1-anchor-1\">A heading</a>"));
+    Ok(())
+}
+
+/// A book whose landmarks lead to a chapter, to a heading and to an extra
+/// anchor, with a title to escape, kinds that EPUB has no type for and
+/// landmarks that lead nowhere.
+fn marked() -> Result<Book, Box<dyn std::error::Error>> {
+    let mut book = Book::new("Marked places", "en")?;
+    book.add_chapter("one.md", "# Arrival\n\nThe text begins.\n")?;
+    book.add_chapter(
+        "two.md",
+        "# Terms\n\nWords.\n\n[remark]: #remark\nA remark.\n",
+    )?;
+    book.set_landmarks(vec![
+        Landmark::new("start", "", "one.md"),
+        Landmark::new("glossary", " Terms & <words> ", "two.md#terms"),
+        Landmark::new("notes", "Notes", "two.md#remark"),
+        Landmark::new("about-the-author", "The author", "one.md"),
+        Landmark::new("x-private", "Private", "one.md"),
+        Landmark::new("index", "Index", "three.md"),
+        Landmark::new("appendix", "Appendix", "two.md#nowhere"),
+    ])?;
+    Ok(book)
+}
+
+/// The `landmarks` navigation of an exported EPUB, if it has one.
+fn landmarks_navigation(bytes: &[u8]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let nav = zip_text(bytes, "OEBPS/nav.xhtml")?;
+    assert!(nav.matches("landmarks").count() <= 1, "{nav}");
+    Ok(nav.find("<nav epub:type=\"landmarks\"").and_then(|start| {
+        let end = start + nav[start..].find("</nav>")? + "</nav>".len();
+        Some(nav[start..end].to_owned())
+    }))
+}
+
+#[test]
+fn an_epub_lists_the_landmarks_of_the_book_in_its_navigation() -> Outcome {
+    let bytes = export(&marked()?, Format::Epub)?;
+    assert_eq!(
+        landmarks_navigation(&bytes)?.as_deref(),
+        Some(
+            "<nav epub:type=\"landmarks\"><ol>\
+<li><a epub:type=\"bodymatter\" href=\"chapter-1.xhtml\">Start</a></li>\
+<li><a epub:type=\"glossary\" href=\"chapter-2.xhtml#chapter-2-anchor-1\">Terms &amp; &lt;words&gt;</a></li>\
+<li><a epub:type=\"endnotes\" href=\"chapter-2.xhtml#chapter-2-anchor-2\">Notes</a></li>\
+</ol></nav>"
+        )
+    );
+    Ok(())
+}
+
+#[test]
+fn an_epub_lists_the_landmarks_with_an_epub_2_type_in_its_guide() -> Outcome {
+    let bytes = export(&marked()?, Format::Epub)?;
+    let opf = zip_text(&bytes, "OEBPS/content.opf")?;
+    for reference in [
+        "<reference type=\"text\" title=\"Start\" href=\"chapter-1.xhtml\"/>",
+        "<reference type=\"glossary\" title=\"Terms &amp; &lt;words&gt;\" href=\"chapter-2.xhtml#chapter-2-anchor-1\"/>",
+        "<reference type=\"notes\" title=\"Notes\" href=\"chapter-2.xhtml#chapter-2-anchor-2\"/>",
+    ] {
+        assert!(opf.contains(reference), "{reference} in {opf}");
+    }
+    assert_eq!(opf.matches("<reference ").count(), 4, "{opf}");
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "epub")]
+fn the_landmarks_of_an_epub_are_those_of_the_book_when_it_is_imported_again() -> Outcome {
+    let bytes = export(&marked()?, Format::Epub)?;
+    let back = Converter::new().load_slice(&bytes)?.book;
+    let landmarks: Vec<_> = back
+        .landmarks()
+        .iter()
+        .map(|landmark| (landmark.kind.as_str(), landmark.title.as_str()))
+        .collect();
+    assert_eq!(
+        landmarks,
+        [
+            ("start", "Start"),
+            ("glossary", "Terms & <words>"),
+            ("notes", "Notes")
+        ]
+    );
+    let text_at = |landmark: &Landmark| -> Option<String> {
+        let chapter = back.chapter(&landmark.chapter)?;
+        let offset = match &landmark.anchor {
+            None => 0,
+            Some(name) => {
+                chapter
+                    .anchors()
+                    .iter()
+                    .chain(chapter.extra_anchors())
+                    .find(|anchor| &anchor.name == name)?
+                    .offset
+            }
+        };
+        Some(chapter.text()[usize::try_from(offset).ok()?..].to_owned())
+    };
+    let places: Vec<_> = back.landmarks().iter().map(text_at).collect();
+    assert!(
+        places[0]
+            .as_deref()
+            .is_some_and(|t| t.starts_with("# Arrival")),
+        "{places:?}"
+    );
+    assert!(
+        places[1]
+            .as_deref()
+            .is_some_and(|t| t.starts_with("# Terms")),
+        "{places:?}"
+    );
+    // An extra anchor is at its definition, the line before the remark.
+    assert!(
+        places[2]
+            .as_deref()
+            .and_then(|t| t.split_once("\n\n"))
+            .is_some_and(
+                |(definition, rest)| definition.starts_with('[') && rest.starts_with("A remark")
+            ),
+        "{places:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_epub_lists_its_cover_page_as_a_landmark() -> Outcome {
+    let bytes = export(&book()?, Format::Epub)?;
+    assert_eq!(
+        landmarks_navigation(&bytes)?.as_deref(),
+        Some(
+            "<nav epub:type=\"landmarks\"><ol>\
+<li><a epub:type=\"cover\" href=\"cover.xhtml\">Cover</a></li>\
+</ol></nav>"
+        )
+    );
+    let opf = zip_text(&bytes, "OEBPS/content.opf")?;
+    assert!(opf.contains("<reference type=\"cover\""), "{opf}");
+    Ok(())
+}
+
+#[test]
+fn an_epub_without_landmarks_or_cover_has_no_landmarks_navigation() -> Outcome {
+    let mut book = Book::new("Plain", "en")?;
+    book.add_chapter("one.md", "# One\n\nText.\n")?;
+    let bytes = export(&book, Format::Epub)?;
+    assert_eq!(landmarks_navigation(&bytes)?, None);
+    assert!(!zip_text(&bytes, "OEBPS/nav.xhtml")?.contains("landmarks"));
     Ok(())
 }
 

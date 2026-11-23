@@ -156,7 +156,7 @@ Each import format has a Cargo feature enabled by default. The optional
 
 | Feature | Format | Read by | Exported as |
 | --- | --- | --- | --- |
-| `epub` | EPUB 2 and 3 | `rbook`, `htmd` | EPUB 3 with contents, links, footnotes and PNG pictures |
+| `epub` | EPUB 2 and 3 | `rbook`, `htmd` | EPUB 3 with contents, landmarks, links, footnotes and PNG pictures |
 | `fb2` | FictionBook 2, plain or inside a ZIP | `quick-xml` | FictionBook 2 with Base64 PNG pictures |
 | `pdf` | PDF; a scan becomes one picture per page | `unpdf` | Pages with selectable text and embedded Noto Sans |
 | `cbz` | Comic book archive | `zip`, `alphanumeric-sort` | The paginated edition as numbered PNG pages |
