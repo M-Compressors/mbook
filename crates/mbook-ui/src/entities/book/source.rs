@@ -11,7 +11,7 @@ use crate::entities::figure::{FigureKind, FigureSource, FigureSources};
 
 use super::chapter::{PictureRef, PreparedChapter, Target, analyse};
 use super::error::BookError;
-use super::snapshot::{BookSnapshot, ChapterInfo, ContentsEntry};
+use super::snapshot::{BookSnapshot, ChapterInfo, ContentsEntry, LandmarkPlace};
 
 /// The file of an open book.
 ///
@@ -27,18 +27,33 @@ pub(crate) struct BookSource {
     indices: HashMap<ChapterId, usize>,
 }
 
-/// Opens a book: reads its tables and builds the snapshot.
+/// Opens a book: reads its tables and its landmarks and builds the snapshot.
 ///
 /// # Errors
 ///
 /// [`BookError::Open`] when the file cannot be opened or is not a book.
 pub(crate) fn open(path: &Path) -> Result<(BookSnapshot, BookSource), BookError> {
-    let reader = BookReader::open(path).map_err(BookError::Open)?;
+    let mut reader = BookReader::open(path).map_err(BookError::Open)?;
     let chapters: Vec<ChapterId> = reader.chapters().map(|chapter| chapter.id).collect();
     let indices: HashMap<ChapterId, usize> = chapters
         .iter()
         .enumerate()
         .map(|(index, id)| (*id, index))
+        .collect();
+    // The landmarks are a convenience: a book whose table of them is damaged
+    // is read without them.
+    let landmarks = reader
+        .read_landmarks()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|landmark| {
+            Some(LandmarkPlace {
+                chapter: *indices.get(&landmark.position.chapter)?,
+                offset: landmark.position.offset,
+                kind: landmark.kind,
+                title: landmark.title,
+            })
+        })
         .collect();
     let meta = reader.meta();
     let snapshot = BookSnapshot {
@@ -64,6 +79,7 @@ pub(crate) fn open(path: &Path) -> Result<(BookSnapshot, BookSource), BookError>
                 })
             })
             .collect(),
+        landmarks,
         cover: reader
             .cover()
             .map(|cover| (cover.size.width, cover.size.height)),

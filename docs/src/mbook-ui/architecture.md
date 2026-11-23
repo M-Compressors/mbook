@@ -195,11 +195,17 @@ An open book is an entity with two parts.
 
 | Part | Lives | Contains |
 | --- | --- | --- |
-| Snapshot | Main thread, immutable | Title and authors; the contents; for each chapter its number, path and decoded length |
+| Snapshot | Main thread, immutable | Title and authors; the contents; the landmarks; for each chapter its number, path and decoded length |
 | Source | Behind a mutex that only background tasks lock | The `BookReader<File>` |
 
 - The snapshot is built once, on the background, when the book is opened.
   The main thread must not lock the source, not even for a table lookup.
+  The landmarks are read with `read_landmarks` at the same time. A table of
+  landmarks that cannot be read leaves the book without them; it opens and
+  reads as before.
+- A book without a stored place opens at its first `start` landmark, and at
+  the start of its first chapter when it marks none. A stored place always
+  wins, so a book once opened reopens where it was left.
 - A chapter is prepared on the background in one task: `read_chapter`, then
   `resolve` for every link and picture destination of the text, then the
   byte offset of every top-level block, found with `markdown`, the parser

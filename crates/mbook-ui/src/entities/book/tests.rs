@@ -4,12 +4,12 @@
 use std::error::Error as _;
 use std::path::PathBuf;
 
-use mbook::Book;
+use mbook::{Book, Landmark};
 use tempfile::TempDir;
 
 use super::chapter::{PictureRef, PreparedChapter, Target};
 use super::error::BookError;
-use super::snapshot::BookSnapshot;
+use super::snapshot::{BookSnapshot, LandmarkPlace};
 use super::source::{BookSource, open};
 use crate::entities::figure::FigureKind;
 use crate::shared::model::Place;
@@ -68,6 +68,10 @@ fn write_sample(dir: &TempDir) -> TestResult<PathBuf> {
     book.add_chapter("ch01.md", CH01)?;
     book.add_chapter("ch02.md", CH02)?;
     book.add_picture("img/fig.avif", fixture("rotated.avif")?)?;
+    book.set_landmarks(vec![
+        Landmark::new("start", "", "ch02.md#second"),
+        Landmark::new("notes", "Endnotes", "ch01.md"),
+    ])?;
     let path = dir.path().join("sample.mbook");
     book.save(&path)?;
     Ok(path)
@@ -142,6 +146,37 @@ fn the_contents_lead_to_the_chapter_index_and_offset_of_each_heading() -> TestRe
 }
 
 #[test]
+fn the_landmarks_lead_to_the_chapter_index_and_offset_of_each_place() -> TestResult {
+    let (_dir, snapshot, _source) = open_sample()?;
+    let second = offset_of(CH02, "## Second")?;
+    assert_eq!(
+        snapshot.landmarks,
+        [
+            LandmarkPlace {
+                kind: "start".to_owned(),
+                title: String::new(),
+                chapter: 1,
+                offset: second,
+            },
+            LandmarkPlace {
+                kind: "notes".to_owned(),
+                title: "Endnotes".to_owned(),
+                chapter: 0,
+                offset: 0,
+            },
+        ]
+    );
+    assert_eq!(
+        snapshot.start(),
+        Some(Place {
+            chapter: "ch02.md".to_owned(),
+            offset: second
+        })
+    );
+    Ok(())
+}
+
+#[test]
 fn the_snapshot_has_the_size_of_the_cover() -> TestResult {
     let (_dir, snapshot, _source) = open_sample()?;
     assert_eq!(snapshot.cover, Some((24, 16)));
@@ -169,6 +204,7 @@ fn a_book_without_chapters_opens_empty() -> TestResult {
     let (snapshot, _source) = open(&path)?;
     assert_eq!(snapshot.chapters, []);
     assert_eq!(snapshot.contents, []);
+    assert_eq!(snapshot.landmarks, []);
     assert_eq!(snapshot.progress(0, 0), 0);
     assert_eq!(
         snapshot.locate(&Place {

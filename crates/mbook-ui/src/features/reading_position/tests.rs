@@ -27,6 +27,7 @@ fn snapshot() -> BookSnapshot {
             },
         ],
         contents: Vec::new(),
+        landmarks: Vec::new(),
         cover: None,
     }
 }

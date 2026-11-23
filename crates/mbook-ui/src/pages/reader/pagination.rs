@@ -133,6 +133,7 @@ mod tests {
                 })
                 .collect(),
             contents: Vec::new(),
+            landmarks: Vec::new(),
             cover: None,
         }
     }

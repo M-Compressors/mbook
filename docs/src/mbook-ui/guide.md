@@ -79,7 +79,14 @@ Compact
   be hidden from the appearance panel. The header and footer reserve
   their space while the controls are hidden. Move the pointer or press
   a key to show the controls.
-- **Contents** marks the current entry. Contents and **Aa** open in
+- A book opened for the first time opens where its text begins, past the
+  cover and the title page, when the book marks that place. After that it
+  reopens where it was left.
+- **Contents** marks the current entry. When the book marks notable places,
+  such as its notes, glossary or index, the panel lists them first under
+  **Go to**, by the name the book gives them or the name of their kind, and
+  the entries follow under **Contents**. Choosing one goes there, and Escape
+  or **Return to previous passage** comes back. Contents and **Aa** open in
   popovers on expanded windows and bottom sheets on smaller windows.
 - **Aa** offers typeface, size and theme. Advanced appearance includes line
   height, width, paragraph spacing, heavier text, paging, motion and

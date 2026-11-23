@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- The reader uses the landmarks of a book. A book read for the first time
+  opens at its `start` landmark instead of at its first page. The contents
+  panel lists the landmarks under **Go to**, above the entries, and choosing
+  one goes there; Escape comes back.
+
 ### Changed
 
 - The editor's Landmarks section handles every kind of landmark, not only

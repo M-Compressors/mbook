@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use mbook::Book;
+use mbook::{Book, Landmark};
 
 /// The type the tests of the reader return.
 pub(super) type TestResult<T = ()> = Result<T, Box<dyn Error>>;
@@ -31,6 +31,19 @@ pub(super) fn write_book(
     chapters: &[(&str, &str)],
     figure: Option<&str>,
 ) -> TestResult {
+    write_marked_book(path, title, language, chapters, figure, &[])
+}
+
+/// Writes a book like [`write_book`], with `landmarks` (kind, title and
+/// destination).
+pub(super) fn write_marked_book(
+    path: &Path,
+    title: &str,
+    language: &str,
+    chapters: &[(&str, &str)],
+    figure: Option<&str>,
+    landmarks: &[(&str, &str, &str)],
+) -> TestResult {
     let mut book = Book::new(title, language)?;
     for (chapter, text) in chapters {
         book.add_chapter(*chapter, *text)?;
@@ -38,6 +51,12 @@ pub(super) fn write_book(
     if let Some(figure) = figure {
         book.add_picture(FIGURE, fixture(figure)?)?;
     }
+    book.set_landmarks(
+        landmarks
+            .iter()
+            .map(|(kind, title, href)| Landmark::new(*kind, *title, href))
+            .collect(),
+    )?;
     book.save(path)?;
     Ok(())
 }

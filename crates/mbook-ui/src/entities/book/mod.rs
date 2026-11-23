@@ -7,6 +7,7 @@
 
 pub(crate) mod chapter;
 pub(crate) mod error;
+pub(crate) mod landmark;
 pub(crate) mod snapshot;
 pub(crate) mod source;
 #[cfg(test)]

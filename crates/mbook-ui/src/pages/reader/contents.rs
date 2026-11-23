@@ -1,4 +1,6 @@
-//! The contents of the book: a list of its entries, the current one marked.
+//! The contents of the book: a list of its entries, the current one marked,
+//! and above it the landmarks of the book, the places a reader goes to
+//! directly.
 
 use std::sync::Arc;
 
@@ -7,16 +9,46 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{ActiveTheme as _, Icon, Selectable as _, h_flex, v_flex};
 use gpui_kit::{
-    Context, InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, WeakEntity, Window, div, px,
+    Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, Render, Role,
+    SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, WeakEntity,
+    Window, div, px,
 };
 
 use super::ReaderPage;
+use crate::entities::book::landmark::display_name;
 use crate::entities::book::snapshot::BookSnapshot;
 use crate::shared::ui::target_size;
 
 /// How far an entry is indented for each level below the first, in pixels.
 const INDENT: f32 = 14.0;
+/// The words over the landmarks.
+pub(super) const GO_TO: &str = "Go to";
+/// The words over the entries, when landmarks are listed above them.
+pub(super) const CONTENTS: &str = "Contents";
+/// What the panel says when the book has no entries.
+pub(super) const NO_CONTENTS: &str = "This book has no contents";
+
+/// One landmark of the list: where the reader is taken, by name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Mark {
+    /// The id of its control, by its position in the list of the book.
+    pub(super) id: String,
+    /// The title the book gives it, or the name of its kind.
+    pub(super) name: String,
+}
+
+/// The landmarks of `snapshot`, in the order the book lists them.
+pub(super) fn marks(snapshot: &BookSnapshot) -> Vec<Mark> {
+    snapshot
+        .landmarks
+        .iter()
+        .enumerate()
+        .map(|(index, landmark)| Mark {
+            id: format!("landmark-{index}"),
+            name: display_name(&landmark.kind, &landmark.title),
+        })
+        .collect()
+}
 
 /// One line of the contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,65 +136,143 @@ impl ContentsPanel {
     }
 }
 
+impl ContentsPanel {
+    /// The words over a list, when the panel shows two.
+    fn heading(id: &'static str, words: &'static str, cx: &Context<'_, Self>) -> impl IntoElement {
+        div()
+            .id(id)
+            .role(Role::Heading)
+            .test_support()
+            .px_3()
+            .pt_2()
+            .pb_1()
+            .text_sm()
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(cx.theme().muted_foreground)
+            .child(words)
+    }
+
+    /// A control that fills the width of the panel, with `line` inside.
+    fn line_button(
+        id: String,
+        name: String,
+        selected: bool,
+        line: impl IntoElement,
+        on_click: impl Fn(&mut Window, &mut gpui_kit::App) + 'static,
+    ) -> impl IntoElement {
+        let row = SharedString::from(format!("{id}-row"));
+        let button = Button::new(SharedString::from(id))
+            .ghost()
+            .accessibility_label(name)
+            .min_h(px(target_size()))
+            .w_full()
+            .cursor_pointer()
+            .selected(selected)
+            .on_click(move |_, window, cx| on_click(window, cx))
+            .child(line);
+        div()
+            .id(row)
+            .role(Role::ListItem)
+            .test_support()
+            .child(button)
+    }
+
+    /// The landmarks of the book; `None` when it has none.
+    fn landmarks(&self, snapshot: &BookSnapshot) -> Option<impl IntoElement + use<>> {
+        let marks = marks(snapshot);
+        if marks.is_empty() {
+            return None;
+        }
+        let rows = marks.into_iter().enumerate().map(|(index, mark)| {
+            let page = self.page.clone();
+            let line = h_flex().w_full().child(mark.name.clone());
+            Self::line_button(mark.id, mark.name, false, line, move |window, cx| {
+                page.update(cx, |page, cx| page.open_landmark(index, window, cx))
+                    .ok();
+            })
+        });
+        Some(
+            v_flex()
+                .id("landmarks-list")
+                .role(Role::List)
+                .aria_label(GO_TO)
+                .test_support()
+                .gap_0p5()
+                .children(rows),
+        )
+    }
+
+    /// The entries of the contents, or the words that say there are none.
+    fn entries(&self, rows: Vec<Row>, cx: &Context<'_, Self>) -> gpui_kit::AnyElement {
+        if rows.is_empty() {
+            return div()
+                .id("contents-empty")
+                .role(Role::Status)
+                .aria_label(NO_CONTENTS)
+                .test_support()
+                .p_3()
+                .text_color(cx.theme().muted_foreground)
+                .child(NO_CONTENTS)
+                .into_any_element();
+        }
+        v_flex()
+            .id("contents-list")
+            .role(Role::List)
+            .aria_label(CONTENTS)
+            .test_support()
+            .gap_0p5()
+            .children(rows.into_iter().enumerate().map(|(index, row)| {
+                let page = self.page.clone();
+                let label: SharedString = row.title.clone().into();
+                // A button centres its content and ignores `justify_start`,
+                // so the line is a child that fills the button: the mark,
+                // then the title, indented by its level.
+                let mut line = h_flex().w_full().gap_2().pl(px(indent(row.level)));
+                if row.current {
+                    line = line.child(Icon::new(IconName::Check));
+                }
+                let name = row.name();
+                Self::line_button(
+                    row.id,
+                    name,
+                    row.current,
+                    line.child(label),
+                    move |window, cx| {
+                        page.update(cx, |page, cx| page.open_entry(index, window, cx))
+                            .ok();
+                    },
+                )
+            }))
+            .into_any_element()
+    }
+}
+
 impl Render for ContentsPanel {
     fn render(&mut self, _: &mut Window, cx: &mut Context<'_, Self>) -> impl gpui_kit::IntoElement {
         let rows = self
             .snapshot
             .as_ref()
             .map_or_else(Vec::new, |snapshot| rows(snapshot, self.current));
-        let theme = cx.theme();
-        let list = if rows.is_empty() {
-            div()
-                .id("contents-empty")
-                .role(Role::Status)
-                .aria_label("This book has no contents")
-                .test_support()
-                .p_3()
-                .text_color(theme.muted_foreground)
-                .child("This book has no contents")
-                .into_any_element()
-        } else {
-            v_flex()
-                .id("contents-list")
-                .role(Role::List)
-                .aria_label("Contents")
-                .test_support()
-                .gap_0p5()
-                .children(rows.into_iter().enumerate().map(|(index, row)| {
-                    let page = self.page.clone();
-                    let level = row.level;
-                    let label: SharedString = row.title.clone().into();
-                    // A button centres its content and ignores `justify_start`,
-                    // so the line is a child that fills the button: the mark,
-                    // then the title, indented by its level.
-                    let mut line = h_flex().w_full().gap_2().pl(px(indent(level)));
-                    if row.current {
-                        line = line.child(Icon::new(IconName::Check));
-                    }
-                    let button = Button::new(row.id.clone())
-                        .ghost()
-                        .accessibility_label(row.name())
-                        .min_h(px(target_size()))
-                        .w_full()
-                        .cursor_pointer()
-                        .selected(row.current)
-                        .on_click(move |_, window, cx| {
-                            page.update(cx, |page, cx| page.open_entry(index, window, cx))
-                                .ok();
-                        })
-                        .child(line.child(label));
-                    div()
-                        .id(SharedString::from(format!("{}-row", row.id)))
-                        .role(Role::ListItem)
-                        .test_support()
-                        .child(button)
-                }))
-                .into_any_element()
+        let landmarks = self
+            .snapshot
+            .as_ref()
+            .and_then(|snapshot| self.landmarks(snapshot));
+        let entries = self.entries(rows, cx);
+        // The headings tell the two lists apart; a book without landmarks
+        // shows its contents alone, under the title of the panel.
+        let list = match landmarks {
+            Some(landmarks) => v_flex()
+                .child(Self::heading("landmarks-heading", GO_TO, cx))
+                .child(landmarks)
+                .child(div().mx_3().my_2().h(px(1.0)).bg(cx.theme().border))
+                .child(Self::heading("contents-heading", CONTENTS, cx))
+                .child(entries),
+            None => v_flex().child(entries),
         };
         v_flex()
             .id("contents-panel")
             .role(Role::Group)
-            .aria_label("Contents")
+            .aria_label(CONTENTS)
             .test_support()
             .w_full()
             .child(
@@ -179,7 +289,8 @@ impl Render for ContentsPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::book::snapshot::{ChapterInfo, ContentsEntry};
+    use crate::entities::book::landmark::START_NAME;
+    use crate::entities::book::snapshot::{ChapterInfo, ContentsEntry, LandmarkPlace};
 
     fn snapshot() -> BookSnapshot {
         let entry = |chapter: usize, offset: u32, level: u8, title: &str| ContentsEntry {
@@ -207,6 +318,7 @@ mod tests {
                 entry(0, 40, 2, "One, part two"),
                 entry(1, 0, 1, "  "),
             ],
+            landmarks: Vec::new(),
             cover: None,
         }
     }
@@ -253,5 +365,43 @@ mod tests {
         assert!(indent(3) > indent(2));
         assert!((indent(0)).abs() < f32::EPSILON);
         assert!((indent(200) - indent(7)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn a_landmark_is_listed_by_its_title_or_the_name_of_its_kind() {
+        let mut book = snapshot();
+        let landmark = |kind: &str, title: &str| LandmarkPlace {
+            kind: kind.to_owned(),
+            title: title.to_owned(),
+            chapter: 0,
+            offset: 0,
+        };
+        book.landmarks = vec![
+            landmark("start", ""),
+            landmark("notes", "Endnotes"),
+            landmark("x-recipes", ""),
+        ];
+        assert_eq!(
+            marks(&book),
+            [
+                Mark {
+                    id: "landmark-0".to_owned(),
+                    name: START_NAME.to_owned()
+                },
+                Mark {
+                    id: "landmark-1".to_owned(),
+                    name: "Endnotes".to_owned()
+                },
+                Mark {
+                    id: "landmark-2".to_owned(),
+                    name: "x-recipes".to_owned()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_book_without_landmarks_lists_none() {
+        assert_eq!(marks(&snapshot()), Vec::new());
     }
 }

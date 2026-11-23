@@ -1,5 +1,6 @@
 //! What the main thread knows of an open book.
 
+use super::landmark::START;
 use crate::shared::model::Place;
 
 /// What the main thread knows of an open book.
@@ -18,6 +19,9 @@ pub(crate) struct BookSnapshot {
     pub(crate) chapters: Vec<ChapterInfo>,
     /// The table of contents, in the order the book lists it.
     pub(crate) contents: Vec<ContentsEntry>,
+    /// The landmarks, in the order the book lists them; empty when the book
+    /// has none or its landmarks cannot be read.
+    pub(crate) landmarks: Vec<LandmarkPlace>,
     /// The size of the cover in pixels, when the book has one.
     pub(crate) cover: Option<(u32, u32)>,
 }
@@ -39,6 +43,20 @@ pub(crate) struct ContentsEntry {
     /// The title, as plain text.
     pub(crate) title: String,
     /// The index of the chapter the entry leads to, into
+    /// [`BookSnapshot::chapters`].
+    pub(crate) chapter: usize,
+    /// A byte offset into the text of that chapter.
+    pub(crate) offset: u32,
+}
+
+/// One landmark of the snapshot: a notable place of the book.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LandmarkPlace {
+    /// What the place is, as the format writes it: `start`, `notes`, …
+    pub(crate) kind: String,
+    /// The title the book gives it, as plain text; empty when it gives none.
+    pub(crate) title: String,
+    /// The index of the chapter it leads to, into
     /// [`BookSnapshot::chapters`].
     pub(crate) chapter: usize,
     /// A byte offset into the text of that chapter.
@@ -120,6 +138,15 @@ impl BookSnapshot {
         }))
     }
 
+    /// Where a book that was never read opens: the first landmark of kind
+    /// `start`. `None` when the book marks no start.
+    pub(crate) fn start(&self) -> Option<Place> {
+        self.landmarks
+            .iter()
+            .find(|landmark| landmark.kind == START)
+            .and_then(|landmark| self.place(landmark.chapter, landmark.offset))
+    }
+
     /// The stored form of a position; `None` when the chapter does not exist.
     pub(crate) fn place(&self, chapter: usize, offset: u32) -> Option<Place> {
         self.chapters.get(chapter).map(|info| Place {
@@ -169,6 +196,7 @@ mod tests {
             language: "en".to_owned(),
             chapters,
             contents,
+            landmarks: Vec::new(),
             cover: None,
         }
     }
@@ -342,5 +370,40 @@ mod tests {
     fn of_entries_at_one_place_the_later_one_is_current() {
         let book = snapshot(vec![info("a.md", 100)], vec![entry(0, 0), entry(0, 0)]);
         assert_eq!(book.current_entry(0, 0), Some(1));
+    }
+
+    fn landmark(kind: &str, chapter: usize, offset: u32) -> LandmarkPlace {
+        LandmarkPlace {
+            kind: kind.to_owned(),
+            title: String::new(),
+            chapter,
+            offset,
+        }
+    }
+
+    #[test]
+    fn a_book_that_marks_its_start_opens_there() {
+        let mut book = two_chapters();
+        book.landmarks = vec![
+            landmark("notes", 0, 10),
+            landmark(START, 1, 42),
+            landmark(START, 0, 0),
+        ];
+        assert_eq!(book.start(), Some(place("b.md", 42)));
+    }
+
+    #[test]
+    fn a_book_without_a_start_has_no_place_to_open_at() {
+        let mut book = two_chapters();
+        assert_eq!(book.start(), None);
+        book.landmarks = vec![landmark("notes", 0, 10)];
+        assert_eq!(book.start(), None);
+    }
+
+    #[test]
+    fn a_start_in_a_chapter_that_is_not_there_is_passed_over() {
+        let mut book = two_chapters();
+        book.landmarks = vec![landmark(START, 7, 0)];
+        assert_eq!(book.start(), None);
     }
 }

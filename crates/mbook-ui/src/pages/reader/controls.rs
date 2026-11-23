@@ -86,6 +86,7 @@ mod tests {
                 entry(0, 50, " Two "),
                 entry(2, 0, "Four"),
             ],
+            landmarks: Vec::new(),
             cover: None,
         }
     }

@@ -11,7 +11,9 @@
 //! * the controls hide while the book is read and come back with the pointer,
 //!   a key or a tap in the middle ([`controls`]);
 //! * the contents and the appearance are panels: a popover on an expanded
-//!   window, a sheet on a smaller one.
+//!   window, a sheet on a smaller one. The contents list the landmarks of
+//!   the book above the entries;
+//! * a book that was never read opens at its `start` landmark.
 
 mod chrome;
 mod contents;
@@ -400,19 +402,25 @@ impl ReaderPage {
             Phase::Ready(reading) if self.resume_at.is_some() => reading.prepared.clone(),
             _ => None,
         };
-        let stored = self.resume_at.take().or_else(|| {
-            Library::global(cx)
-                .read(cx)
-                .book(self.key)?
-                .state
-                .place
-                .clone()
-        });
-        let start = Place {
+        // A book that was never read opens where the text begins, past its
+        // cover and its title page, when it marks that place.
+        let stored = self
+            .resume_at
+            .take()
+            .or_else(|| {
+                Library::global(cx)
+                    .read(cx)
+                    .book(self.key)?
+                    .state
+                    .place
+                    .clone()
+            })
+            .or_else(|| snapshot.start());
+        let first = Place {
             chapter: String::new(),
             offset: 0,
         };
-        let Some((chapter, offset)) = snapshot.locate(&stored.unwrap_or(start)) else {
+        let Some((chapter, offset)) = snapshot.locate(&stored.unwrap_or(first)) else {
             self.phase = Phase::Empty;
             cx.notify();
             return;
@@ -772,6 +780,18 @@ impl ReaderPage {
         self.close_panel(window, cx);
         if let Some(entry) = entry {
             self.jump(entry.chapter, entry.offset, cx);
+        }
+    }
+
+    /// Takes the landmark `index` of the book.
+    fn open_landmark(&mut self, index: usize, window: &mut Window, cx: &mut Context<'_, Self>) {
+        let landmark = match &self.phase {
+            Phase::Ready(reading) => reading.snapshot.landmarks.get(index).cloned(),
+            _ => None,
+        };
+        self.close_panel(window, cx);
+        if let Some(landmark) = landmark {
+            self.jump(landmark.chapter, landmark.offset, cx);
         }
     }
 

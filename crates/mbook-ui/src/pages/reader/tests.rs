@@ -11,7 +11,7 @@ use gpui_kit::{
 
 use super::controls::HIDE_AFTER;
 use super::pictures::LoadError;
-use super::support::{FIGURE, TestResult, long_chapter, write_book};
+use super::support::{FIGURE, TestResult, long_chapter, write_book, write_marked_book};
 use super::{Arrival, Phase, ReaderEvent, ReaderPage};
 use crate::entities::book::error::BookError;
 use crate::entities::catalogue::{Library, ReadingState};
@@ -70,6 +70,19 @@ fn start_with_mode(
     stored: Option<ReadingState>,
     paged: bool,
 ) -> TestResult<Started> {
+    start_marked(cx, width, chapters, stored, paged, &[])
+}
+
+/// Like [`start_with_mode`], over a book with `landmarks` (kind, title and
+/// destination).
+fn start_marked(
+    cx: &mut TestAppContext,
+    width: f32,
+    chapters: &[(&str, String)],
+    stored: Option<ReadingState>,
+    paged: bool,
+    landmarks: &[(&str, &str, &str)],
+) -> TestResult<Started> {
     let fixture = Fixture::new();
     if paged {
         let mut settings = crate::entities::catalogue::Settings::default();
@@ -81,12 +94,13 @@ fn start_with_mode(
         .iter()
         .map(|(path, text)| (*path, text.as_str()))
         .collect();
-    write_book(
+    write_marked_book(
         &fixture.roots.book(key),
         "Dune",
         "en",
         &chapters,
         Some("rotated.avif"),
+        landmarks,
     )?;
     cx.update(gpui_kit::init);
     fixture.install(cx);
@@ -806,6 +820,136 @@ fn choosing_an_entry_goes_there_and_closes_the_panel(cx: &mut TestAppContext) {
             "the entry remembers where the reader came from"
         );
     }
+}
+
+/// The landmarks of the books of the tests of landmarks: the start at the
+/// second heading of the second chapter, and the notes at the first.
+const LANDMARKS: [(&str, &str, &str); 2] = [
+    ("start", "", "ch02.md#second"),
+    ("notes", "Endnotes", "ch01.md"),
+];
+
+/// The offset of the heading the start leads to.
+fn second_heading() -> u32 {
+    u32::try_from(two_chapters()[1].1.find("## Second").unwrap()).unwrap()
+}
+
+#[gpui_kit::test]
+fn a_book_never_read_opens_where_its_text_begins(cx: &mut TestAppContext) {
+    let started = start_marked(cx, 800.0, &two_chapters(), None, true, &LANDMARKS).unwrap();
+    settle(&started, cx);
+    assert_eq!(chapter_of(&started, cx), 1);
+    let first = top(&started, cx);
+    assert!(first > 0 && first <= second_heading(), "{first}");
+    assert!(shown_text(&started, cx).contains("Second"));
+}
+
+#[gpui_kit::test]
+fn a_book_already_read_opens_where_it_was_left_and_not_at_its_start(cx: &mut TestAppContext) {
+    let state = ReadingState {
+        place: Some(Place {
+            chapter: "ch01.md".to_owned(),
+            offset: 0,
+        }),
+        ..ReadingState::default()
+    };
+    let started = start_marked(cx, 800.0, &two_chapters(), Some(state), true, &LANDMARKS).unwrap();
+    settle(&started, cx);
+    assert_eq!(chapter_of(&started, cx), 0);
+    assert_eq!(top(&started, cx), 0);
+}
+
+#[gpui_kit::test]
+fn the_contents_list_the_landmarks_above_the_entries(cx: &mut TestAppContext) {
+    let started = start_marked(cx, 1280.0, &two_chapters(), None, true, &LANDMARKS).unwrap();
+    settle(&started, cx);
+    click(&started, "contents", cx);
+    testing::frame(cx, started.window, |window, _| {
+        let list = window.find("landmarks-list");
+        assert_eq!(list.role(), Some(Role::List));
+        assert!(window.try_find_by_label("Where the text begins").is_some());
+        assert!(window.try_find_by_label("Endnotes").is_some());
+        assert_eq!(window.find("landmarks-heading").role(), Some(Role::Heading));
+        assert!(window.try_find("contents-heading").is_some());
+        assert!(window.try_find("contents-list").is_some());
+    });
+}
+
+#[gpui_kit::test]
+fn choosing_a_landmark_goes_there_and_closes_the_panel(cx: &mut TestAppContext) {
+    for width in [390.0, 1280.0] {
+        let started = start_marked(cx, width, &two_chapters(), None, true, &LANDMARKS).unwrap();
+        settle(&started, cx);
+        assert_eq!(chapter_of(&started, cx), 1, "{width}");
+        click(&started, "contents", cx);
+        click(&started, "landmark-1", cx);
+        assert_eq!(chapter_of(&started, cx), 0, "{width}");
+        assert_eq!(top(&started, cx), 0, "{width}");
+        testing::frame(cx, started.window, |window, _| {
+            assert!(window.try_find("contents-panel").is_none(), "{width}");
+        });
+        assert_eq!(
+            started.page.read_with(cx, |page, _| page.history.len()),
+            1,
+            "the landmark remembers where the reader came from"
+        );
+    }
+}
+
+#[gpui_kit::test]
+fn a_landmark_is_not_followed_before_the_book_is_open_or_past_the_last(cx: &mut TestAppContext) {
+    let started = start_marked(cx, 800.0, &two_chapters(), None, true, &LANDMARKS).unwrap();
+    started
+        .page
+        .update_in_window(cx, started.window, |page, window, cx| {
+            page.open_landmark(1, window, cx);
+        });
+    settle(&started, cx);
+    assert_eq!(chapter_of(&started, cx), 1, "the book opened at its start");
+    started
+        .page
+        .update_in_window(cx, started.window, |page, window, cx| {
+            page.open_landmark(2, window, cx);
+        });
+    settle(&started, cx);
+    assert_eq!(chapter_of(&started, cx), 1);
+    assert!(
+        started
+            .page
+            .read_with(cx, |page, _| page.history.is_empty())
+    );
+}
+
+#[gpui_kit::test]
+fn a_book_without_landmarks_shows_its_contents_alone(cx: &mut TestAppContext) {
+    let started = start(cx, 1280.0).unwrap();
+    settle(&started, cx);
+    click(&started, "contents", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(window.try_find("contents-list").is_some());
+        assert!(window.try_find("landmarks-list").is_none());
+        assert!(window.try_find("contents-heading").is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn a_book_with_landmarks_and_no_contents_says_it_has_no_contents(cx: &mut TestAppContext) {
+    let chapters = [("a.md", "Words without a heading.\n".to_owned())];
+    let started = start_marked(
+        cx,
+        1280.0,
+        &chapters,
+        None,
+        true,
+        &[("glossary", "", "a.md")],
+    )
+    .unwrap();
+    settle(&started, cx);
+    click(&started, "contents", cx);
+    testing::frame(cx, started.window, |window, _| {
+        assert!(window.try_find_by_label("Glossary").is_some());
+        assert!(window.try_find("contents-empty").is_some());
+    });
 }
 
 #[gpui_kit::test]
