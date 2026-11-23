@@ -53,7 +53,7 @@ of the run as an artifact.
 | Part | Made from |
 | --- | --- |
 | `lib/arm64-v8a/libmbook_android.so` | The library of `mbook-android`, built for `aarch64-linux-android` with the C compiler of the NDK for API 26, stripped of its symbols |
-| `classes.dex` | The Java activities of the example application of gpui-mobile and `MbookActivity` of `crates/mbook-android/android/java`, compiled with `javac` and `d8` |
+| `classes.dex` | The classes of the example application of gpui-mobile that mbook needs, and `MbookActivity`, `OpenActivity` and `MbookFiles` of `crates/mbook-android/android/java`, compiled with `javac` and `d8` |
 | `AndroidManifest.xml`, the theme | `crates/mbook-android/android/`; the version of the workspace goes into `versionName`, and `major × 1,000,000 + minor × 1,000 + patch` into `versionCode` |
 | The launcher icon | `crates/mbook-ui/assets/icon@2x.png` |
 | `assets/fonts/NotoColorEmoji.ttf` | The emoji font of the example application of gpui-mobile, with its licence beside it |
@@ -61,9 +61,13 @@ of the run as an artifact.
 - The Java activities and the font are taken from the checkout of gpui-mobile
   that Cargo built against, found with `cargo metadata`. A later commit of
   gpui-mobile that moves them makes the script stop with a message.
-- The activities that need AndroidX are left out: the splash screen,
-  biometric sign-in, notifications and the media session. mbook uses none of
-  them.
+- Of gpui-mobile's Java, only what mbook uses is compiled:
+  `GpuiInputActivity`, which `MbookActivity` extends, and the classes its
+  Rust code calls with mbook's features (`GpuiPathPicker`, `GpuiHelper`,
+  `GpuiPlatformView`), with what they refer to. That code is compiled
+  without warnings or notes, since it is not mbook's and some of it uses
+  deprecated APIs of Android; mbook's own Java must pass `-Xlint:all
+  -Werror`.
 - The emoji font is bundled because gpui-mobile draws colour emoji from
   bitmap glyphs only, and the emoji font of Android 13 and later has vector
   glyphs. It adds about 10 MB.

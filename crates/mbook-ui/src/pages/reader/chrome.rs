@@ -394,6 +394,9 @@ impl ReaderPage {
             heavier: settings.reading.heavier,
         });
         self.scrubber.sync(self.progress, window, cx);
+        // A scrolling text runs under the footer; its end stops above it.
+        let room = footer + insets.bottom.as_f32();
+        self.view.update(cx, |view, cx| view.set_end_room(room, cx));
     }
 
     /// Keeps the slider's hit area available while the track is transparent.

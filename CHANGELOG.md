@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Changed
+
+- The APK holds only the Java classes of gpui-mobile that mbook uses, and
+  building it prints no warnings: javac no longer notes the deprecated APIs
+  of gpui-mobile's camera, location and microphone classes, and apksigner
+  is given native access on a JDK 24 or newer. mbook's own Java is compiled
+  with every warning as an error.
+
+### Fixed
+
+- Scrolled to the end of a chapter, the last lines of a scrolling text no
+  longer lie under the controls at the bottom of the reader: the text is
+  followed by room as tall as them, so its end stops above them.
+
 ## [v0.3.4](https://github.com/M-Compressors/mbook/releases/tag/v0.3.4) - 2026-11-23
 
 ### Fixed

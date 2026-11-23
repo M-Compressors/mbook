@@ -37,6 +37,12 @@
 //!   two plugins, which draw what the widget drew of its source on the
 //!   background ([`figures`]). The text is handed to the Kit when its figures
 //!   are drawn, so that it is laid out once, at its final heights.
+//! * **Room after the text.** A list of the Kit ends where its last item
+//!   ends and takes no padding from outside. A scrolling text is therefore
+//!   followed by one more block, drawn as empty room as tall as what its
+//!   owner lays over the bottom of it, so that its end can be scrolled above
+//!   that ([`tail`]). The block is not part of the text: offsets, blocks and
+//!   the end of the text leave it out.
 //! * **Structure for assistive technology.** The Kit's Markdown view reports
 //!   no roles of its own (no heading levels, lists or tables), so the widget
 //!   wraps the text in one named article. This is a gap of the Kit.
@@ -50,6 +56,7 @@ mod figures;
 mod layout;
 mod notes;
 mod pages;
+mod tail;
 #[cfg(test)]
 mod tests;
 mod wheel;
@@ -240,6 +247,8 @@ pub(crate) struct ChapterView {
     generation: u64,
     /// `Some` when the text is shown a page at a time.
     paging: Option<Paging>,
+    /// The height of the room after a scrolling text, in pixels.
+    end_room: f32,
     /// Only a geometry change invalidates measured text.
     geometry: Option<Geometry>,
     search: Option<Range<usize>>,
@@ -362,6 +371,7 @@ impl ChapterView {
             laid_out: false,
             generation: 0,
             paging,
+            end_room: 0.0,
             geometry: None,
             search: None,
             applied_search: None,
@@ -381,6 +391,8 @@ impl ChapterView {
         let offset = self.top_offset(cx);
         self.paging = paged.then(Paging::default);
         self.picture_height = None;
+        // Only a scrolling text is followed by room.
+        self.feed(cx);
         self.state.read(cx).list_state().remeasure();
         self.land(Landing::Offset(offset), cx);
     }
@@ -388,6 +400,51 @@ impl ChapterView {
     /// Whether the text is shown a page at a time.
     pub(crate) fn is_paged(&self) -> bool {
         self.paging.is_some()
+    }
+
+    /// Leaves `room` pixels after the end of a scrolling text, for what the
+    /// owner lays over the bottom of it: scrolled to its end, the text stops
+    /// above that. A paged text has no such room.
+    pub(crate) fn set_end_room(&mut self, room: f32, cx: &mut Context<'_, Self>) {
+        let room = room.max(0.0);
+        if (room - self.end_room).abs() < 0.5 {
+            return;
+        }
+        self.end_room = room;
+        if self.has_tail() {
+            let list = self.state.read(cx).list_state().clone();
+            let items = list.item_count();
+            if items > 0 {
+                list.remeasure_items(items - 1..items);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Whether the Kit is given the text followed by [`tail::TAIL`]: a
+    /// scrolling text that has some.
+    fn has_tail(&self) -> bool {
+        self.paging.is_none() && !self.shown.is_empty()
+    }
+
+    /// What the Kit is given to show when the figures are drawn.
+    fn fed_text(&self) -> SharedString {
+        if self.has_tail() {
+            format!("{}{}", self.shown, tail::TAIL).into()
+        } else {
+            self.shown.clone()
+        }
+    }
+
+    /// The number of items of `list` that show the text, without the room
+    /// after it.
+    fn text_items(&self, list: &ListState) -> usize {
+        let items = list.item_count();
+        if self.has_tail() {
+            items.saturating_sub(1)
+        } else {
+            items
+        }
     }
 
     /// Shows `markdown`. The blocks are found on the background; until they
@@ -548,6 +605,11 @@ impl ChapterView {
             );
         }
         let top = list.logical_scroll_top();
+        let items = self.text_items(list);
+        if items > 0 && top.item_ix >= items {
+            // Only the room after the text is at the top.
+            return u32::try_from(self.text.len()).unwrap_or(u32::MAX);
+        }
         let part = list.bounds_for_item(top.item_ix).map_or(0.0, |bounds| {
             let height = bounds.size.height.as_f32();
             if height > 0.0 {
@@ -556,13 +618,7 @@ impl ChapterView {
                 0.0
             }
         });
-        blocks::offset_of_place(
-            &self.blocks,
-            self.text.len(),
-            list.item_count(),
-            top.item_ix,
-            part,
-        )
+        blocks::offset_of_place(&self.blocks, self.text.len(), items, top.item_ix, part)
     }
 
     /// Moves on: paged, to the next or the previous page, which does nothing
@@ -615,7 +671,13 @@ impl ChapterView {
 
     /// Whether the Kit has parsed the text that was set last.
     fn parsed(&self, cx: &App) -> bool {
-        self.state.read(cx).rendered_text().source() == self.shown.as_ref()
+        let rendered = self.state.read(cx).rendered_text();
+        let source = rendered.source();
+        if self.has_tail() {
+            tail::is_followed(source, &self.shown)
+        } else {
+            source == self.shown.as_ref()
+        }
     }
 
     /// Whether the start of the text is at the top of the window.
@@ -654,9 +716,25 @@ impl ChapterView {
         )
     }
 
-    /// The number of list items of the Kit's view, for tests.
+    /// The number of list items of the Kit's view that show the text, for
+    /// tests.
     #[cfg(test)]
     fn item_count(&self, cx: &App) -> usize {
+        self.text_items(self.state.read(cx).list_state())
+    }
+
+    /// The bottom of the last list item that shows the text, in window
+    /// pixels, for tests. `None` while it is not laid out.
+    #[cfg(test)]
+    pub(crate) fn end_of_text(&self, cx: &App) -> Option<f32> {
+        let list = self.state.read(cx).list_state();
+        let item = self.text_items(list).checked_sub(1)?;
+        Some(list.bounds_for_item(item)?.bottom().as_f32())
+    }
+
+    /// The number of all list items of the Kit's view, for tests.
+    #[cfg(test)]
+    fn all_items(&self, cx: &App) -> usize {
         self.state.read(cx).list_state().item_count()
     }
 
@@ -718,7 +796,7 @@ impl ChapterView {
         let shown = if self.held {
             SharedString::default()
         } else {
-            self.shown.clone()
+            self.fed_text()
         };
         self.state
             .update(cx, |state, cx| state.set_text(&shown, cx));
@@ -764,7 +842,7 @@ impl ChapterView {
         self.figures.set(Arc::new(figures));
         let at = self.top_offset(cx);
         let waited = std::mem::take(&mut self.held);
-        let shown = self.shown.clone();
+        let shown = self.fed_text();
         self.state.update(cx, |state, cx| {
             // The same text is no new text to the Kit: it is taken away first.
             state.set_text("", cx);
@@ -867,7 +945,7 @@ impl ChapterView {
                 let (item_ix, part) = blocks::place_of_offset(
                     &self.blocks,
                     self.text.len(),
-                    list.item_count(),
+                    self.text_items(&list),
                     offset,
                 );
                 list.scroll_to(ListOffset {
@@ -1386,7 +1464,9 @@ impl ChapterView {
             Some(pictures) => extensions.plugin(pictures),
             None => extensions,
         };
-        let extensions = extensions.plugin(LineFigures(stage));
+        let extensions = extensions
+            .plugin(LineFigures(stage))
+            .plugin(tail::EndRoom(self.end_room));
         let extensions = if let Some(follow) = self.on_note.clone()
             && !self.note_definitions.is_empty()
         {

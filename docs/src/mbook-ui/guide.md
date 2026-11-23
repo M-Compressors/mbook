@@ -88,7 +88,8 @@ Compact
   be hidden from the appearance panel. While the controls are hidden, the
   header keeps its space, and so does the footer of one page at a time. A
   scrolling text runs to the bottom of the window under its footer, which
-  stays; the text fades into the page behind its buttons and status. Move the
+  stays; the text fades into the page behind its buttons and status, and
+  scrolled to the end of a chapter, its last line stops above them. Move the
   pointer, tap the middle of the text, scroll back or press a key to show
   the controls; they also come back at the end of a chapter. A tap or a
   swipe on a notification is the notification's, not the text's.

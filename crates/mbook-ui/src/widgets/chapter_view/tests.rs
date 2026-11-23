@@ -249,6 +249,126 @@ fn the_end_of_a_chapter_is_the_end(cx: &mut TestAppContext) {
     assert!(started.view.read_with(cx, ChapterView::at_end));
 }
 
+/// The bottom of the last item of the text and the bottom of the viewport of
+/// the list, in window pixels.
+fn end_of_text(started: &Started, cx: &mut TestAppContext) -> (f32, f32) {
+    started.view.read_with(cx, |view, cx| {
+        let viewport = view.state.read(cx).list_state().viewport_bounds();
+        (view.end_of_text(cx).unwrap(), viewport.bottom().as_f32())
+    })
+}
+
+#[gpui_kit::test]
+fn the_end_of_a_scrolled_text_stops_above_the_room_after_it(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    let text = chapter(30);
+    started.view.update(cx, |view, cx| {
+        view.set_chapter(&text, blocks::block_offsets(&text), cx);
+    });
+    settle(&started, cx);
+    started.view.update(cx, |view, cx| {
+        view.set_end_room(120.0, cx);
+        view.reveal_end(cx);
+    });
+    settle(&started, cx);
+
+    let (text_bottom, viewport) = end_of_text(&started, cx);
+    assert!(
+        (viewport - 120.0 - text_bottom).abs() < 1.0,
+        "{text_bottom} of {viewport}"
+    );
+    assert!(started.view.read_with(cx, ChapterView::at_end));
+}
+
+#[gpui_kit::test]
+fn room_asked_for_before_the_text_is_laid_out_is_left_after_it(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    let text = chapter(30);
+    started.view.update(cx, |view, cx| {
+        view.set_chapter(&text, blocks::block_offsets(&text), cx);
+        view.set_end_room(80.0, cx);
+        view.reveal_end(cx);
+    });
+    settle(&started, cx);
+
+    let (text_bottom, viewport) = end_of_text(&started, cx);
+    assert!(
+        (viewport - 80.0 - text_bottom).abs() < 1.0,
+        "{text_bottom} of {viewport}"
+    );
+}
+
+#[gpui_kit::test]
+fn the_room_after_a_text_is_not_one_of_its_blocks(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    let text = chapter(30);
+    let blocks = blocks::block_offsets(&text);
+    started
+        .view
+        .update(cx, |view, cx| view.set_chapter(&text, blocks.clone(), cx));
+    settle(&started, cx);
+
+    assert_eq!(
+        started.view.read_with(cx, ChapterView::item_count),
+        blocks.len()
+    );
+    assert_eq!(
+        started.view.read_with(cx, ChapterView::all_items),
+        blocks.len() + 1
+    );
+}
+
+#[gpui_kit::test]
+fn a_scrolled_text_shown_by_its_room_alone_is_at_its_end(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    let text = chapter(30);
+    started.view.update(cx, |view, cx| {
+        view.set_end_room(1000.0, cx);
+        view.set_chapter(&text, blocks::block_offsets(&text), cx);
+        view.reveal_end(cx);
+    });
+    settle(&started, cx);
+
+    assert_eq!(top(&started, cx), u32::try_from(text.len()).unwrap());
+}
+
+#[gpui_kit::test]
+fn a_paged_text_has_no_room_after_it(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    let text = chapter(30);
+    started.view.update(cx, |view, cx| {
+        view.set_end_room(120.0, cx);
+        view.set_chapter(&text, blocks::block_offsets(&text), cx);
+    });
+    settle(&started, cx);
+    started.view.update(cx, |view, cx| view.set_paged(true, cx));
+    settle(&started, cx);
+
+    let items = started.view.read_with(cx, ChapterView::item_count);
+    assert_eq!(started.view.read_with(cx, ChapterView::all_items), items);
+
+    started
+        .view
+        .update(cx, |view, cx| view.set_paged(false, cx));
+    settle(&started, cx);
+    assert_eq!(
+        started.view.read_with(cx, ChapterView::all_items),
+        items + 1
+    );
+}
+
+#[gpui_kit::test]
+fn an_empty_text_has_no_room_after_it(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0, 400.0);
+    started.view.update(cx, |view, cx| {
+        view.set_end_room(120.0, cx);
+        view.set_text("", cx);
+    });
+    settle(&started, cx);
+
+    assert_eq!(started.view.read_with(cx, ChapterView::all_items), 0);
+}
+
 #[gpui_kit::test]
 fn a_chapter_that_fits_the_window_is_at_its_start_and_its_end(cx: &mut TestAppContext) {
     let started = start(cx, 800.0, 600.0);

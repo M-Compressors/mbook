@@ -685,6 +685,24 @@ fn the_footer_of_a_scrolling_text_lies_over_the_text(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_end_of_a_scrolling_text_stops_above_its_footer(cx: &mut TestAppContext) {
+    let chapters = [("ch01.md", long_chapter("One", 80))];
+    let started = start_with_mode(cx, 390.0, &chapters, None, false).unwrap();
+    settle(&started, cx);
+    press(&started, "end", cx);
+
+    let footer = testing::frame(cx, started.window, |window, _| {
+        window.find("reader-footer-strip").bounds().top().as_f32()
+    });
+    let end = started
+        .page
+        .read_with(cx, |page, cx| page.view.read(cx).end_of_text(cx))
+        .unwrap();
+    assert!(end <= footer + 0.5, "{end} below {footer}");
+    assert!(end >= footer - 1.0, "{end} far above {footer}");
+}
+
+#[gpui_kit::test]
 fn a_paged_text_keeps_the_room_of_its_footer_while_the_controls_are_hidden(
     cx: &mut TestAppContext,
 ) {

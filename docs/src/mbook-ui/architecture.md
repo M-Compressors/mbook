@@ -292,6 +292,12 @@ An open book is an entity with two parts.
   destination to `Destination`, the figure sources, and the offsets.
 - The reader and editor preview use the Markdown view of GPUI Kit.
   The scrolling reader lets the list handle wheel and touchpad events.
+  The list of the Kit takes no padding from outside, so a scrolling text
+  is followed by one more block: a paragraph of invisible characters that a
+  plugin draws as empty room as tall as the footer and the bottom inset of
+  the window. Scrolled to its end, the text stops above the footer. The
+  room is not one of the blocks of the text: offsets, the reading place and
+  the end of the chapter leave it out, and a paged text has none.
   The optional paged reader measures the top-level blocks and gives the
   list a viewport exactly as tall as the selected page's content. A short
   last page leaves blank space below it. Page breaks and picture sizes

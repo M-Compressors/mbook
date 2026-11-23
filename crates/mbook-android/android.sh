@@ -112,7 +112,8 @@ apk() {
 
   local host
   host="$(gpui_mobile)"
-  local java="$host/example/android/gradle/app/src/main/java/dev/gpui/mobile"
+  local sources_root="$host/example/android/gradle/app/src/main/java"
+  local java="$sources_root/dev/gpui/mobile"
   local emoji="$host/example/android/gradle/app/src/main/assets/fonts/NotoColorEmoji.ttf"
   [ -d "$java" ] || die "no Java activities in $java: has gpui-mobile moved them?"
   [ -f "$emoji" ] || die "no emoji font at $emoji: has gpui-mobile moved it?"
@@ -121,24 +122,27 @@ apk() {
   rm -rf "$work"
   mkdir -p "$work"/{classes,dex,res,assets/fonts,apk/lib/$ABI}
 
-  # The activities of gpui-mobile that need no AndroidX: the APK has no
-  # Gradle to fetch it. The left-out ones are the splash screen, biometric
-  # sign-in, notifications and the media session, which mbook does not use.
-  local sources=()
-  local file
-  for file in "$java"/*.java; do
-    case "$(basename "$file")" in
-      GpuiActivity.java | GpuiAuthActivity.java | GpuiLocalAuth.java | \
-        GpuiNotifications.java | GpuiMediaSession.java) ;;
-      *) sources+=("$file") ;;
-    esac
+  # The classes of gpui-mobile that mbook needs: the activity it extends,
+  # and those its Rust code calls with mbook's features (the document
+  # picker, its helper, platform views); javac compiles what they refer to
+  # from the source path. They are not mbook's code, so they are compiled
+  # without its warnings or notes: some use deprecated APIs of Android.
+  local needed=()
+  local class
+  for class in GpuiInputActivity GpuiPathPicker GpuiHelper GpuiPlatformView; do
+    needed+=("$java/$class.java")
   done
-  # The activity of mbook, which receives the documents other apps open.
+  javac -nowarn -XDsuppressNotes --release 17 -encoding UTF-8 \
+    -classpath "$android_jar" -sourcepath "$sources_root" \
+    -implicit:class -d "$work/classes" "${needed[@]}"
+  # The activities and the provider of mbook, held to every warning.
+  local own=()
+  local file
   while IFS= read -r -d '' file; do
-    sources+=("$file")
+    own+=("$file")
   done < <(find "$here/android/java" -name '*.java' -print0)
-  javac -nowarn -source 17 -target 17 -encoding UTF-8 \
-    -classpath "$android_jar" -d "$work/classes" "${sources[@]}"
+  javac -Xlint:all -Werror --release 17 -encoding UTF-8 \
+    -classpath "$android_jar:$work/classes" -d "$work/classes" "${own[@]}"
   find "$work/classes" -name '*.class' -print0 \
     | xargs -0 "$build_tools/d8" --release --min-api "$MIN_API" --lib "$android_jar" --output "$work/dex"
 
@@ -180,12 +184,15 @@ apk() {
 
   local apk="$out/mbook-$version-android-arm64.apk"
   # The password is read from the environment, not from the command line.
-  MBOOK_APK_PASSWORD="$password" "$build_tools/apksigner" sign \
+  # apksigner loads the native library of its conscrypt, which a JDK 24 or
+  # newer warns about unless native access is enabled (-J passes a JVM
+  # option).
+  MBOOK_APK_PASSWORD="$password" "$build_tools/apksigner" -J-enable-native-access=ALL-UNNAMED sign \
     --ks "$keystore" --ks-key-alias "$alias" \
     --ks-pass env:MBOOK_APK_PASSWORD --key-pass env:MBOOK_APK_PASSWORD \
     --v4-signing-enabled false \
     --out "$apk" "$work/aligned.apk"
-  "$build_tools/apksigner" verify "$apk"
+  "$build_tools/apksigner" -J-enable-native-access=ALL-UNNAMED verify "$apk"
   rm -rf "$work"
   echo "$apk"
 }
