@@ -49,7 +49,7 @@ visual = ["gpui-kit/test-support"]
 
 [dependencies]
 mbook = { workspace = true, features = ["read", "write"] }
-mbook-converter = { path = "../mbook-converter", version = "0.3.2", features = ["export"] }
+mbook-converter = { path = "../mbook-converter", features = ["export"] }
 image.workspace = true
 markdown.workspace = true
 percent-encoding.workspace = true

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [v0.3.3](https://github.com/M-Compressors/mbook/releases/tag/v0.3.3) - 2026-11-23
+
 ### Added
 
 - The application runs on Android. `crates/mbook-android` is its shell, and
