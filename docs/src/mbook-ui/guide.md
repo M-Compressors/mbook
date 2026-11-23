@@ -237,13 +237,29 @@ the contents, and says where it comes from.
   PNG, GIF, WebP and BMP. Adding one offers the name of its file in the
   book, a quality and maximum output dimensions. It starts at quality 80 and
   the original dimensions.
-- **Landmarks** says what a landmark is, lists the book's
-  [`notes` landmarks](../rfcs/0001-mbook-format.md#landmarks-1) and lets the editor
-  add, edit or remove them. Each entry points to a place chosen like the
-  destination of a link: a chapter, and its start or a named place in it.
-  Its title is optional. The chapter editor is where the text of the notes
-  is written. A landmark keeps leading to its chapter when the file of the
-  chapter is renamed, and is removed with the chapter.
+- **Landmarks** marks the places a reading application can take a reader
+  to ([RFC 0001](../rfcs/0001-mbook-format.md#landmarks-1)). The section
+  opens with what that gives a reader, then shows two parts:
+  - **Where the text begins**, in a block of its own with a band of the
+    accent: where a new book opens instead of at its cover or title page.
+    The block says whether the place is marked, and **Mark where the text
+    begins…**, **Change…** and **Remove** set or clear it. A book has one.
+  - **Other places**: every other landmark, listed by the name a reader is
+    shown, with its kind beside a title that stands in for it and where it
+    leads under it. **Add a landmark…** asks what the place is, the name
+    readers see and where it is. The kinds are grouped by what a reader
+    looks for: looked up while reading (notes, glossary, index and the
+    like), parts of the text, and pages about the book. Under the choice a
+    line says what a reader gets from it. The name is optional, and the
+    name of the kind is its placeholder; a name that only repeats the kind
+    is not stored. A new landmark is put among the others in the order of
+    the book. A kind the editor does not know, such as one for private use,
+    is listed as the book writes it and kept when its place is changed.
+
+  Each landmark leads to a place chosen like the destination of a link: a
+  chapter, and its start or a named place in it. A landmark keeps leading to
+  its chapter when the file of the chapter is renamed, and is removed with
+  the chapter.
 - **Problems** lists what `Book::check` reports, each with its chapter and
   place; choosing one opens that place. A book with problems is not saved.
 - **Save** replaces the book in the library. For a book with automatic

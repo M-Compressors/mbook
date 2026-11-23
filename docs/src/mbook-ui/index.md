@@ -16,7 +16,7 @@ It has three screens:
 | --- | --- | --- |
 | **Library** | Shows the books the application keeps, as covers | The catalogue; `BookReader::open` and `read_cover` |
 | **Reader** | Shows a reflowable chapter with scrolling or pagination | `BookReader`, read lazily |
-| **Editor** | Changes the metadata, chapters, notes landmarks and pictures of a book | `Book`, in memory |
+| **Editor** | Changes the metadata, chapters, landmarks and pictures of a book | `Book`, in memory |
 
 Opening a file that is not yet in the library adds it: an mbook file is
 copied, a file in any format that

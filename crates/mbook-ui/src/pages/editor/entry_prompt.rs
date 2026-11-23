@@ -12,7 +12,7 @@ use gpui_kit::{
 };
 
 use super::EditorPage;
-use super::place_picker::{ChapterChoice, OnPlace, Place, place_picker};
+use super::place_picker::{ChapterChoice, OnPlace, Place, place_picker, resolve};
 use crate::features::edit_book::command::{ContentsChange, EntryDraft};
 use crate::features::edit_book::outline::ChapterOutline;
 use crate::shared::ui::status_line;
@@ -86,21 +86,11 @@ pub(super) fn entry_draft(
     if title.is_empty() {
         return Err(NO_TITLE);
     }
-    let chapter = choices
-        .iter()
-        .find(|choice| Some(&choice.path) == place.chapter.as_ref())
-        .ok_or(NO_PLACE)?;
-    let known = place
-        .anchor
-        .as_ref()
-        .is_none_or(|anchor| chapter.places.iter().any(|(name, _)| name == anchor));
-    if !known {
-        return Err(NO_PLACE);
-    }
+    let (chapter, anchor) = resolve(place, choices).ok_or(NO_PLACE)?;
     Ok(EntryDraft {
         title,
-        chapter: chapter.path.clone(),
-        anchor: place.anchor.clone(),
+        chapter,
+        anchor,
     })
 }
 

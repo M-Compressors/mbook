@@ -31,7 +31,7 @@ pub(super) enum Section {
     Pictures,
     /// The diagrams or formulas of the book.
     Figures(FigureKind),
-    /// Landmarks that lead to the book's notes.
+    /// Where the text begins and the other places a reader can be taken to.
     Landmarks,
     /// What the last check or save found.
     Problems,

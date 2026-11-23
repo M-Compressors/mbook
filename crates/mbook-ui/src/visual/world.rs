@@ -317,6 +317,7 @@ fn write_one(roots: &Roots, catalogue: &Catalogue, spec: &Spec, at: usize) -> Re
         book.add_chapter("ch01.md", CHAPTER_ONE)?;
         book.add_chapter("ch02.md", CHAPTER_TWO)?;
         book.add_chapter("ch03.md", CHAPTER_THREE)?;
+        book.set_landmarks(vec![mbook::Landmark::new("notes", "", "ch03.md")])?;
     } else {
         book.add_chapter("ch01.md", "# One\n\nA short text.\n")?;
     }

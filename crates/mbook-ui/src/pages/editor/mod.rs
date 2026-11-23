@@ -13,9 +13,11 @@
 //! - `preview` makes the reader's chapter view that shows the text being
 //!   edited,
 //! - `commands`, `files` and `prompts` are what the controls do,
-//! - `link_prompt`, `picture_prompt`, `entry_prompt` and `place_picker` are
-//!   the dialogs that put a link or a picture into a chapter, change an entry
-//!   of the contents and choose a place of the book,
+//! - `link_prompt`, `picture_prompt`, `entry_prompt`, `landmark_prompt` and
+//!   `place_picker` are the dialogs that put a link or a picture into a
+//!   chapter, change an entry of the contents or a landmark and choose a
+//!   place of the book,
+//! - `landmark_kinds` names the kinds of landmark and orders new ones,
 //! - `markup` writes the Markdown the editor inserts itself.
 
 mod chapter;
@@ -27,6 +29,8 @@ mod entry_prompt;
 mod figures;
 mod files;
 mod keys;
+mod landmark_kinds;
+mod landmark_prompt;
 mod landmarks;
 mod link_prompt;
 mod markup;

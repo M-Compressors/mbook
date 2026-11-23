@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- The editor's Landmarks section handles every kind of landmark, not only
+  `notes`. It opens with what landmarks give a reader. Where the text
+  begins has a block of its own that says whether it is marked. The other
+  places are listed by the name a reader is shown, and **Add a landmark…**
+  chooses the kind from a menu grouped by what a reader looks for, with a
+  line that says what the choice gives. A new landmark is put in the order
+  of the book.
+
 ## [v0.3.1](https://github.com/M-Compressors/mbook/releases/tag/v0.3.1) - 2026-11-23
 
 ### Added

@@ -100,6 +100,9 @@ Ruled out:
 | Toolkit | GPUI Kit on GPUI Fast | | Decided by the format author. |
 | File picker filters | Native dialogs through `rfd` | GPUI file prompts | GPUI Kit 0.10 cannot pass extension filters to its platform picker. |
 | Export destination | Native save dialog and temporary file in the destination directory | Convert directly into the chosen file | The completed file is published in one operation and an existing file cannot be overwritten. |
+| Landmarks section | The start in a block of its own, then the other landmarks as a list | One row for every kind, filled or empty; one list with the start among the rest | The start is the one landmark a reader meets without asking and a book has one. Twenty-two rows would bury the few places a book has. |
+| Choosing the kind of a landmark | One menu grouped by what a reader looks for, the places looked up while reading first, with a line that says what the choice gives | An alphabetical menu; the identifiers of the format | Authors choose by purpose, and the line answers why a place is worth marking. |
+| Position of a new landmark | In the order of the book among the others | At the end of the list | RFC 0001 makes the stored order the order an application lists them in. |
 | Where CPU-bound work runs | The background executor of GPUI | A separate thread pool | Decided by the format author. One scheduler, with priorities, whose tasks are cancelled by dropping them. |
 | What decides a layout | The width of the window | The platform | A narrow desktop window and a phone need the same layout; a platform test gives two code paths that drift apart. |
 | Primary flow | Continuous vertical scrolling per chapter, with saved pagination as an alternative | Paged-only navigation | Scroll uses the native gesture path and leaves ordinary text free of page masks. |

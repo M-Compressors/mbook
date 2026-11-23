@@ -240,7 +240,7 @@ fn dialog_is_open(setup: &Setup, cx: &mut TestAppContext) -> bool {
 }
 
 #[gpui_kit::test]
-fn the_notes_dialog_saves_a_landmark_at_the_selected_chapter_and_anchor(cx: &mut TestAppContext) {
+fn the_landmark_dialog_saves_the_chosen_kind_title_chapter_and_anchor(cx: &mut TestAppContext) {
     let setup = start_with(
         cx,
         1280.0,
@@ -254,8 +254,10 @@ fn the_notes_dialog_saves_a_landmark_at_the_selected_chapter_and_anchor(cx: &mut
     frame(&setup, cx, |window, _| {
         assert_eq!(window.find("section-heading").label(), Some("Landmarks"));
     });
-    click(&setup, "add-note", cx);
-    click_named(&setup, "Title (optional)", cx);
+    click(&setup, "add-landmark", cx);
+    click_named(&setup, "What the place is, Choose…", cx);
+    choose(&setup, "Notes", cx);
+    click_named(&setup, "Name shown to readers (optional)", cx);
     frame(&setup, cx, |window, cx| {
         window.input("Explanatory notes", cx);
     });
@@ -275,6 +277,90 @@ fn the_notes_dialog_saves_a_landmark_at_the_selected_chapter_and_anchor(cx: &mut
         reader.find_chapter("extras/end.md").unwrap().id
     );
     assert_eq!(entries[0].position.offset, 14);
+}
+
+#[gpui_kit::test]
+fn choosing_a_kind_says_what_a_reader_gets_from_it(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-landmarks", cx);
+    click(&setup, "add-landmark", cx);
+    frame(&setup, cx, |window, _| {
+        let effect = window
+            .find("landmark-effect")
+            .label()
+            .unwrap_or_default()
+            .to_owned();
+        assert!(effect.contains("by its kind"), "{effect}");
+    });
+    click_named(&setup, "What the place is, Choose…", cx);
+    choose(&setup, "Glossary", cx);
+    frame(&setup, cx, |window, _| {
+        let effect = window
+            .find("landmark-effect")
+            .label()
+            .unwrap_or_default()
+            .to_owned();
+        assert!(effect.contains("“Glossary”"), "{effect}");
+        assert!(
+            window
+                .try_find_by_label("What the place is, Glossary")
+                .is_some()
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn a_landmark_without_a_kind_is_not_added(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-landmarks", cx);
+    click(&setup, "add-landmark", cx);
+    click_named(&setup, "Add", cx);
+    assert!(dialog_is_open(&setup, cx));
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("landmark-error").label(),
+            Some("Choose what the place is.")
+        );
+    });
+    assert_eq!(state(&setup, cx, |page| page.session.landmarks().len()), 0);
+}
+
+#[gpui_kit::test]
+fn marking_the_start_puts_it_in_its_own_block(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    let path = setup.fixture.roots.book(setup.key);
+    click(&setup, "section-landmarks", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("landmark-start").label(),
+            Some("Where the text begins, not marked")
+        );
+        assert!(window.try_find("edit-start").is_none());
+    });
+    click(&setup, "mark-start", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("landmark-kind").is_none());
+        assert_eq!(
+            window.find("landmark-effect").label(),
+            Some("A new book opens here instead of at its cover or title page.")
+        );
+    });
+    click_named(&setup, "Chapter, 1. One", cx);
+    choose(&setup, "2. Two", cx);
+    click_named(&setup, "Mark", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("landmark-start").label(),
+            Some("Where the text begins, 2. Two, Start of the chapter")
+        );
+        assert!(window.try_find("mark-start").is_none());
+        assert!(window.try_find("no-other-places").is_some());
+    });
+    click(&setup, "save", cx);
+    assert_eq!(
+        Book::open(&path).unwrap().landmarks(),
+        [Landmark::new("start", "", "ch02.md")]
+    );
 }
 
 fn editor_with_landmarks(cx: &mut TestAppContext, landmarks: Vec<Landmark>) -> Setup {
@@ -379,6 +465,174 @@ fn removing_one_notes_landmark_keeps_the_other_entries(cx: &mut TestAppContext) 
 }
 
 #[gpui_kit::test]
+fn a_new_landmark_takes_its_place_in_the_order_of_the_book(cx: &mut TestAppContext) {
+    let start = Landmark::new("start", "", "ch01.md");
+    let index = Landmark::new("index", "", "ch03.md");
+    let setup = editor_with_landmarks(cx, vec![start.clone(), index.clone()]);
+    click(&setup, "section-landmarks", cx);
+    click(&setup, "add-landmark", cx);
+    click_named(&setup, "What the place is, Choose…", cx);
+    choose(&setup, "Glossary", cx);
+    click_named(&setup, "Chapter, 1. One", cx);
+    choose(&setup, "2. Two", cx);
+    click_named(&setup, "Add", cx);
+    click(&setup, "save", cx);
+    assert_eq!(
+        Book::open(setup.fixture.roots.book(setup.key))
+            .unwrap()
+            .landmarks(),
+        [start, Landmark::new("glossary", "", "ch02.md"), index]
+    );
+}
+
+#[gpui_kit::test]
+fn changing_the_start_keeps_its_title_and_its_place_in_the_list(cx: &mut TestAppContext) {
+    let notes = Landmark::new("notes", "", "ch03.md");
+    let start = Landmark::new("start", "Begin reading", "ch01.md");
+    let setup = editor_with_landmarks(cx, vec![notes.clone(), start]);
+    click(&setup, "section-landmarks", cx);
+    click(&setup, "edit-start", cx);
+    click_named(&setup, "Chapter, 1. One", cx);
+    choose(&setup, "2. Two", cx);
+    click_named(&setup, "Apply", cx);
+    click(&setup, "save", cx);
+    assert_eq!(
+        Book::open(setup.fixture.roots.book(setup.key))
+            .unwrap()
+            .landmarks(),
+        [notes, Landmark::new("start", "Begin reading", "ch02.md")]
+    );
+}
+
+#[gpui_kit::test]
+fn removing_the_start_leaves_the_other_places(cx: &mut TestAppContext) {
+    let notes = Landmark::new("notes", "", "ch03.md");
+    let setup = editor_with_landmarks(
+        cx,
+        vec![Landmark::new("start", "", "ch01.md"), notes.clone()],
+    );
+    click(&setup, "section-landmarks", cx);
+    click(&setup, "remove-start", cx);
+    click_named(&setup, "Remove", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("mark-start").is_some());
+    });
+    click(&setup, "save", cx);
+    assert_eq!(
+        Book::open(setup.fixture.roots.book(setup.key))
+            .unwrap()
+            .landmarks(),
+        [notes]
+    );
+}
+
+#[gpui_kit::test]
+fn a_titled_landmark_shows_its_kind_and_an_unknown_kind_keeps_its_name(cx: &mut TestAppContext) {
+    let appendix = Landmark::new("appendix", "Tables", "ch02.md");
+    let recipes = Landmark::new("x-recipes", "", "ch03.md");
+    let setup = editor_with_landmarks(cx, vec![appendix, recipes]);
+    click(&setup, "section-landmarks", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("Edit Tables, Appendix, 2. Two, Start of the chapter")
+                .is_some()
+        );
+        assert!(
+            window
+                .try_find_by_label("Edit x-recipes, 3. Three, Start of the chapter")
+                .is_some()
+        );
+    });
+    click_named(&setup, "Edit x-recipes, 3. Three, Start of the chapter", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(
+            window
+                .try_find_by_label("What the place is, x-recipes")
+                .is_some()
+        );
+    });
+    click_named(&setup, "Chapter, 3. Three", cx);
+    choose(&setup, "1. One", cx);
+    click_named(&setup, "Apply", cx);
+    click(&setup, "save", cx);
+    assert_eq!(
+        Book::open(setup.fixture.roots.book(setup.key))
+            .unwrap()
+            .landmarks(),
+        [
+            Landmark::new("appendix", "Tables", "ch02.md"),
+            Landmark::new("x-recipes", "", "ch01.md")
+        ]
+    );
+}
+
+#[gpui_kit::test]
+fn a_landmark_changed_under_its_dialog_is_left_alone(cx: &mut TestAppContext) {
+    let glossary = Landmark::new("glossary", "", "ch01.md");
+    let setup = editor_with_landmarks(cx, vec![Landmark::new("notes", "", "ch02.md")]);
+    click(&setup, "section-landmarks", cx);
+    let replace = |setup: &Setup, cx: &mut TestAppContext| {
+        let list = vec![glossary.clone()];
+        act(setup, cx, move |page, window, cx| {
+            page.session.landmarks_pending = true;
+            page.send(Command::SetLandmarks(list), Origin::Landmarks, window, cx);
+        });
+    };
+    click_named(&setup, "Edit Notes, 2. Two, Start of the chapter", cx);
+    replace(&setup, cx);
+    click_named(&setup, "Apply", cx);
+    assert_eq!(
+        state(&setup, cx, |page| page.session.landmarks().to_vec()),
+        std::slice::from_ref(&glossary)
+    );
+    let setup = editor_with_landmarks(cx, vec![Landmark::new("notes", "", "ch02.md")]);
+    click(&setup, "section-landmarks", cx);
+    click_named(&setup, "Remove Notes, 2. Two, Start of the chapter", cx);
+    replace(&setup, cx);
+    click_named(&setup, "Remove", cx);
+    assert_eq!(
+        state(&setup, cx, |page| page.session.landmarks().to_vec()),
+        std::slice::from_ref(&glossary)
+    );
+}
+
+#[gpui_kit::test]
+fn a_landmark_waits_for_the_change_before_it(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-landmarks", cx);
+    act(&setup, cx, |page, window, cx| {
+        page.session.landmarks_pending = true;
+        page.put_landmark(None, Landmark::new("notes", "", "ch01.md"), window, cx);
+    });
+    assert_eq!(state(&setup, cx, |page| page.session.landmarks().len()), 0);
+}
+
+#[gpui_kit::test]
+fn a_book_without_chapters_asks_for_no_landmark(cx: &mut TestAppContext) {
+    let setup = start_with(cx, 1280.0, &[]);
+    cx.run_until_parked();
+    act(&setup, cx, |page, window, cx| {
+        page.ask_new_landmark(None, window, cx);
+        page.ask_landmark_at(0, &Landmark::new("notes", "", "ch01.md"), window, cx);
+    });
+    assert!(!dialog_is_open(&setup, cx));
+}
+
+#[gpui_kit::test]
+fn a_new_landmark_starts_at_the_first_chapter_when_none_is_open(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-landmarks", cx);
+    act(&setup, cx, |page, window, cx| {
+        page.session.open = None;
+        page.ask_new_landmark(Some("start"), window, cx);
+    });
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find_by_label("Chapter, 1. One").is_some());
+    });
+}
+
+#[gpui_kit::test]
 fn a_notes_landmark_with_a_missing_anchor_blocks_save(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
     click(&setup, "section-landmarks", cx);
@@ -414,17 +668,19 @@ fn a_notes_landmark_with_a_missing_anchor_blocks_save(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn an_empty_book_explains_that_notes_need_a_chapter(cx: &mut TestAppContext) {
+fn an_empty_book_explains_that_landmarks_need_a_chapter(cx: &mut TestAppContext) {
     let setup = start_with(cx, 1280.0, &[]);
     cx.run_until_parked();
     click(&setup, "section-landmarks", cx);
     frame(&setup, cx, |window, _| {
         assert_eq!(
-            window.find("no-notes").label(),
-            Some("Add a chapter before adding a notes landmark.")
+            window.find("no-chapters-to-mark").label(),
+            Some("Add a chapter before marking places in the book.")
         );
     });
-    click(&setup, "add-note", cx);
+    click(&setup, "add-landmark", cx);
+    assert!(!dialog_is_open(&setup, cx));
+    click(&setup, "mark-start", cx);
     assert!(!dialog_is_open(&setup, cx));
 }
 

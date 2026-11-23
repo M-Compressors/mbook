@@ -112,6 +112,22 @@ pub(super) fn place_words(place: &Place, choices: &[ChapterChoice]) -> String {
         )
 }
 
+/// The chapter path and anchor of a place among `choices`; `None` when the
+/// book has no such chapter, or the chapter has no such place.
+pub(super) fn resolve(
+    place: &Place,
+    choices: &[ChapterChoice],
+) -> Option<(String, Option<String>)> {
+    let chapter = choices
+        .iter()
+        .find(|choice| Some(&choice.path) == place.chapter.as_ref())?;
+    let known = place
+        .anchor
+        .as_ref()
+        .is_none_or(|anchor| chapter.places.iter().any(|(name, _)| name == anchor));
+    known.then(|| (chapter.path.clone(), place.anchor.clone()))
+}
+
 /// What a dialog does when another place is chosen.
 pub(super) type OnPlace = Rc<dyn Fn(&Place, &mut gpui_kit::Window, &mut App)>;
 

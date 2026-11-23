@@ -388,9 +388,13 @@ sequenceDiagram
 - Removing a chapter or a picture
   asks first and cannot be undone.
 - Changes in Landmarks replace the landmark list through `Book::set_landmarks`.
-  The editor keeps the other landmarks and their order. If a chapter or
-  anchor no longer exists, the next check or save reports the dangling
-  landmark. The Landmarks section can retarget or remove it.
+  An edited landmark keeps its position and the others keep theirs. A new
+  one goes after the last landmark that leads to the same place or an
+  earlier one, by chapter in reading order and then by the order of the
+  places in the chapter; landmarks that lead nowhere are passed over. An
+  edit or a removal is dropped when the list changed under the dialog. If a
+  chapter or anchor no longer exists, the next check or save reports the
+  dangling landmark. The Landmarks section can retarget or remove it.
 - A chapter moves to another path by being removed and inserted at the same
   position, since `Book` has no rename; the links that broke are then among
   the problems.
@@ -444,9 +448,9 @@ sequenceDiagram
   - Removing a chapter removes the items that led into it, and the items
     under them move up as they do when one entry is removed. A list left
     without items gives way to automatic contents. The landmarks that led
-    into the chapter are removed too, of every kind: the Landmarks section
-    shows only `notes`, so a landmark of another kind that led nowhere
-    could not be repaired there.
+    into the chapter are removed too, of every kind: a landmark has no
+    place without its chapter, and one left behind would only block the
+    save.
 - A list the book keeps is changed by commands of the editing task that
   name an entry by its position in the last outline. The section takes no
   second change until the first is answered.

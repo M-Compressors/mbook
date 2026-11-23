@@ -144,6 +144,12 @@ fn editor_shots() -> Vec<Shot> {
             stage.click_label("Entry actions, The ledger")?;
             stage.click_label("Edit…")
         }),
+        shot("08p-editor-landmark-kind", Library::Books, |stage| {
+            open_editor(stage)?;
+            open_section(stage, "section-landmarks")?;
+            stage.click("add-landmark")?;
+            stage.click("landmark-kind")
+        }),
     ]
 }
 
