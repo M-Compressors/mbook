@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## [v0.3.4](https://github.com/M-Compressors/mbook/releases/tag/v0.3.4) - 2026-11-23
+
+### Fixed
+
+- On Android, a book opened with mbook from another app, such as Telegram,
+  was imported, but mbook did not come up. A second activity started in the
+  task of that app closed at once; a windowless activity now receives the
+  document and brings mbook up. The process now ends with the activity, so
+  that a later start is a fresh one.
+
 ## [v0.3.3](https://github.com/M-Compressors/mbook/releases/tag/v0.3.3) - 2026-11-23
 
 ### Added

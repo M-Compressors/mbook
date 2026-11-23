@@ -4,11 +4,13 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Process;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
@@ -46,7 +48,7 @@ public class MbookActivity extends GpuiInputActivity {
         super.onCreate(state);
         // A recreated activity gets its old intent again: it was taken.
         if (state == null) {
-            receive(getIntent());
+            receive(this, getIntent());
         }
     }
 
@@ -54,7 +56,21 @@ public class MbookActivity extends GpuiInputActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        receive(intent);
+        receive(this, intent);
+    }
+
+    /**
+     * Ends the process once the activity is gone. The interface runs on a
+     * thread that android-activity starts for one activity and stops when it
+     * is destroyed, which {@code super.onDestroy()} waits for; GPUI cannot
+     * start again in the same process on the thread of a new activity, whose
+     * window would stay black. Without the process, the next start is a
+     * fresh one.
+     */
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Process.killProcess(Process.myPid());
     }
 
     /**
@@ -104,22 +120,55 @@ public class MbookActivity extends GpuiInputActivity {
         return true;
     }
 
-    private void receive(Intent intent) {
+    /** A document handed over: the name it is shown with, and its open stream. */
+    private static final class Document {
+        final String name;
+        final InputStream input;
+        final Uri uri;
+
+        Document(String name, InputStream input, Uri uri) {
+            this.name = name;
+            this.input = input;
+            this.uri = uri;
+        }
+    }
+
+    /**
+     * Queues the documents {@code intent} hands over, copied into the cache.
+     *
+     * The streams are opened here, on the thread of the activity that got
+     * the intent: the permission to read a document lasts as long as that
+     * activity, and an open stream stays readable after it. The copying is
+     * done on a thread of its own.
+     */
+    static void receive(Context context, Intent intent) {
         List<Uri> uris = documents(intent);
         if (uris.isEmpty()) {
             return;
         }
-        ContentResolver resolver = getContentResolver();
-        File cache = new File(getCacheDir(), "opened");
+        ContentResolver resolver = context.getContentResolver();
+        File cache = new File(context.getCacheDir(), "opened");
+        List<Document> documents = new ArrayList<>();
+        for (Uri uri : uris) {
+            try {
+                InputStream input = resolver.openInputStream(uri);
+                if (input == null) {
+                    throw new IOException("the provider gave no stream");
+                }
+                documents.add(new Document(name(resolver, uri), input, uri));
+            } catch (IOException | SecurityException e) {
+                Log.w(TAG, "could not open the document " + uri, e);
+            }
+        }
         new Thread(() -> {
-            for (Uri uri : uris) {
-                try {
-                    File copy = copy(resolver, uri, cache);
+            for (Document document : documents) {
+                try (InputStream input = document.input) {
+                    File copy = copy(input, document.name, cache);
                     synchronized (OPENED) {
                         OPENED.add(copy.getAbsolutePath());
                     }
-                } catch (IOException | SecurityException e) {
-                    Log.w(TAG, "could not read the document " + uri, e);
+                } catch (IOException e) {
+                    Log.w(TAG, "could not read the document " + document.uri, e);
                 }
             }
         }, "mbook-open").start();
@@ -174,10 +223,10 @@ public class MbookActivity extends GpuiInputActivity {
     }
 
     /**
-     * Copies the document at {@code uri} into a new folder under
-     * {@code cache}, under the name it is shown with, and returns the copy.
+     * Copies {@code input} into a new folder under {@code cache} as
+     * {@code name}, and returns the copy.
      */
-    private static File copy(ContentResolver resolver, Uri uri, File cache) throws IOException {
+    private static File copy(InputStream input, String name, File cache) throws IOException {
         File folder;
         synchronized (OPENED) {
             folder = new File(cache, Integer.toString(next++));
@@ -185,12 +234,8 @@ public class MbookActivity extends GpuiInputActivity {
         if (!folder.isDirectory() && !folder.mkdirs()) {
             throw new IOException("could not create " + folder);
         }
-        File copy = new File(folder, name(resolver, uri));
-        try (InputStream input = resolver.openInputStream(uri);
-                OutputStream output = new FileOutputStream(copy)) {
-            if (input == null) {
-                throw new IOException("the provider gave no stream");
-            }
+        File copy = new File(folder, name);
+        try (OutputStream output = new FileOutputStream(copy)) {
             byte[] buffer = new byte[64 * 1024];
             int read;
             while ((read = input.read(buffer)) != -1) {

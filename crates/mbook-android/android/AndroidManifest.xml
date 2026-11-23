@@ -4,9 +4,9 @@
   @VERSION_CODE@ with the version of the workspace.
 
   The activity is MbookActivity (`java/`), the GpuiInputActivity of
-  gpui-mobile with the documents other apps open or share with mbook: a
-  NativeActivity that loads libmbook_android.so (`android.app.lib_name`) and
-  gives the keyboard of the system an input connection. The other three are
+  gpui-mobile: a NativeActivity that loads libmbook_android.so
+  (`android.app.lib_name`) and gives the keyboard of the system an input
+  connection. OpenActivity receives the documents other apps hand over. The other three are
   transparent helpers of gpui-mobile for the document picker and for
   permission requests.
 -->
@@ -48,6 +48,20 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <!--
+          OpenActivity receives what other apps open or share with mbook,
+          in whatever task they start it, and brings MbookActivity up with
+          it. It has no window: Theme.NoDisplay, and it finishes at once.
+        -->
+        <activity
+            android:name="io.github.m_compressors.mbook.OpenActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
             <!--
               Opening a document with mbook, and sharing one or several with
               it. The types are those of the formats mbook converts; an mbook

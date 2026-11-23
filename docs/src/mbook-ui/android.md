@@ -99,8 +99,15 @@ types of the formats it converts, and of `application/octet-stream`, the
 type an mbook file comes with ([Opening files from the system](architecture.md#opening-files-from-the-system)).
 
 - A document comes as a `content:` URI that only the activity may read.
-  `MbookActivity` copies it into `<cache>/opened/<n>/` under the name the
-  provider shows, on a thread of its own, and queues the path. A name
+  It is received by `OpenActivity`, an activity without a window or native
+  code, in whatever task the other app starts it, and for a result if it
+  asks for one, as Telegram does. It opens the stream of each document at
+  once, since the permission to read it lasts only as long as the activity,
+  starts `MbookActivity` in its own task, where the running interface comes
+  to the front, and finishes. A second `MbookActivity` in the task of the
+  other app could not run the interface, which runs in the first.
+- The documents are copied into `<cache>/opened/<n>/` under the name the
+  provider shows, on a thread of their own, and the paths are queued. A name
   without an extension gets the one of the document's MIME type, from which
   the importer reads the format.
 - Nothing wakes the interface for it: a task of the interface asks the
@@ -132,12 +139,14 @@ type an mbook file comes with ([Opening files from the system](architecture.md#o
   opts out of that, which an application that targets API 36 cannot do.
   Moving on needs gpui-mobile to report the insets of the system through
   GPUI.
-- **A recreated activity shows a black screen.** When Android destroys the
-  activity and creates it again in the same process, GPUI refuses to start
-  on the new thread `android-activity` gives it. The configuration changes
-  the manifest names do not recreate it; others, such as a change of the
-  language of the system, do. gpui-mobile has a second entry point that
-  avoids this, which needs a host activity of its own.
+- **The process ends with the activity.** GPUI cannot start again in a
+  process on the thread `android-activity` gives a new activity: its window
+  would stay black. So `MbookActivity` ends the process once it is
+  destroyed, after the interface has stopped, and the next start is a fresh
+  one. A change the manifest does not name, such as the language of the
+  system, therefore restarts the application. gpui-mobile has a second
+  entry point that keeps the interface across activities, which needs a host
+  activity of its own.
 - **The navigation bar** of gesture navigation is not reported by every
   device: on some, the handle is drawn over the bottom of the library's bar.
 - **gpui-mobile is a pinned commit** of an open pull request,
