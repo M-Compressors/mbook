@@ -46,7 +46,8 @@ pub fn run(application: Application, roots: Roots, files: Vec<PathBuf>) {
         #[cfg(target_os = "android")]
         opened::poll_android(cx);
         #[cfg(windows)]
-        cx.background_spawn(async { file_types::register() })
+        cx.background_executor()
+            .spawn(async { file_types::register() })
             .detach();
         if window::open(roots, cx).is_err() {
             // Without a window there is nothing to show an error in.
