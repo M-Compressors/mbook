@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [v0.3.2](https://github.com/M-Compressors/mbook/releases/tag/v0.3.2) - 2026-11-23
+
 ### Added
 
 - The book menu of the library has **Share**. It opens the share sheet of
