@@ -4,8 +4,10 @@ use std::ops::RangeInclusive;
 
 use gpui_kit::SharedString;
 use gpui_kit::component::searchable_list::SearchableListItem;
+use rust_i18n::t;
 
 use crate::entities::catalogue::READING_FACES;
+use crate::shared::i18n::Language;
 use crate::shared::theme::PageTone;
 
 /// The sizes of the text of a book, in pixels.
@@ -17,23 +19,53 @@ pub(super) const INTERFACE_PERCENT: RangeInclusive<f32> = 100.0..=200.0;
 /// The step of the size of the interface, in percent.
 pub(super) const INTERFACE_STEP: f32 = 10.0;
 
-/// The page tones the settings offer, in order, with their names. `None`
-/// follows the system.
-pub(super) const TONES: [(Option<PageTone>, &str); 6] = [
-    (None, "Follow the system"),
-    (Some(PageTone::Paper), PageTone::Paper.label()),
-    (Some(PageTone::Neutral), PageTone::Neutral.label()),
-    (Some(PageTone::Sepia), PageTone::Sepia.label()),
-    (Some(PageTone::Night), PageTone::Night.label()),
-    (Some(PageTone::HighContrast), PageTone::HighContrast.label()),
+/// The page tones the settings offer, in order. `None` follows the system.
+pub(super) const TONES: [Option<PageTone>; 6] = [
+    None,
+    Some(PageTone::Paper),
+    Some(PageTone::Neutral),
+    Some(PageTone::Sepia),
+    Some(PageTone::Night),
+    Some(PageTone::HighContrast),
 ];
 
 /// The position of a page tone among [`TONES`].
 pub(super) fn tone_index(tone: Option<PageTone>) -> usize {
     TONES
         .iter()
-        .position(|(candidate, _)| *candidate == tone)
+        .position(|candidate| *candidate == tone)
         .unwrap_or(0)
+}
+
+/// The name of a choice of page tone in the current language.
+pub(super) fn tone_label(tone: Option<PageTone>) -> SharedString {
+    tone.map_or_else(|| t!("settings.tone_system"), PageTone::label)
+        .into()
+}
+
+/// The languages the settings offer, in order. `None` follows the system.
+pub(super) fn language_options() -> Vec<Option<Language>> {
+    std::iter::once(None)
+        .chain(Language::ALL.into_iter().map(Some))
+        .collect()
+}
+
+/// The position of a choice of language among [`language_options`].
+pub(super) fn language_index(language: Option<Language>) -> usize {
+    language_options()
+        .iter()
+        .position(|candidate| *candidate == language)
+        .unwrap_or(0)
+}
+
+/// The name of a choice of language. A language is named in itself, so that
+/// a person who cannot read the current one finds theirs; the choice that
+/// follows the system says, in the current language, which one that is.
+pub(super) fn language_label(language: Option<Language>, system: Language) -> SharedString {
+    match language {
+        Some(language) => language.native_name().into(),
+        None => t!("settings.language_system", language = system.native_name()).into(),
+    }
 }
 
 /// A typeface in the list of the settings.
@@ -57,7 +89,7 @@ impl Typeface {
     fn missing(family: &str) -> Self {
         Self {
             family: family.to_owned(),
-            title: format!("{family} (not installed)").into(),
+            title: t!("settings.not_installed", family = family).into(),
         }
     }
 }
@@ -242,8 +274,39 @@ mod tests {
         assert_eq!(tone_index(None), 0);
         for tone in PageTone::ALL {
             let index = tone_index(Some(tone));
-            assert_eq!(TONES[index].0, Some(tone));
+            assert_eq!(TONES[index], Some(tone));
         }
+    }
+
+    #[test]
+    fn a_page_tone_is_named_in_the_current_language() {
+        assert_eq!(tone_label(None), "Follow the system");
+        assert_eq!(tone_label(Some(PageTone::HighContrast)), "High contrast");
+    }
+
+    #[test]
+    fn the_system_comes_first_then_every_language() {
+        assert_eq!(
+            language_options(),
+            [None, Some(Language::English), Some(Language::Russian)]
+        );
+        assert_eq!(language_index(None), 0);
+        for language in Language::ALL {
+            let index = language_index(Some(language));
+            assert_eq!(language_options()[index], Some(language));
+        }
+    }
+
+    #[test]
+    fn a_language_is_named_in_itself_and_the_system_says_which_it_is() {
+        assert_eq!(
+            language_label(Some(Language::Russian), Language::English),
+            "Русский"
+        );
+        assert_eq!(
+            language_label(None, Language::Russian),
+            "System language (Русский)"
+        );
     }
 
     #[test]

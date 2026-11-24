@@ -1,6 +1,8 @@
 //! The chapter area: the Markdown editor, the preview, and what changes the
 //! chapter being edited.
 
+use std::borrow::Cow;
+
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{ButtonVariants as _, Toggle, ToggleGroup};
 use gpui_kit::component::input::Editor;
@@ -10,6 +12,7 @@ use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
     Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, div, px, relative,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::encode::Target;
@@ -18,47 +21,35 @@ use super::prompts::{Question, confirm};
 use super::sections::control;
 use super::session::{Control, ViewMode, chapter_label, chapter_title};
 use crate::features::appearance::Appearance;
+use crate::shared::i18n::count_text;
 use crate::shared::layout::SizeClass;
 use crate::shared::ui::{empty_state, icon_button, page_colors, status_line, target_size};
 
 /// What the Markdown editor says about leaving it, as its description and as
 /// the hint under it.
-pub(super) const EDITOR_HINT: &str = "Tab indents. Press Escape, then Tab, to leave the editor.";
+fn editor_hint() -> Cow<'static, str> {
+    t!("editor.chapter.editor_hint")
+}
 
 /// The question before a chapter is removed. It says what goes with the
 /// chapter because it led into it: entries of a contents list the book
 /// keeps, and landmarks.
 fn removal_question(name: &str, entries: usize, landmarks: usize) -> Question {
-    let mut gone = Vec::new();
-    match entries {
-        0 => {}
-        1 => gone.push("Its entry of the contents".to_owned()),
-        count => gone.push(format!("Its {count} entries of the contents")),
-    }
-    match (landmarks, gone.is_empty()) {
-        (0, _) => {}
-        (1, true) => gone.push("The landmark that leads into it".to_owned()),
-        (1, false) => gone.push("the landmark that leads into it".to_owned()),
-        (count, true) => gone.push(format!("The {count} landmarks that lead into it")),
-        (count, false) => gone.push(format!("the {count} landmarks that lead into it")),
-    }
-    let verb = if entries + landmarks == 1 {
-        "is"
-    } else {
-        "are"
-    };
-    let detail = if gone.is_empty() {
-        "This cannot be undone.".to_owned()
-    } else {
-        format!(
-            "{} {verb} removed with it. This cannot be undone.",
-            gone.join(" and ")
+    let detail = match (entries, landmarks) {
+        (0, 0) => t!("editor.remove_chapter.alone").into_owned(),
+        (entries, 0) => count_text("editor.remove_chapter.entries", entries),
+        (0, landmarks) => count_text("editor.remove_chapter.landmarks", landmarks),
+        (entries, landmarks) => t!(
+            "editor.remove_chapter.both",
+            entries = count_text("editor.remove_chapter.entries_part", entries),
+            landmarks = count_text("editor.remove_chapter.landmarks_part", landmarks)
         )
+        .into_owned(),
     };
     Question {
-        title: format!("Remove {name}?"),
+        title: t!("editor.remove_chapter.title", name = name).into_owned(),
         detail,
-        ok: "Remove",
+        ok: t!("prompt.remove.ok").into(),
     }
 }
 
@@ -73,11 +64,11 @@ impl EditorPage {
     ) -> impl IntoElement {
         let Some(path) = self.session.open.clone() else {
             return empty_state(
-                "This book has no chapters yet",
-                "Add the first chapter to start writing.",
+                t!("editor.chapter.none_title"),
+                t!("editor.chapter.none_hint"),
             )
             .action(
-                control("add-first-chapter", "New chapter…")
+                control("add-first-chapter", t!("editor.chapter.new"))
                     .primary()
                     .on_click(cx.listener(|_, _, window, cx| Self::add_chapter(window, cx))),
             )
@@ -86,7 +77,7 @@ impl EditorPage {
         let mode = self.session.mode.effective(class);
         let theme = cx.theme().clone();
         let (paper, ink) = page_colors(Appearance::global(cx).read(cx).page_tone(window));
-        let label = format!("Preview of {path}");
+        let label = t!("editor.preview_of", path = path).into_owned();
         self.preview
             .update(cx, |view, cx| view.set_label(label, cx));
         let shown = self.preview.clone();
@@ -164,7 +155,7 @@ impl EditorPage {
                     }),
             )
             .children(self.encoder.names(Target::Chapter).into_iter().map(|name| {
-                status_line("chapter-picture-encoding", format!("Adding {name}…"))
+                status_line("chapter-picture-encoding", t!("editor.adding", name = name))
                     .px_3()
                     .py_1()
                     .text_sm()
@@ -225,7 +216,7 @@ impl EditorPage {
                             .min_w_0()
                             .truncate()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(chapter_title(heading.as_deref()).to_owned()),
+                            .child(chapter_title(heading.as_deref()).into_owned()),
                     )
                     .child(
                         div()
@@ -239,7 +230,7 @@ impl EditorPage {
                             .flex_none()
                             .text_sm()
                             .text_color(muted)
-                            .child("edited")
+                            .child(t!("editor.edited"))
                     })),
             )
             .child(
@@ -286,10 +277,14 @@ impl EditorPage {
         path: &str,
         cx: &mut Context<'_, Self>,
     ) -> impl IntoElement + use<> {
-        icon_button("find-chapter", IconName::Search, "Find in chapter")
-            .track_focus(&self.search_button)
-            .disabled(self.loaded.as_deref() != Some(path))
-            .on_click(cx.listener(|this, _, window, cx| this.show_search(window, cx)))
+        icon_button(
+            "find-chapter",
+            IconName::Search,
+            t!("editor.find_in_chapter"),
+        )
+        .track_focus(&self.search_button)
+        .disabled(self.loaded.as_deref() != Some(path))
+        .on_click(cx.listener(|this, _, window, cx| this.show_search(window, cx)))
     }
 
     /// The menu of what changes the chapter itself: its place in the reading
@@ -302,49 +297,54 @@ impl EditorPage {
     ) -> impl IntoElement + use<> {
         let page = cx.weak_entity();
         let path = path.to_owned();
-        icon_button("chapter-menu", IconName::Ellipsis, "Chapter actions").dropdown_menu(
-            move |menu, _, _| {
-                let step = |label: &'static str, by: isize, disabled: bool| {
-                    let (page, path) = (page.clone(), path.clone());
-                    PopupMenuItem::new(label)
-                        .disabled(disabled)
-                        .on_click(move |_, window, cx| {
-                            page.update(cx, |this, cx| this.move_chapter(&path, by, window, cx))
-                                .ok();
-                        })
-                };
-                let (rename_page, rename_path) = (page.clone(), path.clone());
-                let (remove_page, remove_path) = (page.clone(), path.clone());
-                menu.item(step("Move up", -1, index == 0))
-                    .item(step("Move down", 1, index >= last))
-                    .separator()
-                    .item(
-                        PopupMenuItem::new("Rename the file…").on_click(move |_, window, cx| {
+        icon_button(
+            "chapter-menu",
+            IconName::Ellipsis,
+            t!("editor.chapter.actions"),
+        )
+        .dropdown_menu(move |menu, _, _| {
+            let step = |label: Cow<'static, str>, by: isize, disabled: bool| {
+                let (page, path) = (page.clone(), path.clone());
+                PopupMenuItem::new(label)
+                    .disabled(disabled)
+                    .on_click(move |_, window, cx| {
+                        page.update(cx, |this, cx| this.move_chapter(&path, by, window, cx))
+                            .ok();
+                    })
+            };
+            let (rename_page, rename_path) = (page.clone(), path.clone());
+            let (remove_page, remove_path) = (page.clone(), path.clone());
+            menu.item(step(t!("editor.chapter.move_up"), -1, index == 0))
+                .item(step(t!("editor.chapter.move_down"), 1, index >= last))
+                .separator()
+                .item(
+                    PopupMenuItem::new(t!("editor.chapter.rename_file")).on_click(
+                        move |_, window, cx| {
                             let path = rename_path.clone();
                             rename_page
                                 .update(cx, |_, cx| Self::change_path(path, window, cx))
                                 .ok();
-                        }),
-                    )
-                    .item(PopupMenuItem::new("Remove the chapter…").on_click(
-                        move |_, window, cx| {
-                            let path = remove_path.clone();
-                            remove_page
-                                .update(cx, |this, cx| {
-                                    let question = removal_question(
-                                        &this.chapter_name(&path),
-                                        this.session.stored_entries_of(&path),
-                                        this.session.landmarks_into(&path),
-                                    );
-                                    confirm(question, window, cx, move |this, window, cx| {
-                                        this.remove_chapter(path.clone(), window, cx);
-                                    });
-                                })
-                                .ok();
                         },
-                    ))
-            },
-        )
+                    ),
+                )
+                .item(PopupMenuItem::new(t!("editor.chapter.remove")).on_click(
+                    move |_, window, cx| {
+                        let path = remove_path.clone();
+                        remove_page
+                            .update(cx, |this, cx| {
+                                let question = removal_question(
+                                    &this.chapter_name(&path),
+                                    this.session.stored_entries_of(&path),
+                                    this.session.landmarks_into(&path),
+                                );
+                                confirm(question, window, cx, move |this, window, cx| {
+                                    this.remove_chapter(path.clone(), window, cx);
+                                });
+                            })
+                            .ok();
+                    },
+                ))
+        })
     }
 
     /// A chapter in words, for a question about it: its title in quotes, or
@@ -353,7 +353,10 @@ impl EditorPage {
         self.session
             .chapter(path)
             .and_then(|chapter| chapter.heading.as_deref())
-            .map_or_else(|| path.to_owned(), |heading| format!("“{heading}”"))
+            .map_or_else(
+                || path.to_owned(),
+                |heading| t!("editor.quoted", text = heading).into_owned(),
+            )
     }
 
     /// The Markdown editor of the chapter and the hint about leaving it.
@@ -366,8 +369,8 @@ impl EditorPage {
         v_flex()
             .id("chapter-source")
             .role(Role::Group)
-            .aria_label(format!("Markdown source of {path}"))
-            .aria_description(EDITOR_HINT)
+            .aria_label(t!("editor.chapter.source_of", path = path))
+            .aria_description(editor_hint())
             .test_support()
             .key_context(context)
             .size_full()
@@ -375,12 +378,12 @@ impl EditorPage {
             .child(
                 div().flex_1().min_h_0().child(
                     Editor::new(&self.text)
-                        .aria_label(format!("Markdown of {path}"))
+                        .aria_label(t!("editor.chapter.markdown_of", path = path))
                         .h(relative(1.0)),
                 ),
             )
             .child(
-                status_line("editor-hint", EDITOR_HINT)
+                status_line("editor-hint", editor_hint())
                     .px_3()
                     .py_1()
                     .text_xs()

@@ -4,6 +4,7 @@
 //! back from: the copy is made in the folder of shared files and offered to
 //! the share sheet, whose targets include saving to a folder.
 
+use std::borrow::Cow;
 use std::fs::File;
 #[cfg(not(target_os = "android"))]
 use std::future::Future;
@@ -13,6 +14,7 @@ use std::path::{Path, PathBuf};
 use gpui_kit::{App, Window};
 use mbook::Book;
 use mbook_converter::{Converter, Format};
+use rust_i18n::t;
 use tempfile::NamedTempFile;
 
 use crate::entities::catalogue::Store;
@@ -21,17 +23,19 @@ use crate::shared::compute;
 use crate::shared::model::BookKey;
 use crate::shared::ui::announce;
 
-pub(super) fn label(format: Format) -> &'static str {
+/// The name of `format` in the export menu and the save dialog. The names of
+/// formats are not translated; a description is.
+pub(super) fn label(format: Format) -> Cow<'static, str> {
     match format {
-        Format::Epub => "EPUB (.epub)",
-        Format::Docx => "Word (.docx)",
-        Format::Fb2 => "FictionBook (.fb2)",
-        Format::Pdf => "PDF (.pdf)",
-        Format::Cbz => "Comic archive (.cbz)",
-        Format::Html => "HTML (.html)",
-        Format::Markdown => "Markdown (.md)",
-        Format::Text => "Plain text (.txt)",
-        _ => format.extension(),
+        Format::Epub => "EPUB (.epub)".into(),
+        Format::Docx => "Word (.docx)".into(),
+        Format::Fb2 => "FictionBook (.fb2)".into(),
+        Format::Pdf => "PDF (.pdf)".into(),
+        Format::Cbz => t!("library.format_cbz"),
+        Format::Html => "HTML (.html)".into(),
+        Format::Markdown => "Markdown (.md)".into(),
+        Format::Text => t!("library.format_text"),
+        _ => format.extension().into(),
     }
 }
 
@@ -39,7 +43,7 @@ pub(super) fn label(format: Format) -> &'static str {
 #[cfg(not(target_os = "android"))]
 pub(super) async fn pick(name: String, format: Format) -> Option<PathBuf> {
     rfd::AsyncFileDialog::new()
-        .set_title("Export book")
+        .set_title(t!("library.export_dialog"))
         .set_file_name(name)
         .add_filter(label(format), &[format.extension()])
         .save_file()
@@ -74,8 +78,12 @@ pub(super) fn choose<F>(
                 .await;
             cx.update(|window, cx| {
                 let message = match result {
-                    Ok(()) => format!("Exported {title} to {}.", label(format)),
-                    Err(error) => format!("Could not export {title}. {}.", error_chain(&error)),
+                    Ok(()) => t!("library.exported", title = title, format = label(format)),
+                    Err(error) => t!(
+                        "library.export_failed",
+                        title = title,
+                        reason = error_chain(&error)
+                    ),
                 };
                 announce(message, window, cx);
             })
@@ -106,11 +114,17 @@ pub(super) fn share(key: BookKey, title: &str, format: Format, window: &Window, 
                 let message = match staged {
                     Ok(path) => match super::share::present(&path, &title) {
                         Ok(()) => return,
-                        Err(error) => {
-                            format!("Could not export {title}. {}.", error_chain(&error))
-                        }
+                        Err(error) => t!(
+                            "library.export_failed",
+                            title = title,
+                            reason = error_chain(&error)
+                        ),
                     },
-                    Err(error) => format!("Could not export {title}. {}.", error_chain(&error)),
+                    Err(error) => t!(
+                        "library.export_failed",
+                        title = title,
+                        reason = error_chain(&error)
+                    ),
                 };
                 announce(message, window, cx);
             })
@@ -194,13 +208,13 @@ fn with_extension(path: PathBuf, format: Format) -> PathBuf {
 
 #[derive(Debug, thiserror::Error)]
 enum ExportError {
-    #[error("the library book could not be read")]
+    #[error("{}", t!("library.export_unreadable"))]
     Book(#[from] mbook::Error),
     #[error(transparent)]
     Convert(#[from] mbook_converter::Error),
-    #[error("the export file could not be saved")]
+    #[error("{}", t!("library.export_unsaved"))]
     Io(#[from] io::Error),
-    #[error("a file with that name already exists")]
+    #[error("{}", t!("library.export_exists"))]
     Exists,
 }
 

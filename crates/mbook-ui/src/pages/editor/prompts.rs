@@ -11,7 +11,8 @@ use gpui_kit::{
     Styled as _, Window, div, px,
 };
 
-use super::session::required;
+use rust_i18n::t;
+
 use super::{EditorEvent, EditorPage};
 use crate::shared::ui::{status_line, target_size};
 
@@ -19,16 +20,16 @@ use crate::shared::ui::{status_line, target_size};
 #[derive(Debug, Clone)]
 pub(super) struct PathRequest {
     /// The title of the dialog.
-    pub(super) title: &'static str,
+    pub(super) title: SharedString,
     /// The label of the field, which is also its name.
-    pub(super) label: &'static str,
+    pub(super) label: SharedString,
     /// What the field holds when the dialog opens.
     pub(super) initial: String,
     /// The name of the button that goes on.
-    pub(super) ok: &'static str,
+    pub(super) ok: SharedString,
     /// What the dialog says when the field is empty; `None` lets it be
     /// empty.
-    pub(super) required: Option<&'static str>,
+    pub(super) required: Option<SharedString>,
 }
 
 /// Asks for one line in a dialog. `on_ok` gets what was entered, without its
@@ -50,8 +51,12 @@ pub(super) fn ask_path(
     let error: Entity<Option<SharedString>> = cx.new(|_| None);
     let (on_ok, on_cancel) = (Rc::new(on_ok), Rc::new(on_cancel));
     let first = Cell::new(true);
-    let (title, label, ok) = (request.title, request.label, request.ok);
-    let missing = request.required;
+    let (title, label, ok) = (
+        request.title.clone(),
+        request.label.clone(),
+        request.ok.clone(),
+    );
+    let missing = request.required.clone();
     window.open_alert_dialog(cx, move |alert, window, cx| {
         if first.replace(false) {
             input.focus_handle(cx).focus(window, cx);
@@ -60,23 +65,21 @@ pub(super) fn ask_path(
         let danger = cx.theme().danger;
         let field = v_flex()
             .gap_2()
-            .child(div().child(label))
-            .child(Input::new(&input).aria_label(label))
+            .child(div().child(label.clone()))
+            .child(Input::new(&input).aria_label(label.clone()))
             .children(message.map(|message| status_line("path-error", message).text_color(danger)));
         let (page_ok, page_cancel) = (page.clone(), page.clone());
         let (input, error) = (input.clone(), error.clone());
         let (on_ok, on_cancel) = (on_ok.clone(), on_cancel.clone());
+        let missing = missing.clone();
         alert
-            .title(title)
+            .title(title.clone())
             .description(field)
             .confirm()
-            .ok_text(ok)
-            .cancel_text("Cancel")
-            .on_ok(move |_, window, cx| {
-                match missing.map_or_else(
-                    || Ok(input.read(cx).value().trim().to_owned()),
-                    |missing| required(&input.read(cx).value(), missing),
-                ) {
+            .ok_text(ok.clone())
+            .cancel_text(t!("prompt.cancel"))
+            .on_ok(
+                move |_, window, cx| match entered(&input.read(cx).value(), missing.as_ref()) {
                     Ok(path) => {
                         page_ok
                             .update(cx, |this, cx| on_ok(this, path, window, cx))
@@ -85,14 +88,14 @@ pub(super) fn ask_path(
                     }
                     Err(words) => {
                         error.update(cx, |error, cx| {
-                            *error = Some(words.into());
+                            *error = Some(words);
                             cx.notify();
                         });
                         window.refresh();
                         false
                     }
-                }
-            })
+                },
+            )
             .on_cancel(move |_, window, cx| {
                 page_cancel
                     .update(cx, |this, cx| on_cancel(this, window, cx))
@@ -102,6 +105,16 @@ pub(super) fn ask_path(
     });
 }
 
+/// What was entered, without its edges, or the words that say what to
+/// enter when the field must not be empty and is.
+fn entered(value: &str, missing: Option<&SharedString>) -> Result<String, SharedString> {
+    let value = value.trim();
+    match missing {
+        Some(missing) if value.is_empty() => Err(missing.clone()),
+        _ => Ok(value.to_owned()),
+    }
+}
+
 /// Asks whether to save, discard or keep editing, because the book has
 /// changes that were not saved.
 pub(super) fn ask_leave(window: &mut Window, cx: &mut Context<'_, EditorPage>) {
@@ -109,8 +122,8 @@ pub(super) fn ask_leave(window: &mut Window, cx: &mut Context<'_, EditorPage>) {
     window.open_alert_dialog(cx, move |alert, _, _| {
         let (discard, save) = (page.clone(), page.clone());
         alert
-            .title("Save the changes?")
-            .description("The book has changes that were not saved.")
+            .title(t!("prompt.leave.title"))
+            .description(t!("prompt.leave.detail"))
             .footer(
                 h_flex()
                     .w_full()
@@ -118,13 +131,13 @@ pub(super) fn ask_leave(window: &mut Window, cx: &mut Context<'_, EditorPage>) {
                     .gap_2()
                     .child(
                         Button::new("leave-cancel")
-                            .label("Cancel")
+                            .label(t!("prompt.cancel"))
                             .min_h(px(target_size()))
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
                         Button::new("leave-discard")
-                            .label("Discard")
+                            .label(t!("prompt.leave.discard"))
                             .min_h(px(target_size()))
                             .on_click(move |_, window, cx| {
                                 window.close_dialog(cx);
@@ -134,7 +147,7 @@ pub(super) fn ask_leave(window: &mut Window, cx: &mut Context<'_, EditorPage>) {
                     .child(
                         Button::new("leave-save")
                             .primary()
-                            .label("Save")
+                            .label(t!("prompt.leave.save"))
                             .min_h(px(target_size()))
                             .on_click(move |_, window, cx| {
                                 window.close_dialog(cx);
@@ -154,7 +167,7 @@ pub(super) struct Question {
     /// What the change does.
     pub(super) detail: String,
     /// The name of the button that goes on.
-    pub(super) ok: &'static str,
+    pub(super) ok: SharedString,
 }
 
 /// Asks before a change that cannot be undone; `act` makes the change.
@@ -172,9 +185,9 @@ pub(super) fn confirm(
             .title(question.title.clone())
             .description(question.detail.clone())
             .confirm()
-            .ok_text(question.ok)
+            .ok_text(question.ok.clone())
             .ok_variant(ButtonVariant::Danger)
-            .cancel_text("Cancel")
+            .cancel_text(t!("prompt.cancel"))
             .on_ok(move |_, window, cx| {
                 page.update(cx, |this, cx| act(this, window, cx)).ok();
                 true
@@ -191,12 +204,32 @@ pub(super) fn confirm_remove(
 ) {
     confirm(
         Question {
-            title: format!("Remove {what}?"),
-            detail: "This cannot be undone.".to_owned(),
-            ok: "Remove",
+            title: t!("prompt.remove.title", what = what).into_owned(),
+            detail: t!("prompt.remove.detail").into_owned(),
+            ok: t!("prompt.remove.ok").into(),
         },
         window,
         cx,
         remove,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::SharedString;
+
+    use super::entered;
+
+    #[test]
+    fn what_is_entered_loses_its_edges() {
+        assert_eq!(entered("  ch01.md \n", None), Ok("ch01.md".to_owned()));
+    }
+
+    #[test]
+    fn an_empty_field_may_be_left_empty_unless_it_is_required() {
+        let missing = SharedString::from("Enter a name.");
+        assert_eq!(entered("  ", None), Ok(String::new()));
+        assert_eq!(entered("  ", Some(&missing)), Err(missing.clone()));
+        assert_eq!(entered(" a ", Some(&missing)), Ok("a".to_owned()));
+    }
 }

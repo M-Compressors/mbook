@@ -12,7 +12,7 @@ use thiserror::Error;
 
 /// A file chosen that does not have one of the extensions asked for.
 #[derive(Debug, Error)]
-#[error("\"{name}\" does not have a supported file extension.")]
+#[error("{}", rust_i18n::t!("ui.picker.unsupported_extension", name = .name))]
 pub(crate) struct UnsupportedExtension {
     name: String,
 }
@@ -25,7 +25,7 @@ pub(crate) enum ChooseError {
     Extension(#[from] UnsupportedExtension),
     /// The picker of the platform failed.
     #[cfg(target_os = "android")]
-    #[error("The file picker could not be shown.")]
+    #[error("{}", rust_i18n::t!("ui.picker.failed"))]
     Picker(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
@@ -73,7 +73,9 @@ pub(crate) async fn choose(
     use gpui_kit::{PathPromptOptions, Platform as _};
 
     let Some(platform) = gpui_mobile::android::jni::platform() else {
-        return Err(ChooseError::Picker("the platform is not running".into()));
+        return Err(ChooseError::Picker(
+            rust_i18n::t!("ui.picker.no_platform").into_owned().into(),
+        ));
     };
     let options = PathPromptOptions {
         files: true,

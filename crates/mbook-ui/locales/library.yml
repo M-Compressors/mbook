@@ -1,0 +1,235 @@
+_version: 2
+library:
+  books:
+    one:
+      en: "%{count} book"
+      ru: "%{count} книга"
+    few:
+      ru: "%{count} книги"
+    many:
+      ru: "%{count} книг"
+    other:
+      en: "%{count} books"
+      ru: "%{count} книги"
+  # The page and its header.
+  title:
+    en: "Library"
+    ru: "Библиотека"
+  search:
+    en: "Search"
+    ru: "Поиск"
+  search_library:
+    en: "Search the library"
+    ru: "Поиск по библиотеке"
+  error:
+    en: "The library could not be read or changed: %{reason}."
+    ru: "Не удалось прочитать или изменить библиотеку: %{reason}."
+  try_again:
+    en: "Try again"
+    ru: "Повторить"
+  show_sections:
+    en: "Show the sections"
+    ru: "Показать разделы"
+  sort_by:
+    en: "Sort: %{sort}"
+    ru: "Сортировка: %{sort}"
+  add_book:
+    en: "Add a book…"
+    ru: "Добавить книгу…"
+  new_book:
+    en: "New book…"
+    ru: "Создать книгу…"
+  settings:
+    en: "Settings"
+    ru: "Настройки"
+  # The card "Continue reading".
+  continue_reading:
+    en: "Continue reading"
+    ru: "Продолжить чтение"
+  continue_reading_book:
+    en: "Continue reading: %{title}"
+    ru: "Продолжить чтение: %{title}"
+  progress_read:
+    en: "%{progress} read"
+    ru: "Прочитано: %{progress}"
+  read:
+    en: "Read"
+    ru: "Читать"
+  read_book:
+    en: "Read %{title}"
+    ru: "Читать «%{title}»"
+  # The shelf.
+  loading:
+    en: "Loading"
+    ru: "Загрузка"
+  loading_books:
+    en: "Loading your books"
+    ru: "Загрузка книг"
+  shelf:
+    en: "Books"
+    ru: "Книги"
+  new_badge:
+    en: "NEW"
+    ru: "НОВАЯ"
+  actions_for:
+    en: "Actions for %{title}"
+    ru: "Действия с книгой «%{title}»"
+  # The empty states.
+  no_books:
+    en: "No books yet"
+    ru: "Книг пока нет"
+  no_books_hint:
+    en: "Add a file in mbook, EPUB, FB2, PDF, CBZ, DOCX, HTML, Markdown or text."
+    ru: "Добавьте файл mbook, EPUB, FB2, PDF, CBZ, DOCX, HTML, Markdown или обычный текст."
+  nothing_matches:
+    en: "Nothing matches %{query}"
+    ru: "Ничего не найдено по запросу «%{query}»"
+  nothing_matches_hint:
+    en: "Check the spelling, or search for a title, an author or a series."
+    ru: "Проверьте написание или ищите по названию, автору или серии."
+  none_reading:
+    en: "No books are being read"
+    ru: "Нет книг в процессе чтения"
+  none_reading_hint:
+    en: "A book you open and do not finish appears here."
+    ru: "Здесь появится книга, которую вы открыли и не дочитали."
+  none_finished:
+    en: "No books are finished"
+    ru: "Нет прочитанных книг"
+  none_finished_hint:
+    en: "A book you mark as finished appears here."
+    ru: "Здесь появится книга, которую вы отметите как прочитанную."
+  # The bar of a compact window and the sidebar.
+  views:
+    en: "Library views"
+    ru: "Вкладки библиотеки"
+  tab_reading:
+    en: "Reading"
+    ru: "Читаю"
+  tab_current:
+    en: "%{tab}, current"
+    ru: "%{tab}, текущая вкладка"
+  sections:
+    en: "Sections"
+    ru: "Разделы"
+  section_entry:
+    en: "%{section}, %{count}"
+    ru: "%{section}, %{count}"
+  section_entry_selected:
+    en: "%{section}, %{count}, selected"
+    ru: "%{section}, %{count}, выбрано"
+  # The New Book dialog.
+  new_book_title:
+    en: "New book"
+    ru: "Новая книга"
+  book_title:
+    en: "Book title"
+    ru: "Название книги"
+  enter_title:
+    en: "Enter a title."
+    ru: "Введите название."
+  create:
+    en: "Create"
+    ru: "Создать"
+  cancel:
+    en: "Cancel"
+    ru: "Отмена"
+  create_failed:
+    en: "The book could not be created. %{reason}."
+    ru: "Не удалось создать книгу. %{reason}."
+  # The menu of a book.
+  open:
+    en: "Open"
+    ru: "Открыть"
+  edit:
+    en: "Edit"
+    ru: "Редактировать"
+  show_file:
+    en: "Show the file"
+    ru: "Показать файл"
+  export:
+    en: "Export"
+    ru: "Экспортировать"
+  share:
+    en: "Share"
+    ru: "Поделиться"
+  remove:
+    en: "Remove"
+    ru: "Удалить"
+  remove_title:
+    en: "Remove this book?"
+    ru: "Удалить эту книгу?"
+  remove_question:
+    en: "Remove %{title} from the library? The file you added it from is not touched."
+    ru: "Удалить «%{title}» из библиотеки? Файл, из которого вы её добавили, останется на месте."
+  # Export.
+  export_dialog:
+    en: "Export book"
+    ru: "Экспорт книги"
+  format_cbz:
+    en: "Comic archive (.cbz)"
+    ru: "Архив комиксов (.cbz)"
+  format_text:
+    en: "Plain text (.txt)"
+    ru: "Обычный текст (.txt)"
+  exported:
+    en: "Exported %{title} to %{format}."
+    ru: "Книга «%{title}» экспортирована в формат %{format}."
+  export_failed:
+    en: "Could not export %{title}. %{reason}."
+    ru: "Не удалось экспортировать книгу «%{title}». %{reason}."
+  export_unreadable:
+    en: "the library book could not be read"
+    ru: "не удалось прочитать книгу из библиотеки"
+  export_unsaved:
+    en: "the export file could not be saved"
+    ru: "не удалось сохранить экспортированный файл"
+  export_exists:
+    en: "a file with that name already exists"
+    ru: "файл с таким именем уже существует"
+  # Share.
+  share_failed:
+    en: "Could not share %{title}. %{reason}."
+    ru: "Не удалось поделиться книгой «%{title}». %{reason}."
+  share_copy:
+    en: "a copy of the book could not be made"
+    ru: "не удалось сделать копию книги"
+  share_sheet:
+    en: "the share sheet could not be shown"
+    ru: "не удалось показать меню «Поделиться»"
+  share_not_shared:
+    en: "the file is not in the folder of shared files"
+    ru: "файл не находится в папке общих файлов"
+  # Imports.
+  imports:
+    en: "Imports"
+    ru: "Импорт"
+  clear_finished:
+    en: "Clear finished"
+    ru: "Убрать завершённые"
+  warnings:
+    one:
+      en: "%{count} warning"
+      ru: "%{count} предупреждение"
+    few:
+      ru: "%{count} предупреждения"
+    many:
+      ru: "%{count} предупреждений"
+    other:
+      en: "%{count} warnings"
+      ru: "%{count} предупреждения"
+  show_warnings:
+    en: "Show the warnings of %{name}"
+    ru: "Показать предупреждения для «%{name}»"
+  warnings_for:
+    en: "Warnings for %{name}"
+    ru: "Предупреждения для «%{name}»"
+  dismiss:
+    en: "Dismiss"
+    ru: "Скрыть"
+  dismiss_import:
+    en: "Dismiss %{name}"
+    ru: "Скрыть «%{name}»"
+  close:
+    en: "Close"
+    ru: "Закрыть"

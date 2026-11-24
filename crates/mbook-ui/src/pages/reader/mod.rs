@@ -42,6 +42,7 @@ use gpui_kit::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, SharedString,
     Subscription, Task, Window,
 };
+use rust_i18n::t;
 
 use self::contents::ContentsPanel;
 use self::controls::{HIDE_AFTER, Plan};
@@ -260,7 +261,10 @@ impl ReaderPage {
         let title: SharedString = Library::global(cx)
             .read(cx)
             .book(key)
-            .map_or_else(|| "Book".to_owned(), |book| book.row.title.clone())
+            .map_or_else(
+                || t!("reader.book").into_owned(),
+                |book| book.row.title.clone(),
+            )
             .into();
         let appearance = Appearance::global(cx);
         let (class, view) = chapter_view(&appearance, window, cx);
@@ -270,7 +274,7 @@ impl ReaderPage {
         connect(&view, &page, Arc::clone(&pictures), cx);
         let handles = Handles::new(cx);
         let scrubber = Scrubber::new(cx);
-        let search = SearchBar::new("Find in book", window, cx);
+        let search = SearchBar::new(|| t!("reader.find_in_book"), window, cx);
         let subscriptions = vec![
             cx.subscribe(&search.input, Self::on_search_input),
             cx.observe(&appearance, |this, appearance, cx| {

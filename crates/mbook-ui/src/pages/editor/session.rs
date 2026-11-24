@@ -6,8 +6,11 @@
 //! the views show are plain functions, so that both can be tested without a
 //! window.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::error::Error as _;
+
+use rust_i18n::t;
 
 use crate::entities::figure::FigureKind;
 use crate::features::edit_book::command::MetaChange;
@@ -16,6 +19,7 @@ use crate::features::edit_book::outline::{
     ChapterOutline, ContentsOutline, FigureOutline, MetaOutline, Outline, PictureOutline,
     ProblemOutline,
 };
+use crate::shared::i18n::count_text;
 use crate::shared::layout::SizeClass;
 
 /// A part of the book the editor shows.
@@ -68,17 +72,17 @@ impl Section {
     ];
 
     /// The name of the section.
-    pub(super) const fn label(self) -> &'static str {
+    pub(super) fn label(self) -> Cow<'static, str> {
         match self {
-            Self::Details => "Details",
-            Self::Cover => "Cover",
-            Self::Contents => "Contents",
-            Self::Chapters => "Chapters",
-            Self::Landmarks => "Landmarks",
-            Self::Pictures => "Pictures",
-            Self::Figures(FigureKind::Diagram) => "Diagrams",
-            Self::Figures(FigureKind::Formula) => "Formulas",
-            Self::Problems => "Problems",
+            Self::Details => t!("editor.section.details"),
+            Self::Cover => t!("editor.section.cover"),
+            Self::Contents => t!("editor.section.contents"),
+            Self::Chapters => t!("editor.section.chapters"),
+            Self::Landmarks => t!("editor.section.landmarks"),
+            Self::Pictures => t!("editor.section.pictures"),
+            Self::Figures(FigureKind::Diagram) => t!("editor.section.diagrams"),
+            Self::Figures(FigureKind::Formula) => t!("editor.section.formulas"),
+            Self::Problems => t!("editor.section.problems"),
         }
     }
 
@@ -113,12 +117,12 @@ pub(super) enum ViewMode {
 
 impl ViewMode {
     /// The name of the choice.
-    pub(super) const fn label(self) -> &'static str {
+    pub(super) fn label(self) -> Cow<'static, str> {
         match self {
-            Self::Visual => "Visual",
-            Self::Source => "Source",
-            Self::Split => "Split",
-            Self::Preview => "Preview",
+            Self::Visual => t!("editor.mode.visual"),
+            Self::Source => t!("editor.mode.source"),
+            Self::Split => t!("editor.mode.split"),
+            Self::Preview => t!("editor.mode.preview"),
         }
     }
 
@@ -407,11 +411,11 @@ impl Session {
     }
 
     /// The words of the header about the state of the book.
-    pub(super) fn status(&self, saving: bool) -> Option<&'static str> {
+    pub(super) fn status(&self, saving: bool) -> Option<Cow<'static, str>> {
         if saving {
-            Some("Saving")
+            Some(t!("editor.status.saving"))
         } else if self.has_unsaved() {
-            Some("Unsaved changes")
+            Some(t!("editor.status.unsaved"))
         } else {
             None
         }
@@ -533,15 +537,14 @@ impl Session {
 pub(super) fn edit_error_words(error: &EditError) -> String {
     let detail = chain(error);
     match error {
-        EditError::Open(_) => format!("The book could not be opened: {detail}."),
-        EditError::Book(_) => format!("The book refused the change: {detail}."),
-        EditError::Save(_) => format!("The book could not be saved: {detail}."),
-        EditError::Contents(_) => format!("The contents were not changed: {detail}."),
-        EditError::NoSuchPath(path) => format!("Nothing in the book has the path {path}."),
-        EditError::Ended => {
-            "The editing session has ended. Go back and open the book again.".to_owned()
-        }
+        EditError::Open(_) => t!("editor.error.open", detail = detail),
+        EditError::Book(_) => t!("editor.error.refused", detail = detail),
+        EditError::Save(_) => t!("editor.error.save", detail = detail),
+        EditError::Contents(_) => t!("editor.error.contents", detail = detail),
+        EditError::NoSuchPath(path) => t!("editor.error.no_such_path", path = path),
+        EditError::Ended => t!("editor.error.ended"),
     }
+    .into_owned()
 }
 
 /// The messages of the sources of an error, joined.
@@ -583,10 +586,16 @@ pub(super) fn clamp_to_boundary(text: &str, offset: usize) -> usize {
 /// known.
 pub(super) fn problem_words(problem: &ProblemOutline, place: Option<(usize, usize)>) -> String {
     let location = match (&problem.path, problem.offset, place) {
-        (Some(path), Some(_), Some((line, column))) => {
-            format!("{path}, line {line}, column {column}: ")
+        (Some(path), Some(_), Some((line, column))) => t!(
+            "editor.problem.at_place",
+            path = path,
+            line = line,
+            column = column
+        )
+        .into_owned(),
+        (Some(path), Some(offset), None) => {
+            t!("editor.problem.at_byte", path = path, offset = offset).into_owned()
         }
-        (Some(path), Some(offset), None) => format!("{path}, byte {offset}: "),
         (Some(path), None, _) => format!("{path}: "),
         (None, _, _) => String::new(),
     };
@@ -601,17 +610,18 @@ pub(super) fn is_contents_problem(problem: &ProblemOutline) -> bool {
 
 /// What the announcement of a failed save says.
 pub(super) fn unsaved_announcement(problems: usize) -> String {
-    let noun = if problems == 1 { "problem" } else { "problems" };
-    format!("The book has {problems} {noun} and was not saved")
+    count_text("editor.unsaved_announcement", problems)
 }
 
-/// What a chapter without a heading is called.
+/// What a chapter without a heading is called, in English: what the tests
+/// compare [`chapter_title`] with.
+#[cfg(test)]
 pub(super) const UNTITLED: &str = "Untitled chapter";
 
-/// The title of a chapter as the lists show it: its first heading, or
-/// [`UNTITLED`].
-pub(super) fn chapter_title(heading: Option<&str>) -> &str {
-    heading.unwrap_or(UNTITLED)
+/// The title of a chapter as the lists show it: its first heading, or the
+/// words for a chapter without one.
+pub(super) fn chapter_title(heading: Option<&str>) -> Cow<'_, str> {
+    heading.map_or_else(|| t!("editor.untitled_chapter"), Cow::Borrowed)
 }
 
 /// A chapter in a list of choices: its number in reading order and its title.
@@ -629,12 +639,19 @@ pub(super) fn chapter_label(
     current: bool,
     edited: bool,
 ) -> String {
-    let mut label = format!("Chapter {number}, {}, {path}", chapter_title(heading));
+    let title = chapter_title(heading);
+    let mut label = t!(
+        "editor.chapter_label",
+        number = number,
+        title = title,
+        path = path
+    )
+    .into_owned();
     if current {
-        label.push_str(", current chapter");
+        label.push_str(&t!("editor.current_chapter"));
     }
     if edited {
-        label.push_str(", edited");
+        label.push_str(&t!("editor.edited_suffix"));
     }
     label
 }
@@ -644,11 +661,13 @@ pub(super) fn size_label(len: usize) -> String {
     const KIB: usize = 1024;
     const MIB: usize = 1024 * 1024;
     if len < KIB {
-        format!("{len} bytes")
+        count_text("editor.size.bytes", len)
     } else if len < MIB {
-        format!("{}.{} KiB", len / KIB, len % KIB * 10 / KIB)
+        let (whole, tenth) = (len / KIB, len % KIB * 10 / KIB);
+        t!("editor.size.kib", whole = whole, tenth = tenth).into_owned()
     } else {
-        format!("{}.{} MiB", len / MIB, len % MIB * 10 / MIB)
+        let (whole, tenth) = (len / MIB, len % MIB * 10 / MIB);
+        t!("editor.size.mib", whole = whole, tenth = tenth).into_owned()
     }
 }
 
@@ -687,8 +706,8 @@ pub(super) fn propose_picture_path(file_name: &str, pictures: &[PictureOutline])
 /// # Errors
 ///
 /// The words that say what to enter, when nothing was.
-pub(super) fn clean_path(input: &str) -> Result<String, &'static str> {
-    required(input, "Enter a file name, such as img/pond.avif.")
+pub(super) fn clean_path(input: &str) -> Result<String, Cow<'static, str>> {
+    required(input, t!("editor.no_picture_path"))
 }
 
 /// What was typed without its edges, or `missing` when nothing is left.
@@ -696,7 +715,7 @@ pub(super) fn clean_path(input: &str) -> Result<String, &'static str> {
 /// # Errors
 ///
 /// `missing`, the words that say what to enter.
-pub(super) fn required(input: &str, missing: &'static str) -> Result<String, &'static str> {
+pub(super) fn required<E>(input: &str, missing: E) -> Result<String, E> {
     let value = input.trim();
     if value.is_empty() {
         Err(missing)

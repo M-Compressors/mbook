@@ -1,5 +1,6 @@
 //! Loads images from the editable book for Visual and the picture gallery.
 
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -15,11 +16,12 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
     TestSupportExt as _, Window, div, img, px,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::encode::Target;
 use super::markup::picture_markdown;
-use super::picture_prompt::{DESCRIPTION_HINT, DESCRIPTION_LABEL};
+use super::picture_prompt::{description_hint, description_label};
 use crate::entities::book::chapter::{image_path, picture_destinations};
 use crate::entities::picture::{PictureCache, decode_avif};
 use crate::features::edit_book::actor::EditHandle;
@@ -50,13 +52,24 @@ impl Default for VisualPictures {
 }
 
 /// The control of the dialog that takes a picture from a file.
-pub(super) const FROM_COMPUTER: &str = "Add from your computer…";
+pub(super) fn from_computer() -> Cow<'static, str> {
+    t!("visual.pictures.from_computer")
+}
+
 /// The control of the dialog that puts the chosen picture into the chapter.
-pub(super) const INSERT: &str = "Insert the picture";
+pub(super) fn insert() -> Cow<'static, str> {
+    t!("visual.pictures.insert")
+}
+
 /// What the dialog says when it is confirmed with no picture chosen.
-pub(super) const CHOOSE_FIRST: &str = "Choose a picture, or add one from your computer.";
+pub(super) fn choose_first() -> Cow<'static, str> {
+    t!("visual.pictures.choose_first")
+}
+
 /// What the dialog says about a book without pictures.
-pub(super) const NO_PICTURES: &str = "This book has no pictures yet.";
+pub(super) fn no_pictures() -> Cow<'static, str> {
+    t!("visual.pictures.none")
+}
 
 /// The sides of a picture in the dialog that offers them, in pixels.
 const CHOICE: (f32, f32) = (132.0, 96.0);
@@ -73,7 +86,7 @@ impl EditorPage {
         let state = Arc::clone(&self.visual.pictures);
         let handle = self.handle.clone();
         let selected = Rc::new(Cell::new(None::<usize>));
-        let description = cx.new(|cx| InputState::new(window, cx).placeholder(DESCRIPTION_HINT));
+        let description = cx.new(|cx| InputState::new(window, cx).placeholder(description_hint()));
         let error = cx.new(|_| None::<SharedString>);
         let page = cx.weak_entity();
         let first = Cell::new(true);
@@ -86,7 +99,7 @@ impl EditorPage {
             let choices = h_flex()
                 .id("picture-choices")
                 .role(Role::Group)
-                .aria_label("Pictures of the book")
+                .aria_label(t!("visual.pictures.of_the_book"))
                 .test_support()
                 .flex_wrap()
                 .gap_2()
@@ -121,7 +134,8 @@ impl EditorPage {
             let form = v_flex()
                 .gap_3()
                 .children(pictures.is_empty().then(|| {
-                    status_line("no-book-pictures", NO_PICTURES).text_color(theme.muted_foreground)
+                    status_line("no-book-pictures", no_pictures())
+                        .text_color(theme.muted_foreground)
                 }))
                 .children((!pictures.is_empty()).then_some(choices))
                 .child(h_flex().child(upload))
@@ -131,9 +145,9 @@ impl EditorPage {
                         .child(
                             div()
                                 .font_weight(FontWeight::MEDIUM)
-                                .child(DESCRIPTION_LABEL),
+                                .child(SharedString::from(description_label())),
                         )
-                        .child(Input::new(&description).aria_label(DESCRIPTION_LABEL))
+                        .child(Input::new(&description).aria_label(description_label()))
                 }))
                 .children(error.read(cx).clone().map(|message| {
                     status_line("picture-choice-error", message).text_color(theme.danger)
@@ -142,16 +156,16 @@ impl EditorPage {
             let (selected, description, error) =
                 (selected.clone(), description.clone(), error.clone());
             alert
-                .title("Insert a picture")
+                .title(t!("visual.pictures.insert_title"))
                 .width(px(width))
                 .description(form)
                 .confirm()
-                .ok_text(INSERT)
-                .cancel_text("Cancel")
+                .ok_text(insert())
+                .cancel_text(t!("prompt.cancel"))
                 .on_ok(move |_, window, cx| {
                     let Some(picture) = selected.get().and_then(|index| pictures.get(index)) else {
                         error.update(cx, |error, cx| {
-                            *error = Some(CHOOSE_FIRST.into());
+                            *error = Some(choose_first().into());
                             cx.notify();
                         });
                         window.refresh();
@@ -185,7 +199,7 @@ impl EditorPage {
                 .collect(),
         );
         if pictures.is_empty() {
-            announce("This chapter has no book pictures.", window, cx);
+            announce(t!("visual.pictures.none_in_chapter"), window, cx);
             return;
         }
         let state = Arc::clone(&self.visual.pictures);
@@ -202,7 +216,7 @@ impl EditorPage {
             let frame = div()
                 .id("chapter-picture-preview")
                 .role(Role::Image)
-                .aria_label(format!("Preview of {}", picture.path))
+                .aria_label(t!("visual.pictures.preview_of", path = picture.path))
                 .test_support()
                 .relative()
                 .flex_none()
@@ -228,7 +242,7 @@ impl EditorPage {
                     let pictures = pictures.clone();
                     let selected = selected.clone();
                     Button::new("chapter-picture-select")
-                        .label("Choose picture")
+                        .label(t!("visual.pictures.choose"))
                         .dropdown_caret(true)
                         .dropdown_menu(move |menu, _, _| {
                             pictures
@@ -248,10 +262,10 @@ impl EditorPage {
                         })
                 }));
             alert
-                .title("Chapter pictures")
+                .title(t!("visual.pictures.of_the_chapter"))
                 .width(px(width + 48.0))
                 .description(content)
-                .ok_text("Close")
+                .ok_text(t!("visual.pictures.close"))
         });
     }
 
@@ -265,7 +279,7 @@ impl EditorPage {
 /// The control that closes the dialog and takes the picture from a file.
 fn upload_button(page: gpui_kit::WeakEntity<EditorPage>) -> Button {
     Button::new("picture-upload")
-        .label(FROM_COMPUTER)
+        .label(from_computer())
         .min_h(px(target_size()))
         .cursor_pointer()
         .on_click(move |_, window, cx| {
@@ -286,9 +300,9 @@ fn picture_choice(index: usize, path: &str, chosen: bool, image: ImageSource, cx
         .ghost()
         .selected(chosen)
         .accessibility_label(if chosen {
-            format!("{path}, chosen")
+            t!("visual.pictures.chosen", path = path)
         } else {
-            path.to_owned()
+            Cow::Owned(path.to_owned())
         })
         .cursor_pointer()
         .w(px(CHOICE.0 + 16.0))

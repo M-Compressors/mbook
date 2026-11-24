@@ -10,6 +10,7 @@ use gpui_kit::{
     Render, Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div,
     px,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::keys::{LeaveEditor, LeaveEditorBackward, PAGE_CONTEXT};
@@ -37,10 +38,10 @@ impl EditorPage {
     fn header_title(&self, cx: &Context<'_, Self>) -> String {
         self.session.title().map_or_else(
             || {
-                Library::global(cx)
-                    .read(cx)
-                    .book(self.key)
-                    .map_or_else(|| "Book".to_owned(), |book| book.row.title.clone())
+                Library::global(cx).read(cx).book(self.key).map_or_else(
+                    || t!("editor.book").into_owned(),
+                    |book| book.row.title.clone(),
+                )
             },
             str::to_owned,
         )
@@ -54,7 +55,7 @@ impl EditorPage {
                 .update(cx, |this, cx| this.render_sections(cx).into_any_element())
                 .ok();
             sheet
-                .title("Book and chapters")
+                .title(t!("editor.book_and_chapters"))
                 .size(px(SHEET_WIDTH))
                 .children(sections)
         });
@@ -176,9 +177,11 @@ impl EditorPage {
                             .py_1()
                             .border_b_1()
                             .border_color(cx.theme().border)
-                            .child(control("open-sections", "Book and chapters").on_click(
-                                cx.listener(|_, _, window, cx| Self::open_sections(window, cx)),
-                            )),
+                            .child(
+                                control("open-sections", t!("editor.book_and_chapters")).on_click(
+                                    cx.listener(|_, _, window, cx| Self::open_sections(window, cx)),
+                                ),
+                            ),
                     )
                     .child(div().flex_1().min_h_0().child(content))
                     .into_any_element()
@@ -208,8 +211,12 @@ impl Render for EditorPage {
                 .gap_1()
                 .child(back)
                 .child(
-                    icon_button("open-sections", IconName::Menu, "Book and chapters")
-                        .on_click(cx.listener(|_, _, window, cx| Self::open_sections(window, cx))),
+                    icon_button(
+                        "open-sections",
+                        IconName::Menu,
+                        t!("editor.book_and_chapters"),
+                    )
+                    .on_click(cx.listener(|_, _, window, cx| Self::open_sections(window, cx))),
                 )
                 .into_any_element()
         } else {
@@ -221,7 +228,7 @@ impl Render for EditorPage {
         }
         if ready {
             header = header.trailing(
-                control("save", "Save")
+                control("save", t!("editor.save"))
                     .primary()
                     .disabled(self.saving.running)
                     .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
@@ -233,10 +240,10 @@ impl Render for EditorPage {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(status_line("editor-opening", "Opening the book"))
+                .child(status_line("editor-opening", t!("editor.opening")))
                 .into_any_element(),
             Phase::Failed(reason) => {
-                empty_state("This book could not be opened", reason).into_any_element()
+                empty_state(t!("editor.open_failed"), reason).into_any_element()
             }
             Phase::Ready => self.render_ready(class, window, cx),
         };
@@ -244,7 +251,7 @@ impl Render for EditorPage {
         v_flex()
             .id("editor-page")
             .role(Role::Main)
-            .aria_label("Editor")
+            .aria_label(t!("editor.page"))
             .test_support()
             .key_context(PAGE_CONTEXT)
             .track_focus(&self.focus_handle)

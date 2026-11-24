@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{AppContext as _, Context, Entity, Window};
+use rust_i18n::t;
 
 use super::{Phase, ReaderPage, controls};
 use crate::entities::book::error::BookError;
@@ -97,7 +98,7 @@ impl ReaderPage {
                 .await;
             let Ok(pattern) = compiled else {
                 this.update(cx, |this, cx| {
-                    this.search_feedback(None, "This search is too long", cx);
+                    this.search_feedback(None, t!("reader.search_too_long"), cx);
                 })
                 .ok();
                 return;
@@ -137,8 +138,8 @@ impl ReaderPage {
                 }
             }
             let feedback = failure.map_or_else(
-                || "No matches".to_owned(),
-                |error| format!("Search incomplete. {}", super::describe(&error)),
+                || t!("reader.no_matches"),
+                |error| t!("reader.search_incomplete", reason = super::describe(&error)),
             );
             this.update(cx, |this, cx| this.search_feedback(None, feedback, cx))
                 .ok();

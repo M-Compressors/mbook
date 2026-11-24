@@ -1,6 +1,7 @@
 //! The screens, one shot each: the state a screen is put in, and the name of
 //! the file it is written to.
 
+use rust_i18n::t;
 use std::time::Duration;
 
 use gpui_kit::Action as _;
@@ -86,17 +87,21 @@ fn editor_shots() -> Vec<Shot> {
             open_editor(stage)?;
             open_chapter(stage)?;
             let split = stage.has("mode-split")?;
-            stage.click_label(if split { "Split" } else { "Source" })
+            stage.click_label(&if split {
+                t!("editor.mode.split")
+            } else {
+                t!("editor.mode.source")
+            })
         }),
         shot("08c-editor-source", Library::Books, |stage| {
             open_editor(stage)?;
             open_chapter(stage)?;
-            stage.click_label("Source")
+            stage.click_label(&t!("editor.mode.source"))
         }),
         shot("08d-editor-preview", Library::Books, |stage| {
             open_editor(stage)?;
             open_chapter(stage)?;
-            stage.click_label("Preview")
+            stage.click_label(&t!("editor.mode.preview"))
         }),
         shot("08e-editor-pictures", Library::Books, |stage| {
             open_editor(stage)?;
@@ -136,13 +141,13 @@ fn editor_shots() -> Vec<Shot> {
         shot("08n-editor-contents-menu", Library::Books, |stage| {
             open_editor(stage)?;
             open_section(stage, "section-contents")?;
-            stage.click_label("Entry actions, The ledger")
+            stage.click_label(&t!("editor.entry.actions", title = "The ledger"))
         }),
         shot("08o-editor-contents-entry", Library::Books, |stage| {
             open_editor(stage)?;
             open_section(stage, "section-contents")?;
-            stage.click_label("Entry actions, The ledger")?;
-            stage.click_label("Edit…")
+            stage.click_label(&t!("editor.entry.actions", title = "The ledger"))?;
+            stage.click_label(&t!("editor.entry.edit"))
         }),
         shot("08p-editor-landmark-kind", Library::Books, |stage| {
             open_editor(stage)?;
@@ -299,7 +304,7 @@ fn menu(stage: &mut Stage) -> Result<()> {
 
 fn remove(stage: &mut Stage) -> Result<()> {
     menu(stage)?;
-    stage.click_label("Remove")
+    stage.click_label(&t!("library.remove"))
 }
 
 fn book(stage: &Stage, at: usize) -> Result<crate::shared::model::BookKey> {
@@ -334,7 +339,7 @@ fn open_reader(stage: &mut Stage) -> Result<()> {
 fn reader_next_page(stage: &mut Stage) -> Result<()> {
     open_reader(stage)?;
     stage.click("next-page")?;
-    stage.hover_label("Reading position")
+    stage.hover_label(&t!("reader.reading_position"))
 }
 
 pub(super) fn reading_latency(stage: &mut Stage) -> Result<Vec<(&'static str, Duration)>> {
@@ -428,18 +433,18 @@ fn editor_unsaved(stage: &mut Stage) -> Result<()> {
 fn editor_visual(stage: &mut Stage) -> Result<()> {
     open_editor(stage)?;
     open_chapter(stage)?;
-    stage.click_label("Source")?;
+    stage.click_label(&t!("editor.mode.source"))?;
     stage.click("chapter-source")?;
     stage.with_window(|window, cx| window.dispatch_action(SelectAll.boxed_clone(), cx))?;
     stage.type_text("# The harvest\n\nThe apples came late that year.\n\n| Fruit | Count |\n| :--- | ---: |\n| Apples | 27 |\n| Pears | 12 |\n\n- [x] Count the baskets\n- [ ] Mark the crates\n")?;
-    stage.click_label("Visual")
+    stage.click_label(&t!("editor.mode.visual"))
 }
 
 /// Breaks a link in a chapter and asks the editor to check the book.
 fn editor_problems(stage: &mut Stage) -> Result<()> {
     open_editor(stage)?;
     open_chapter(stage)?;
-    stage.click_label("Source")?;
+    stage.click_label(&t!("editor.mode.source"))?;
     stage.click("chapter-source")?;
     stage.type_text("\n\nSee [the gone page](nowhere.md).\n")?;
     open_section(stage, "section-problems")?;

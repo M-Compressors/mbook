@@ -709,7 +709,7 @@ fn the_export_submenu_offers_every_converter_format(cx: &mut TestAppContext) {
     harness.frame(cx, |window, _| {
         for &format in mbook_converter::Format::ALL {
             let label = super::export::label(format);
-            assert!(window.try_find_by_label(label).is_some(), "{label}");
+            assert!(window.try_find_by_label(&label).is_some(), "{label}");
         }
     });
 }

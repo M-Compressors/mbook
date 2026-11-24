@@ -41,7 +41,7 @@ pub(crate) fn icon_button(
 
 /// The control that goes back to the previous screen.
 pub(crate) fn back_button(id: impl Into<ElementId>) -> Button {
-    icon_button(id, IconName::ArrowLeft, "Back")
+    icon_button(id, IconName::ArrowLeft, rust_i18n::t!("ui.back"))
 }
 
 #[cfg(test)]

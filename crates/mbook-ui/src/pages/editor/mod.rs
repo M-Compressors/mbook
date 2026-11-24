@@ -58,6 +58,7 @@ use gpui_kit::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, RenderImage,
     Subscription, Task, Window,
 };
+use rust_i18n::t;
 
 use crate::entities::catalogue::Store;
 use crate::features::appearance::Appearance;
@@ -216,7 +217,7 @@ impl EditorPage {
         // Our Escape + Tab bindings take precedence over the block editor's Tab.
         keys::bind(cx);
         let fields = Fields::new(window, cx);
-        let search = SearchBar::new("Find in chapter", window, cx);
+        let search = SearchBar::new(|| t!("editor.find_in_chapter"), window, cx);
         let mut subscriptions = vec![
             cx.subscribe(&search.input, Self::on_search_input),
             cx.subscribe_in(&text, window, |this, _, event: &InputEvent, window, cx| {

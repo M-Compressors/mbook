@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::{self, Read as _};
 use std::path::{Path, PathBuf};
 
+use rust_i18n::t;
+
 use crate::entities::picture::{EncodeOptions, PictureError, encode_avif};
 
 /// The largest file that is read: the file is held in memory while it is
@@ -102,15 +104,13 @@ pub(super) fn encode_file(path: &Path, options: EncodeOptions) -> Result<Vec<u8>
 /// Words for what went wrong with a file, at the control that took it.
 pub(super) fn words(name: &str, error: &FileError) -> String {
     let reason = match error {
-        FileError::Read(source) => format!("it could not be read ({source})"),
-        FileError::TooLarge { .. } => "it is larger than 256 MiB".to_owned(),
-        FileError::Picture(PictureError::UnsupportedFormat) => {
-            "it is not an AVIF, JPEG, PNG, GIF, WebP or BMP picture".to_owned()
-        }
+        FileError::Read(source) => t!("editor.file.unreadable", source = source),
+        FileError::TooLarge { .. } => t!("editor.file.too_large"),
+        FileError::Picture(PictureError::UnsupportedFormat) => t!("editor.file.unsupported"),
         FileError::Picture(PictureError::TooManyPixels { .. }) => {
-            "it has more than 100 million pixels".to_owned()
+            t!("editor.file.too_many_pixels")
         }
-        FileError::Picture(_) => "it is damaged or cannot be decoded".to_owned(),
+        FileError::Picture(_) => t!("editor.file.damaged"),
     };
-    format!("{name} was not added: {reason}.")
+    t!("editor.file.not_added", name = name, reason = reason).into_owned()
 }

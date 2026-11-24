@@ -13,6 +13,7 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, WeakEntity,
     Window, div, px,
 };
+use rust_i18n::t;
 
 use super::ReaderPage;
 use crate::entities::book::landmark::display_name;
@@ -21,12 +22,21 @@ use crate::shared::ui::target_size;
 
 /// How far an entry is indented for each level below the first, in pixels.
 const INDENT: f32 = 14.0;
+
 /// The words over the landmarks.
-pub(super) const GO_TO: &str = "Go to";
+fn go_to() -> SharedString {
+    t!("reader.go_to").into()
+}
+
 /// The words over the entries, when landmarks are listed above them.
-pub(super) const CONTENTS: &str = "Contents";
+fn contents() -> SharedString {
+    t!("reader.contents").into()
+}
+
 /// What the panel says when the book has no entries.
-pub(super) const NO_CONTENTS: &str = "This book has no contents";
+fn no_contents() -> SharedString {
+    t!("reader.no_contents").into()
+}
 
 /// One landmark of the list: where the reader is taken, by name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,7 +76,7 @@ impl Row {
     /// being read.
     pub(super) fn name(&self) -> String {
         if self.current {
-            format!("{}, current chapter", self.title)
+            t!("reader.current_chapter", title = self.title).into_owned()
         } else {
             self.title.clone()
         }
@@ -89,7 +99,7 @@ pub(super) fn rows(snapshot: &BookSnapshot, current: Option<usize>) -> Vec<Row> 
                 entry.offset
             ),
             title: if entry.title.trim().is_empty() {
-                format!("Chapter {}", entry.chapter + 1)
+                t!("reader.chapter_number", number = entry.chapter + 1).into_owned()
             } else {
                 entry.title.trim().to_owned()
             },
@@ -138,7 +148,11 @@ impl ContentsPanel {
 
 impl ContentsPanel {
     /// The words over a list, when the panel shows two.
-    fn heading(id: &'static str, words: &'static str, cx: &Context<'_, Self>) -> impl IntoElement {
+    fn heading(
+        id: &'static str,
+        words: impl Into<SharedString>,
+        cx: &Context<'_, Self>,
+    ) -> impl IntoElement {
         div()
             .id(id)
             .role(Role::Heading)
@@ -149,7 +163,7 @@ impl ContentsPanel {
             .text_sm()
             .font_weight(FontWeight::MEDIUM)
             .text_color(cx.theme().muted_foreground)
-            .child(words)
+            .child(words.into())
     }
 
     /// A control that fills the width of the panel, with `line` inside.
@@ -195,7 +209,7 @@ impl ContentsPanel {
             v_flex()
                 .id("landmarks-list")
                 .role(Role::List)
-                .aria_label(GO_TO)
+                .aria_label(go_to())
                 .test_support()
                 .gap_0p5()
                 .children(rows),
@@ -208,17 +222,17 @@ impl ContentsPanel {
             return div()
                 .id("contents-empty")
                 .role(Role::Status)
-                .aria_label(NO_CONTENTS)
+                .aria_label(no_contents())
                 .test_support()
                 .p_3()
                 .text_color(cx.theme().muted_foreground)
-                .child(NO_CONTENTS)
+                .child(no_contents())
                 .into_any_element();
         }
         v_flex()
             .id("contents-list")
             .role(Role::List)
-            .aria_label(CONTENTS)
+            .aria_label(contents())
             .test_support()
             .gap_0p5()
             .children(rows.into_iter().enumerate().map(|(index, row)| {
@@ -262,17 +276,17 @@ impl Render for ContentsPanel {
         // shows its contents alone, under the title of the panel.
         let list = match landmarks {
             Some(landmarks) => v_flex()
-                .child(Self::heading("landmarks-heading", GO_TO, cx))
+                .child(Self::heading("landmarks-heading", go_to(), cx))
                 .child(landmarks)
                 .child(div().mx_3().my_2().h(px(1.0)).bg(cx.theme().border))
-                .child(Self::heading("contents-heading", CONTENTS, cx))
+                .child(Self::heading("contents-heading", contents(), cx))
                 .child(entries),
             None => v_flex().child(entries),
         };
         v_flex()
             .id("contents-panel")
             .role(Role::Group)
-            .aria_label(CONTENTS)
+            .aria_label(contents())
             .test_support()
             .w_full()
             .child(
@@ -289,7 +303,7 @@ impl Render for ContentsPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::book::landmark::START_NAME;
+    use crate::entities::book::landmark::start_name;
     use crate::entities::book::snapshot::{ChapterInfo, ContentsEntry, LandmarkPlace};
 
     fn snapshot() -> BookSnapshot {
@@ -386,7 +400,7 @@ mod tests {
             [
                 Mark {
                     id: "landmark-0".to_owned(),
-                    name: START_NAME.to_owned()
+                    name: start_name().into_owned()
                 },
                 Mark {
                     id: "landmark-1".to_owned(),

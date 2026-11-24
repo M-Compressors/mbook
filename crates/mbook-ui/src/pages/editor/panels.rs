@@ -3,35 +3,44 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::{ActiveTheme as _, h_flex, v_flex};
+use std::borrow::Cow;
+
 use gpui_kit::{
     AnyElement, Context, ImageSource, InteractiveElement as _, IntoElement, ObjectFit,
     ParentElement as _, Role, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
     TestSupportExt as _, Window, div, img, px,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
-use super::contents::FOLLOW_HEADINGS;
+use super::contents::follow_headings;
 use super::encode::Target;
 use super::prompts::confirm_remove;
 use super::sections::{control, list_item};
 use super::session::{Control, Section, ViewMode, is_contents_problem, problem_words, size_label};
+use crate::shared::i18n::count_text;
 use crate::shared::ui::{icon_button, status_line};
 
 /// The control of the Problems section that leads to the entries of the
 /// contents, where each can be given another place or removed.
-pub(super) const OPEN_CONTENTS: &str = "Open Contents";
+pub(super) fn open_contents() -> Cow<'static, str> {
+    t!("editor.problems.open_contents")
+}
 
 impl EditorPage {
     /// The Cover section: the picture, and the control that replaces it.
     pub(super) fn render_cover(&mut self, cx: &mut Context<'_, Self>) -> AnyElement {
         let theme = cx.theme().clone();
-        let title = self.session.title().unwrap_or("this book").to_owned();
+        let cover_name = self.session.title().map_or_else(
+            || t!("editor.cover.of_this_book"),
+            |title| t!("editor.cover.of", title = title),
+        );
         let has_cover = self.session.meta().is_some_and(|meta| meta.cover.is_some());
         let picture = match (&self.cover.image, has_cover) {
             (Some(image), _) => div()
                 .id("cover-image")
                 .role(Role::Image)
-                .aria_label(format!("Cover of {title}"))
+                .aria_label(cover_name)
                 .test_support()
                 .child(
                     img(ImageSource::Render(image.clone()))
@@ -40,12 +49,12 @@ impl EditorPage {
                 )
                 .into_any_element(),
             (None, true) if self.cover.failed => {
-                status_line("cover-state", "The cover could not be shown.").into_any_element()
+                status_line("cover-state", t!("editor.cover.failed")).into_any_element()
             }
-            (None, true) => status_line("cover-state", "Loading the cover").into_any_element(),
-            (None, false) => {
-                status_line("cover-state", "This book has no cover.").into_any_element()
+            (None, true) => {
+                status_line("cover-state", t!("editor.cover.loading")).into_any_element()
             }
+            (None, false) => status_line("cover-state", t!("editor.cover.none")).into_any_element(),
         };
         let encoding = self.encoder.names(Target::Cover);
         v_flex()
@@ -56,15 +65,15 @@ impl EditorPage {
             .children(
                 encoding
                     .into_iter()
-                    .map(|name| status_line("cover-encoding", format!("Encoding {name}…"))),
+                    .map(|name| status_line("cover-encoding", t!("editor.encoding", name = name))),
             )
             .child(
                 control(
                     "replace-cover",
                     if has_cover {
-                        "Replace…"
+                        t!("editor.cover.replace")
                     } else {
-                        "Add a cover…"
+                        t!("editor.cover.add")
                     },
                 )
                 .w(px(180.0))
@@ -86,7 +95,7 @@ impl EditorPage {
         let gallery = h_flex()
             .id("pictures-list")
             .role(Role::Group)
-            .aria_label("Pictures")
+            .aria_label(t!("editor.section.pictures"))
             .flex_wrap()
             .gap_3()
             .children(
@@ -102,14 +111,13 @@ impl EditorPage {
             .gap_3()
             .p_4()
             .child(gallery)
-            .children(
-                encoding.into_iter().map(|name| {
-                    status_line(format!("encoding-{name}"), format!("Encoding {name}…"))
-                }),
-            )
-            .children(empty.then(|| status_line("no-pictures", "This book has no pictures.")))
+            .children(encoding.into_iter().map(|name| {
+                let words = t!("editor.encoding", name = name);
+                status_line(format!("encoding-{name}"), words)
+            }))
+            .children(empty.then(|| status_line("no-pictures", t!("editor.pictures.none"))))
             .child(
-                control("add-picture", "Add a picture…")
+                control("add-picture", t!("editor.pictures.add"))
                     .w(px(180.0))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.choose_pictures(Target::Picture, window, cx);
@@ -129,7 +137,12 @@ impl EditorPage {
         cx: &mut Context<'_, Self>,
     ) -> impl IntoElement + use<> {
         let theme = cx.theme().clone();
-        let resolution = format!("{} × {} px", picture.width, picture.height);
+        let resolution = t!(
+            "editor.picture.resolution",
+            width = picture.width,
+            height = picture.height
+        )
+        .into_owned();
         let file_size = size_label(picture.len);
         let preview_height = px(96.0);
         let path = picture.path.clone();
@@ -137,7 +150,12 @@ impl EditorPage {
         v_flex()
             .id(format!("picture-{}", picture.path))
             .role(Role::Group)
-            .aria_label(format!("{}, {resolution}, {file_size}", picture.path))
+            .aria_label(t!(
+                "editor.picture.card",
+                path = picture.path,
+                resolution = resolution,
+                size = file_size
+            ))
             .w(px(156.0))
             .max_w_full()
             .p_2()
@@ -148,7 +166,7 @@ impl EditorPage {
                 div()
                     .id(format!("preview-{}", picture.path))
                     .role(Role::Image)
-                    .aria_label(format!("Preview of {}", picture.path))
+                    .aria_label(t!("editor.preview_of", path = picture.path))
                     .test_support()
                     .relative()
                     .flex_none()
@@ -183,12 +201,12 @@ impl EditorPage {
                         icon_button(
                             format!("remove-picture-{}", picture.path),
                             IconName::Trash,
-                            format!("Remove {}", picture.path),
+                            t!("editor.picture.remove", path = picture.path),
                         )
                         .on_click(cx.listener(move |_, _, window, cx| {
                             let path = path.clone();
-                            let title = path.clone();
-                            confirm_remove(&title, window, cx, move |this, window, cx| {
+                            let what = t!("editor.picture.what", path = path);
+                            confirm_remove(&what, window, cx, move |this, window, cx| {
                                 this.remove_picture(path.clone(), window, cx);
                             });
                         })),
@@ -212,7 +230,7 @@ impl EditorPage {
         let mut list = v_flex()
             .id("problems-list")
             .role(Role::Group)
-            .aria_label("Problems")
+            .aria_label(t!("editor.section.problems"))
             .gap_1();
         for (index, problem) in problems.iter().enumerate() {
             let place = problem
@@ -229,17 +247,9 @@ impl EditorPage {
             );
         }
         let summary = if problems.is_empty() {
-            "No problems were found. Check the book to look again.".to_owned()
+            t!("editor.problems.none").into_owned()
         } else {
-            let noun = if problems.len() == 1 {
-                "problem"
-            } else {
-                "problems"
-            };
-            format!(
-                "The book has {} {noun} and cannot be saved until they are fixed.",
-                problems.len()
-            )
+            count_text("editor.problems.summary", problems.len())
         };
         v_flex()
             .id("problems")
@@ -252,18 +262,18 @@ impl EditorPage {
                     .gap_2()
                     .flex_wrap()
                     .child(
-                        control("check", "Check the book")
+                        control("check", t!("editor.problems.check"))
                             .on_click(cx.listener(|this, _, window, cx| this.check(window, cx))),
                     )
                     .children(contents.then(|| {
-                        control("open-contents", OPEN_CONTENTS).on_click(cx.listener(
+                        control("open-contents", open_contents()).on_click(cx.listener(
                             |this, _, window, cx| {
                                 this.choose_section(Section::Contents, window, cx);
                             },
                         ))
                     }))
                     .children(contents.then(|| {
-                        control("rebuild-contents", FOLLOW_HEADINGS).on_click(cx.listener(
+                        control("rebuild-contents", follow_headings()).on_click(cx.listener(
                             |this, _, window, cx| {
                                 this.rebuild_contents(window, cx);
                             },

@@ -18,38 +18,38 @@ pub(crate) type Source = Box<dyn Error + Send + Sync>;
 pub(crate) enum UpdateError {
     /// The releases of the repository could not be asked: no network, a
     /// refusal of the server, or an answer that is not a list of releases.
-    #[error("the releases of the repository could not be asked")]
+    #[error("{}", rust_i18n::t!("update.err.releases"))]
     Releases(#[source] Source),
     /// The archive of the release could not be downloaded.
     #[cfg(any(target_os = "macos", target_os = "windows", test))]
-    #[error("the update could not be downloaded")]
+    #[error("{}", rust_i18n::t!("update.err.download"))]
     Download(#[source] Source),
     /// The archive is not signed with the key of the application. Nothing was
     /// installed and the downloaded file is deleted.
     #[cfg(any(target_os = "macos", target_os = "windows", test))]
-    #[error("the signature of the update is not valid")]
+    #[error("{}", rust_i18n::t!("update.err.signature"))]
     Signature(#[source] Source),
     /// The verified archive could not be unpacked.
     #[cfg(any(target_os = "macos", target_os = "windows", test))]
-    #[error("the update could not be unpacked")]
+    #[error("{}", rust_i18n::t!("update.err.unpack"))]
     Unpack(#[source] Source),
     /// The verified archive does not hold the file the platform installs.
     #[cfg(any(target_os = "macos", target_os = "windows", test))]
-    #[error("the update holds no {0}")]
+    #[error("{}", rust_i18n::t!("update.err.missing", file = .0))]
     MissingInArchive(&'static str),
     /// A file or folder of the update could not be read, written or moved.
-    #[error("a file of the update could not be written")]
+    #[error("{}", rust_i18n::t!("update.err.io"))]
     Io(#[from] io::Error),
     /// The running executable is not inside an application bundle, as it is
     /// when started by `cargo run`. A bare binary is never replaced.
     #[cfg(any(target_os = "macos", test))]
-    #[error("the running program is not inside an application bundle: {}", .path.display())]
+    #[error("{}", rust_i18n::t!("update.err.not_in_bundle", path = .path.display()))]
     NotInBundle {
         /// The path of the running executable.
         path: PathBuf,
     },
     /// Updates cannot be installed on this system.
-    #[error("updates cannot be installed on this platform")]
+    #[error("{}", rust_i18n::t!("update.err.unsupported"))]
     #[cfg_attr(
         all(any(target_os = "macos", target_os = "windows"), not(test)),
         expect(dead_code, reason = "only systems without an installer report it")

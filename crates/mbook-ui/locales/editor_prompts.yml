@@ -1,0 +1,465 @@
+_version: 2
+prompt:
+  cancel:
+    en: "Cancel"
+    ru: "Отмена"
+  apply:
+    en: "Apply"
+    ru: "Применить"
+  add:
+    en: "Add"
+    ru: "Добавить"
+  leave:
+    title:
+      en: "Save the changes?"
+      ru: "Сохранить изменения?"
+    detail:
+      en: "The book has changes that were not saved."
+      ru: "В книге есть несохранённые изменения."
+    discard:
+      en: "Discard"
+      ru: "Не сохранять"
+    save:
+      en: "Save"
+      ru: "Сохранить"
+  remove:
+    title:
+      en: "Remove %{what}?"
+      ru: "Удалить %{what}?"
+    detail:
+      en: "This cannot be undone."
+      ru: "Это действие нельзя отменить."
+    ok:
+      en: "Remove"
+      ru: "Удалить"
+  entry:
+    title_label:
+      en: "Title of the entry"
+      ru: "Название пункта"
+    place_label:
+      en: "Where the entry leads"
+      ru: "Куда ведёт пункт"
+    no_title:
+      en: "Enter the title of the entry."
+      ru: "Введите название пункта."
+    no_place:
+      en: "Choose a chapter of the book, and its start or one of its headings."
+      ru: "Выберите главу книги и её начало или один из её заголовков."
+    edit_title:
+      en: "Edit the entry"
+      ru: "Изменить пункт оглавления"
+    add_title:
+      en: "Add an entry to the contents"
+      ru: "Добавить пункт в оглавление"
+    add:
+      en: "Add the entry"
+      ru: "Добавить пункт"
+  landmark:
+    kind_label:
+      en: "What the place is"
+      ru: "Что это за место"
+    title_label:
+      en: "Name shown to readers (optional)"
+      ru: "Название для читателей (необязательно)"
+    place_label:
+      en: "Where it is"
+      ru: "Где оно находится"
+    choose_kind:
+      en: "Choose…"
+      ru: "Выбрать…"
+    no_kind:
+      en: "Choose what the place is."
+      ru: "Выберите, что это за место."
+    no_place:
+      en: "Choose a chapter of the book, and its start or a place in it."
+      ru: "Выберите главу книги и её начало или место в ней."
+    mark_start_title:
+      en: "Mark where the text begins"
+      ru: "Отметить начало текста"
+    change_start_title:
+      en: "Change where the text begins"
+      ru: "Изменить начало текста"
+    add_title:
+      en: "Add a landmark"
+      ru: "Добавить ориентир"
+    edit_title:
+      en: "Edit the landmark"
+      ru: "Изменить ориентир"
+    mark:
+      en: "Mark"
+      ru: "Отметить"
+    start_effect:
+      en: "A new book opens here instead of at its cover or title page."
+      ru: "Новая книга откроется здесь, а не на обложке или титульном листе."
+    no_start_effect:
+      en: "Not marked yet. A new book opens at its first page, which is often the title page."
+      ru: "Пока не отмечено. Новая книга откроется на первой странице, а это часто титульный лист."
+    kind_effect:
+      en: "A reading application can list this place as “%{name}” and take a reader straight to it."
+      ru: "Приложение для чтения сможет показать это место как «%{name}» и сразу перевести к нему читателя."
+    any_kind_effect:
+      en: "A reading application lists the place by its kind and takes a reader straight to it."
+      ru: "Приложение для чтения покажет место по его типу и сразу переведёт к нему читателя."
+  landmarks:
+    label:
+      en: "Landmarks"
+      ru: "Ориентиры"
+    hint:
+      en: "Mark where the parts of the book are. A reading application can then open a new book where the text begins, and take a reader straight to the notes, the glossary or the index."
+      ru: "Отметьте, где находятся части книги. Тогда приложение для чтения сможет открыть новую книгу там, где начинается текст, и сразу перевести читателя к примечаниям, глоссарию или указателю."
+    no_chapters:
+      en: "Add a chapter before marking places in the book."
+      ru: "Добавьте главу, прежде чем отмечать места в книге."
+    other_places:
+      en: "Other places"
+      ru: "Другие места"
+    no_other_places:
+      en: "No other places are marked. Add the notes, the glossary, the index or any other part a reader may look for."
+      ru: "Другие места не отмечены. Добавьте примечания, глоссарий, указатель или любую другую часть, которую может искать читатель."
+    mark_start:
+      en: "Mark where the text begins…"
+      ru: "Отметить начало текста…"
+    add:
+      en: "Add a landmark…"
+      ru: "Добавить ориентир…"
+    start_not_marked:
+      en: "%{name}, not marked"
+      ru: "%{name}, не отмечено"
+    change:
+      en: "Change…"
+      ru: "Изменить…"
+    change_named:
+      en: "Change %{name}"
+      ru: "Изменить: %{name}"
+    edit:
+      en: "Edit…"
+      ru: "Изменить…"
+    edit_named:
+      en: "Edit %{name}"
+      ru: "Изменить: %{name}"
+    remove_named:
+      en: "Remove %{name}"
+      ru: "Удалить: %{name}"
+    remove_what:
+      en: "the landmark “%{name}”"
+      ru: "ориентир «%{name}»"
+  link:
+    text_label:
+      en: "Text of the link"
+      ru: "Текст ссылки"
+    address_label:
+      en: "Leads to"
+      ru: "Куда ведёт"
+    no_text:
+      en: "Enter the text of the link."
+      ru: "Введите текст ссылки."
+    no_address:
+      en: "Enter a web address, or choose a place in this book."
+      ru: "Введите веб-адрес или выберите место в этой книге."
+    choose_hint:
+      en: "Type a web address, or choose a place in this book:"
+      ru: "Введите веб-адрес или выберите место в этой книге:"
+    remove:
+      en: "Remove the link"
+      ru: "Убрать ссылку"
+    edit_title:
+      en: "Edit the link"
+      ru: "Изменить ссылку"
+    add_title:
+      en: "Add a link"
+      ru: "Добавить ссылку"
+    add:
+      en: "Add the link"
+      ru: "Добавить ссылку"
+  picture:
+    description_label:
+      en: "Description, read to those who cannot see the picture"
+      ru: "Описание для тех, кто не видит изображение"
+    description_hint:
+      en: "What the picture shows"
+      ru: "Что показывает изображение"
+    name_label:
+      en: "File name in the book"
+      ru: "Имя файла в книге"
+    original_size:
+      en: "Original"
+      ru: "Исходный"
+    quality:
+      en: "Quality (1–100)"
+      ru: "Качество (1–100)"
+    max_width:
+      en: "Max width (px)"
+      ru: "Макс. ширина (пикс.)"
+    max_height:
+      en: "Max height (px)"
+      ru: "Макс. высота (пикс.)"
+    size_hint:
+      en: "Quality 80 suits most pictures. Leave the sizes empty to keep the original size."
+      ru: "Качество 80 подходит для большинства изображений. Оставьте размеры пустыми, чтобы сохранить исходный размер."
+    no_quality:
+      en: "Enter a quality from 1 to 100."
+      ru: "Введите качество от 1 до 100."
+    no_size:
+      en: "Enter a positive number of pixels or leave the field empty for original size."
+      ru: "Введите положительное число пикселей или оставьте поле пустым, чтобы сохранить исходный размер."
+  place:
+    chapter_start:
+      en: "Start of the chapter"
+      ru: "Начало главы"
+    choose_chapter:
+      en: "Choose a chapter"
+      ru: "Выбрать главу"
+    missing_chapter:
+      en: "%{path} (missing)"
+      ru: "%{path} (отсутствует)"
+    missing_place:
+      en: "#%{anchor} (missing)"
+      ru: "#%{anchor} (отсутствует)"
+    chapter_spoken:
+      en: "Chapter, %{label}"
+      ru: "Глава, %{label}"
+    place_spoken:
+      en: "Place in the chapter, %{label}"
+      ru: "Место в главе, %{label}"
+  figure:
+    edit:
+      en: "Edit…"
+      ru: "Изменить…"
+    remove:
+      en: "Remove…"
+      ru: "Удалить…"
+    remove_detail:
+      en: "References in chapters will need to be removed or updated before saving."
+      ru: "Перед сохранением нужно будет удалить или исправить ссылки на неё в главах."
+    alt_text:
+      en: "Alternative text"
+      ru: "Альтернативный текст"
+    mermaid_source:
+      en: "Mermaid source"
+      ru: "Исходный текст Mermaid"
+    katex_source:
+      en: "KaTeX source"
+      ru: "Исходный текст KaTeX"
+    book_path:
+      en: "Book path"
+      ru: "Путь в книге"
+    preview:
+      en: "Preview"
+      ru: "Предпросмотр"
+    edit_title:
+      en: "Edit %{path}"
+      ru: "Изменить %{path}"
+    no_path:
+      en: "Enter a book path."
+      ru: "Введите путь в книге."
+    no_source:
+      en: "Enter the source."
+      ru: "Введите исходный текст."
+    rendering:
+      en: "Rendering preview…"
+      ru: "Построение предпросмотра…"
+    preview_label:
+      en: "Figure preview"
+      ru: "Предпросмотр иллюстрации"
+    diagram:
+      new_more:
+        en: "New diagram…"
+        ru: "Новая диаграмма…"
+      new_title:
+        en: "New diagram"
+        ru: "Новая диаграмма"
+      none:
+        en: "This book has no diagrams yet."
+        ru: "В книге пока нет диаграмм."
+      add_first:
+        en: "Add a diagram in the Diagrams section first."
+        ru: "Сначала добавьте диаграмму в разделе «Диаграммы»."
+      section:
+        en: "Diagrams"
+        ru: "Диаграммы"
+      name:
+        en: "Diagram"
+        ru: "Диаграмма"
+      insert_title:
+        en: "Insert a diagram"
+        ru: "Вставить диаграмму"
+      insert:
+        en: "Insert diagram"
+        ru: "Вставить диаграмму"
+      edit_named:
+        en: "Edit diagram %{path}"
+        ru: "Изменить диаграмму %{path}"
+      remove_named:
+        en: "Remove diagram %{path}"
+        ru: "Удалить диаграмму %{path}"
+      remove_question:
+        en: "Remove diagram %{path}?"
+        ru: "Удалить диаграмму %{path}?"
+    formula:
+      new_more:
+        en: "New formula…"
+        ru: "Новая формула…"
+      new_title:
+        en: "New formula"
+        ru: "Новая формула"
+      none:
+        en: "This book has no formulas yet."
+        ru: "В книге пока нет формул."
+      add_first:
+        en: "Add a formula in the Formulas section first."
+        ru: "Сначала добавьте формулу в разделе «Формулы»."
+      section:
+        en: "Formulas"
+        ru: "Формулы"
+      name:
+        en: "Formula"
+        ru: "Формула"
+      insert_title:
+        en: "Insert a formula"
+        ru: "Вставить формулу"
+      insert:
+        en: "Insert formula"
+        ru: "Вставить формулу"
+      edit_named:
+        en: "Edit formula %{path}"
+        ru: "Изменить формулу %{path}"
+      remove_named:
+        en: "Remove formula %{path}"
+        ru: "Удалить формулу %{path}"
+      remove_question:
+        en: "Remove formula %{path}?"
+        ru: "Удалить формулу %{path}?"
+visual:
+  unpreservable:
+    en: "This chapter uses Markdown blocks Visual could not preserve."
+    ru: "В этой главе есть блоки Markdown, которые визуальный режим не может сохранить."
+  opening:
+    en: "Opening the chapter"
+    ru: "Открытие главы"
+  needs_source:
+    en: "This chapter needs Source"
+    ru: "Эту главу можно править только в исходном тексте"
+  editor_of:
+    en: "Visual editor of %{path}"
+    ru: "Визуальный редактор: %{path}"
+  undo:
+    en: "Undo"
+    ru: "Отменить"
+  redo:
+    en: "Redo"
+    ru: "Повторить"
+  link:
+    en: "Link"
+    ru: "Ссылка"
+  link_tooltip:
+    en: "Add or edit a link"
+    ru: "Добавить или изменить ссылку"
+  picture:
+    en: "Picture"
+    ru: "Изображение"
+  picture_tooltip:
+    en: "Insert a picture"
+    ru: "Вставить изображение"
+  diagram:
+    en: "Diagram"
+    ru: "Диаграмма"
+  formula:
+    en: "Formula"
+    ru: "Формула"
+  chapter_pictures:
+    en: "Pictures in this chapter"
+    ru: "Изображения в этой главе"
+  code_language:
+    en: "Code language"
+    ru: "Язык кода"
+  plain_text:
+    en: "Plain text"
+    ru: "Обычный текст"
+  formatting:
+    en: "Text formatting"
+    ru: "Форматирование текста"
+  bold:
+    en: "Bold"
+    ru: "Полужирный"
+  italic:
+    en: "Italic"
+    ru: "Курсив"
+  strikethrough:
+    en: "Strikethrough"
+    ru: "Зачёркнутый"
+  inline_code:
+    en: "Inline code"
+    ru: "Код в строке"
+  quote:
+    en: "Quote"
+    ru: "Цитата"
+  outdent:
+    en: "Decrease list indent"
+    ru: "Уменьшить отступ списка"
+  indent:
+    en: "Increase list indent"
+    ru: "Увеличить отступ списка"
+  code_block:
+    en: "Code block"
+    ru: "Блок кода"
+  heading:
+    en: "Heading %{level}"
+    ru: "Заголовок %{level}"
+  normal_text:
+    en: "Normal text"
+    ru: "Обычный текст"
+  insert:
+    en: "Insert"
+    ru: "Вставить"
+  table:
+    en: "Table"
+    ru: "Таблица"
+  horizontal_rule:
+    en: "Horizontal rule"
+    ru: "Горизонтальная линия"
+  bulleted_list:
+    en: "Bulleted list"
+    ru: "Маркированный список"
+  numbered_list:
+    en: "Numbered list"
+    ru: "Нумерованный список"
+  task_list:
+    en: "Task list"
+    ru: "Список задач"
+  pictures:
+    from_computer:
+      en: "Add from your computer…"
+      ru: "Добавить с компьютера…"
+    insert:
+      en: "Insert the picture"
+      ru: "Вставить изображение"
+    choose_first:
+      en: "Choose a picture, or add one from your computer."
+      ru: "Выберите изображение или добавьте его с компьютера."
+    none:
+      en: "This book has no pictures yet."
+      ru: "В книге пока нет изображений."
+    of_the_book:
+      en: "Pictures of the book"
+      ru: "Изображения книги"
+    insert_title:
+      en: "Insert a picture"
+      ru: "Вставить изображение"
+    none_in_chapter:
+      en: "This chapter has no book pictures."
+      ru: "В этой главе нет изображений из книги."
+    preview_of:
+      en: "Preview of %{path}"
+      ru: "Предпросмотр: %{path}"
+    choose:
+      en: "Choose picture"
+      ru: "Выбрать изображение"
+    of_the_chapter:
+      en: "Chapter pictures"
+      ru: "Изображения главы"
+    close:
+      en: "Close"
+      ru: "Закрыть"
+    chosen:
+      en: "%{path}, chosen"
+      ru: "%{path}, выбрано"

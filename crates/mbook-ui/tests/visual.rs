@@ -2,6 +2,8 @@
 //! the workspace, with a headless renderer, for a person to look at.
 //!
 //! Run it with `cargo test -p mbook-ui --features visual --test visual`.
+//! `MBOOK_VISUAL_LANGUAGE=ru` draws the interface in Russian, into
+//! `target/visual/ru/`.
 //!
 //! The renderer of macOS needs the main thread, which the harness of tests
 //! does not give to a test: this test has a `main` of its own.
@@ -11,8 +13,12 @@ use std::io::{self, Write as _};
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/visual");
-    let files = mbook_ui::visual::render_screens(&out)?;
+    let language = std::env::var("MBOOK_VISUAL_LANGUAGE").unwrap_or_else(|_| "en".to_owned());
+    let mut out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/visual");
+    if language != "en" {
+        out.push(&language);
+    }
+    let files = mbook_ui::visual::render_screens(&out, &language)?;
     let mut stdout = io::stdout().lock();
     if files.is_empty() {
         writeln!(

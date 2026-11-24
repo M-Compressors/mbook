@@ -19,6 +19,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, Task, TestSupportExt as _, Window,
     div, px,
 };
+use rust_i18n::t;
 
 use super::check::{Update, check, enabled};
 use super::error::UpdateError;
@@ -33,10 +34,6 @@ const CHECK_EVERY: Duration = Duration::from_hours(24);
 const BUSY_RETRY: Duration = Duration::from_secs(5);
 /// Space below update notifications for the library tabs and reader controls.
 const NOTIFICATION_BOTTOM_MARGIN: f32 = 84.0;
-
-/// What is said when a restart is asked for while the application is busy.
-const RESTART_WAITS: &str =
-    "Finish the import or close the editor first; then restart to finish the update";
 
 /// What to do again when the user asks for it after a failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,22 +77,22 @@ impl UpdateState {
     pub(crate) fn summary(&self) -> String {
         match self {
             Self::Idle => String::new(),
-            Self::Checking => "Checking for updates…".to_owned(),
-            Self::UpToDate => "mbook is up to date".to_owned(),
-            Self::Available(update) => format!("Version {} is available", update.version),
-            Self::Waiting(_) => {
-                "The update will be installed when the import or the edit is finished".to_owned()
+            Self::Checking => t!("update.checking").into_owned(),
+            Self::UpToDate => t!("update.up_to_date").into_owned(),
+            Self::Available(update) => {
+                t!("update.available", version = update.version).into_owned()
             }
-            Self::Installing(_) => "Downloading and verifying…".to_owned(),
-            Self::Installed(_) => "Restart to finish".to_owned(),
+            Self::Waiting(_) => t!("update.waiting").into_owned(),
+            Self::Installing(_) => t!("update.installing").into_owned(),
+            Self::Installed(_) => t!("update.restart_to_finish").into_owned(),
             Self::Failed {
                 reason,
                 retry: Retry::Check,
-            } => format!("Could not check for updates: {reason}"),
+            } => t!("update.check_failed", reason = reason).into_owned(),
             Self::Failed {
                 reason,
                 retry: Retry::Install(_),
-            } => format!("The update failed: {reason}"),
+            } => t!("update.failed", reason = reason).into_owned(),
         }
     }
 
@@ -357,7 +354,7 @@ impl UpdateBanner {
                 self.state = UpdateState::Available(update);
                 if self.announced.as_deref() != Some(version.as_str()) || manual {
                     self.announced = Some(version.clone());
-                    self.announce(format!("Version {version} is available"), cx);
+                    self.announce(t!("update.available", version = version).into_owned(), cx);
                 }
             }
             Ok(None) => self.state = UpdateState::UpToDate,
@@ -423,16 +420,13 @@ impl UpdateBanner {
                 self.state = UpdateState::Installed(update.clone());
                 self.dismissed = false;
                 self.announce(
-                    format!(
-                        "Version {} is installed. Restart to finish.",
-                        update.version
-                    ),
+                    t!("update.installed", version = update.version).into_owned(),
                     cx,
                 );
             }
             Ok(Installed::Quit) => {
                 self.announce(
-                    format!("Version {} is being installed.", update.version),
+                    t!("update.being_installed", version = update.version).into_owned(),
                     cx,
                 );
                 cx.quit();
@@ -440,7 +434,7 @@ impl UpdateBanner {
             Err(error) => {
                 let reason = reason(&error);
                 self.dismissed = false;
-                self.announce(format!("The update failed: {reason}"), cx);
+                self.announce(t!("update.failed", reason = reason).into_owned(), cx);
                 self.state = UpdateState::Failed {
                     reason,
                     retry: Retry::Install(update.clone()),
@@ -455,7 +449,7 @@ impl UpdateBanner {
     /// waits to be asked again.
     fn restart(&mut self, cx: &mut Context<'_, Self>) {
         if (self.is_busy)(cx) {
-            self.announce(RESTART_WAITS.to_owned(), cx);
+            self.announce(t!("update.restart_waits").into_owned(), cx);
         } else {
             cx.restart();
         }
@@ -500,35 +494,35 @@ impl UpdateBanner {
     /// The buttons of the bar, by id and label.
     fn buttons(&self, cx: &mut Context<'_, Self>) -> Vec<AnyElement> {
         let target = px(target_size());
-        let primary = |id: &'static str, label: &'static str| {
+        let primary = |id: &'static str, label: SharedString| {
             Button::new(id)
                 .primary()
                 .label(label)
                 .min_h(target)
                 .cursor_pointer()
         };
-        let plain = |id: &'static str, label: &'static str| {
+        let plain = |id: &'static str, label: SharedString| {
             Button::new(id).label(label).min_h(target).cursor_pointer()
         };
         match &self.state {
             UpdateState::Available(_) => vec![
-                primary("update-install", "Update")
+                primary("update-install", t!("update.update").into())
                     .on_click(cx.listener(|this, _, _, cx| this.begin_install(cx)))
                     .into_any_element(),
-                plain("update-later", "Later")
+                plain("update-later", t!("update.later").into())
                     .on_click(cx.listener(|this, _, _, cx| this.later(cx)))
                     .into_any_element(),
             ],
             UpdateState::Installed(_) => vec![
-                primary("update-restart", "Restart")
+                primary("update-restart", t!("update.restart").into())
                     .on_click(cx.listener(|this, _, _, cx| this.restart(cx)))
                     .into_any_element(),
             ],
             UpdateState::Failed { .. } => vec![
-                primary("update-retry", "Try again")
+                primary("update-retry", t!("update.try_again").into())
                     .on_click(cx.listener(|this, _, _, cx| this.try_again(cx)))
                     .into_any_element(),
-                plain("update-later", "Later")
+                plain("update-later", t!("update.later").into())
                     .on_click(cx.listener(|this, _, _, cx| this.later(cx)))
                     .into_any_element(),
             ],
@@ -549,7 +543,7 @@ impl Render for UpdateBanner {
         h_flex()
             .id("update-banner")
             .role(Role::Region)
-            .aria_label("Application update")
+            .aria_label(t!("update.region"))
             .test_support()
             .w_full()
             .flex_none()

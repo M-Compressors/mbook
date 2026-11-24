@@ -15,6 +15,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, WeakEntity,
     Window, div, px,
 };
+use rust_i18n::t;
 
 use super::LibraryPage;
 use super::imports::imports_panel;
@@ -61,7 +62,7 @@ impl LibrarySidebar {
 /// a compact window.
 pub(super) fn search_field(search: &Entity<InputState>) -> Input {
     Input::new(search)
-        .aria_label("Search the library")
+        .aria_label(t!("library.search_library"))
         .cleanable(true)
         .prefix(Icon::new(IconName::Search))
 }
@@ -78,7 +79,7 @@ impl Render for LibrarySidebar {
         let sections = v_flex()
             .id("sections")
             .role(Role::Group)
-            .aria_label("Sections")
+            .aria_label(t!("library.sections"))
             .test_support()
             .w_full()
             .gap_1()
@@ -99,10 +100,15 @@ impl Render for LibrarySidebar {
                     .h(px(target_size()))
                     .selected(active)
                     .toggled(active)
-                    .accessibility_label(format!(
-                        "{label}, {count}{}",
-                        if active { ", selected" } else { "" }
-                    ))
+                    .accessibility_label(if active {
+                        t!(
+                            "library.section_entry_selected",
+                            section = label,
+                            count = count
+                        )
+                    } else {
+                        t!("library.section_entry", section = label, count = count)
+                    })
                     .cursor_pointer()
                     .child(
                         h_flex()

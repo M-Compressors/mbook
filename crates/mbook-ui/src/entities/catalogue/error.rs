@@ -13,12 +13,12 @@ use std::path::PathBuf;
 pub(crate) enum CatalogueError {
     /// The database failed: it cannot be opened, is damaged, or a
     /// transaction did not complete.
-    #[error("the catalogue database failed")]
+    #[error("{}", rust_i18n::t!("catalogue.err.storage"))]
     Storage(#[source] Box<dyn Error + Send + Sync>),
     /// The database was written by a newer version of the application.
     #[error(
-        "the catalogue has schema version {found}, and this application \
-         knows versions up to {supported}"
+        "{}",
+        rust_i18n::t!("catalogue.err.newer_schema", found = .found, supported = .supported)
     )]
     NewerSchema {
         /// The version found in the database.
@@ -27,7 +27,7 @@ pub(crate) enum CatalogueError {
         supported: u32,
     },
     /// The folder of books cannot be listed.
-    #[error("cannot list the folder of books {}", path.display())]
+    #[error("{}", rust_i18n::t!("catalogue.err.folder", path = .path.display()))]
     Folder {
         /// The folder.
         path: PathBuf,

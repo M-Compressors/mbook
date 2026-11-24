@@ -10,6 +10,7 @@ use gpui_kit::{
     IntoElement, ParentElement as _, Role, SharedString, StatefulInteractiveElement as _,
     Styled as _, Subscription, Window, div, px,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::session::{Control, MetaField, MetaValues};
@@ -142,71 +143,93 @@ impl EditorPage {
     /// The Details section.
     pub(super) fn render_details(&self, cx: &Context<'_, Self>) -> AnyElement {
         let fields = &self.fields;
-        let label =
-            |text: &'static str| div().text_sm().font_weight(FontWeight::MEDIUM).child(text);
+        let label = |text: &SharedString| {
+            div()
+                .text_sm()
+                .font_weight(FontWeight::MEDIUM)
+                .child(text.clone())
+        };
         let group = |label: gpui_kit::Div, body: gpui_kit::AnyElement| {
             v_flex().gap_1().child(label).child(body)
         };
+        let [
+            title,
+            authors,
+            language,
+            series,
+            series_number,
+            publisher,
+            date,
+            annotation,
+        ] = [
+            t!("editor.field.title"),
+            t!("editor.field.authors"),
+            t!("editor.field.language"),
+            t!("editor.field.series"),
+            t!("editor.field.series_number"),
+            t!("editor.field.publisher"),
+            t!("editor.field.date"),
+            t!("editor.field.annotation"),
+        ]
+        .map(SharedString::from);
         v_flex()
             .id("details")
             .role(Role::Form)
-            .aria_label("Details")
+            .aria_label(t!("editor.section.details"))
             .gap_4()
             .p_4()
             .max_w(px(640.0))
             .w_full()
             .child(group(
-                label("Title"),
+                label(&title),
                 Input::new(&fields.title)
-                    .aria_label("Title")
+                    .aria_label(title)
                     .into_any_element(),
             ))
             .children(self.field_error(MetaField::Title, cx))
             .child(group(
-                label("Authors (one per line)"),
+                label(&authors),
                 Textarea::new(&fields.authors)
-                    .aria_label("Authors (one per line)")
+                    .aria_label(authors)
                     .into_any_element(),
             ))
             .children(self.field_error(MetaField::Authors, cx))
             .child(group(
-                label("Language (a code such as en or ru)"),
+                label(&language),
                 Input::new(&fields.language)
-                    .aria_label("Language (a code such as en or ru)")
+                    .aria_label(language)
                     .into_any_element(),
             ))
             .children(self.field_error(MetaField::Language, cx))
             .child(group(
-                label("Series"),
+                label(&series),
                 Input::new(&fields.series_name)
-                    .aria_label("Series")
+                    .aria_label(series)
                     .into_any_element(),
             ))
             .child(group(
-                label("Number in the series"),
+                label(&series_number),
                 Input::new(&fields.series_index)
-                    .aria_label("Number in the series")
+                    .aria_label(series_number)
                     .into_any_element(),
             ))
             .children(self.field_error(MetaField::Series, cx))
             .child(group(
-                label("Publisher"),
+                label(&publisher),
                 Input::new(&fields.publisher)
-                    .aria_label("Publisher")
+                    .aria_label(publisher)
                     .into_any_element(),
             ))
             .children(self.field_error(MetaField::Publisher, cx))
             .child(group(
-                label("Date"),
-                Input::new(&fields.date)
-                    .aria_label("Date")
-                    .into_any_element(),
+                label(&date),
+                Input::new(&fields.date).aria_label(date).into_any_element(),
             ))
             .children(self.field_error(MetaField::Date, cx))
             .child(group(
-                label("Annotation"),
+                label(&annotation),
                 Textarea::new(&fields.annotation)
-                    .aria_label("Annotation")
+                    .aria_label(annotation)
                     .into_any_element(),
             ))
             .children(self.field_error(MetaField::Annotation, cx))

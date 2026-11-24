@@ -9,6 +9,10 @@
 //! layers below it: `app`, `pages`, `widgets`, `features`, `entities`,
 //! `shared`.
 
+// The strings of the interface, from `locales/*.yml`; English is the
+// fallback of every key (mbook-ui docs, "Languages").
+rust_i18n::i18n!("locales", fallback = "en");
+
 mod app;
 mod entities;
 mod error;

@@ -22,8 +22,11 @@ use gpui_kit::{
     WeakEntity, Window,
 };
 
+use rust_i18n::t;
+
 use super::{ImportError, Imported, Step, import};
 use crate::entities::catalogue::{Catalogue, Library, Store};
+use crate::shared::i18n::count_text;
 use crate::shared::model::BookKey;
 use crate::shared::roots::Roots;
 use crate::shared::ui::announce;
@@ -80,17 +83,16 @@ impl ImportStatus {
     /// The status in words, as the sidebar says it.
     pub(crate) fn label(&self) -> String {
         match self {
-            Self::Queued => "Waiting".to_owned(),
-            Self::Probing => "Looking at the file".to_owned(),
-            Self::Copying => "Copying".to_owned(),
-            Self::Converting => "Converting".to_owned(),
-            Self::Indexing => "Adding to the library".to_owned(),
+            Self::Queued => t!("import.queued").into_owned(),
+            Self::Probing => t!("import.probing").into_owned(),
+            Self::Copying => t!("import.copying").into_owned(),
+            Self::Converting => t!("import.converting").into_owned(),
+            Self::Indexing => t!("import.indexing").into_owned(),
             Self::Done { warnings, .. } => match warnings.len() {
-                0 => "Added".to_owned(),
-                1 => "Added, with 1 warning".to_owned(),
-                count => format!("Added, with {count} warnings"),
+                0 => t!("import.added").into_owned(),
+                count => count_text("import.added_with_warnings", count),
             },
-            Self::Already { .. } => "Already in the library".to_owned(),
+            Self::Already { .. } => t!("import.already").into_owned(),
             Self::Failed { message } => message.clone(),
         }
     }
@@ -433,16 +435,17 @@ impl ImportQueue {
                         warnings: imported.warnings,
                     };
                     Library::global(cx).update(cx, Library::reload);
-                    format!("Added {shown}")
+                    t!("import.added_book", title = shown).into_owned()
                 } else {
                     entry.status = ImportStatus::Already { key };
-                    format!("{shown} is already in the library")
+                    t!("import.already_book", title = shown).into_owned()
                 };
                 (message, open_when_done.then_some(key))
             }
             Err(error) => {
                 let chain = error_chain(&error);
-                let message = format!("{} could not be added: {chain}", entry.name);
+                let message =
+                    t!("import.not_added", name = entry.name, reason = chain).into_owned();
                 entry.status = ImportStatus::Failed {
                     message: sentence(&chain),
                 };

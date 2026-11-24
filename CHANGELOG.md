@@ -2,7 +2,23 @@
 
 ## Unreleased
 
+### Added
+
+- The application speaks Russian as well as English. At start it takes the
+  first language of the system it is translated into, and English when the
+  system prefers none of them; the settings have a Language choice
+  (System language, English, Русский), which applies at once, the menu bar
+  of macOS included. Counts take the Russian plural forms ("1 книга",
+  "3 книги", "5 книг"). The controls of GPUI Component follow the same
+  language. The visual test draws the screens in Russian with
+  `MBOOK_VISUAL_LANGUAGE=ru`.
+
 ### Fixed
+
+- The editor says "1 byte" for a file of one byte, not "1 bytes".
+- The bar of a page keeps its actions inside a narrow window: a long title
+  is cut short instead of pushing them off. On a phone, **Save** of the
+  editor stood partly outside the window.
 
 - On Android, **Copy** and **Cut** put the text on the clipboard of the
   system, and **Paste** takes what another app copied. They used to keep the

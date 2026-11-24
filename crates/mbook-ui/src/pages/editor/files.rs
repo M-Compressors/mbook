@@ -2,11 +2,13 @@
 //! and the library's row after a save. Encoding and decoding run on the pool
 //! of `compute`; reading and writing files on the background executor.
 
+use std::borrow::Cow;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use gpui_kit::{AppContext as _, Context, RenderImage, Window};
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::commands::{ChapterOp, Origin};
@@ -41,25 +43,24 @@ impl EditorPage {
         let control = control_of(target);
         self.chooser = Some(cx.spawn_in(window, async move |this, cx| {
             let title = match target {
-                Target::Cover => "Choose a cover",
-                Target::Picture | Target::Chapter => "Add pictures",
+                Target::Cover => t!("editor.files.choose_cover"),
+                Target::Picture | Target::Chapter => t!("editor.files.add_pictures"),
             };
+            let filter = t!("editor.files.picture_filter");
             let extensions = picture_file_extensions();
-            let paths =
-                match file_picker::choose(title, "Pictures", &extensions, target != Target::Cover)
-                    .await
-                {
-                    Ok(Some(paths)) => paths,
-                    Ok(None) => return,
-                    Err(error) => {
-                        this.update_in(cx, |this, _, cx| {
-                            this.session.set_error(control, error.to_string());
-                            cx.notify();
-                        })
-                        .ok();
-                        return;
-                    }
-                };
+            let multiple = target != Target::Cover;
+            let paths = match file_picker::choose(&title, &filter, &extensions, multiple).await {
+                Ok(Some(paths)) => paths,
+                Ok(None) => return,
+                Err(error) => {
+                    this.update_in(cx, |this, _, cx| {
+                        this.session.set_error(control, error.to_string());
+                        cx.notify();
+                    })
+                    .ok();
+                    return;
+                }
+            };
             this.update_in(cx, |this, window, cx| {
                 this.encode_files(paths, target, window, cx);
             })
@@ -155,9 +156,9 @@ impl EditorPage {
         // A picture for a chapter goes into the one that is open now.
         let chapter = self.loaded.clone().filter(|_| target == Target::Chapter);
         let title = match (target, &chapter) {
-            (Target::Cover, _) => "Replace the cover",
-            (_, Some(_)) => "Add a picture to the chapter",
-            (_, None) => "Add a picture",
+            (Target::Cover, _) => t!("editor.files.replace_cover"),
+            (_, Some(_)) => t!("editor.files.add_picture_to_chapter"),
+            (_, None) => t!("editor.files.add_picture"),
         };
         ask_picture(
             title,
@@ -208,7 +209,7 @@ impl EditorPage {
             if self.visual_is_editing(&chapter, cx) {
                 self.insert_markdown(markdown, window, cx);
             } else {
-                announce(PLACE_LATER, window, cx);
+                announce(place_later(), window, cx);
             }
         }
         self.prompt_next_picture(window, cx);
@@ -219,10 +220,10 @@ impl EditorPage {
     pub(super) fn add_chapter(window: &mut Window, cx: &mut Context<'_, Self>) {
         ask_path(
             &PathRequest {
-                title: "New chapter",
-                label: NEW_CHAPTER_LABEL,
+                title: t!("editor.files.new_chapter").into(),
+                label: new_chapter_label().into(),
                 initial: String::new(),
-                ok: "Add the chapter",
+                ok: t!("editor.files.new_chapter_ok").into(),
                 required: None,
             },
             window,
@@ -248,11 +249,11 @@ impl EditorPage {
     pub(super) fn change_path(from: String, window: &mut Window, cx: &mut Context<'_, Self>) {
         ask_path(
             &PathRequest {
-                title: "Rename the file",
-                label: RENAME_LABEL,
+                title: t!("editor.files.rename").into(),
+                label: rename_label().into(),
                 initial: from.clone(),
-                ok: "Rename",
-                required: Some("Enter a file name, such as ch01.md."),
+                ok: t!("editor.files.rename_ok").into(),
+                required: Some(t!("editor.files.rename_required").into()),
             },
             window,
             cx,
@@ -399,11 +400,10 @@ impl EditorPage {
                 .await;
             this.update_in(cx, |this, window, cx| {
                 match result {
-                    Ok(()) => announce("Saved", window, cx),
+                    Ok(()) => announce(t!("editor.files.saved"), window, cx),
                     Err(error) => {
-                        let message = format!(
-                            "The book was saved, but the library could not be updated: {error}."
-                        );
+                        let message =
+                            t!("editor.files.library_not_updated", error = error).into_owned();
                         this.session.set_error(Control::Save, message.clone());
                         announce(message, window, cx);
                     }
@@ -420,12 +420,17 @@ impl EditorPage {
 }
 
 /// The label of the field that holds the title of a new chapter.
-pub(super) const NEW_CHAPTER_LABEL: &str = "Title of the chapter";
+pub(super) fn new_chapter_label() -> Cow<'static, str> {
+    t!("editor.files.new_chapter_label")
+}
 /// The label of the field that holds the new file name of a chapter.
-pub(super) const RENAME_LABEL: &str = "File name of the chapter. Links to it use this name.";
+pub(super) fn rename_label() -> Cow<'static, str> {
+    t!("editor.files.rename_label")
+}
 /// What is said when a picture arrives after its chapter was left.
-pub(super) const PLACE_LATER: &str =
-    "The picture was added to the book. Open the chapter and choose Picture to place it.";
+pub(super) fn place_later() -> Cow<'static, str> {
+    t!("editor.files.place_later")
+}
 
 /// The control a picture of this kind belongs to.
 pub(super) fn control_of(target: Target) -> Control {
@@ -453,13 +458,13 @@ fn decode_cover(bytes: &[u8]) -> Result<Arc<RenderImage>, PictureError> {
 #[derive(Debug, thiserror::Error)]
 pub(super) enum FollowUpError {
     /// The saved file could not be opened.
-    #[error("the saved file could not be read")]
+    #[error("{}", t!("editor.files.saved_unreadable"))]
     Read(#[source] mbook::Error),
     /// The size of the saved file could not be read.
-    #[error("the saved file could not be measured")]
+    #[error("{}", t!("editor.files.saved_unmeasured"))]
     Measure(#[source] std::io::Error),
     /// The catalogue refused the row.
-    #[error("the catalogue could not be updated")]
+    #[error("{}", t!("editor.files.catalogue_not_updated"))]
     Catalogue(#[source] CatalogueError),
 }
 

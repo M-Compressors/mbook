@@ -492,7 +492,7 @@ fn the_settings_control_of_the_library_opens_the_settings(cx: &mut TestAppContex
 #[test]
 fn the_notice_of_a_catalogue_that_was_made_again_says_what_was_lost() {
     assert_eq!(
-        super::shell::DAMAGED_NOTICE,
+        super::shell::damaged_notice(),
         "The library index was damaged and has been rebuilt. Reading places and settings were reset."
     );
 }

@@ -1,0 +1,27 @@
+_version: 2
+ui:
+  back:
+    en: "Back"
+    ru: "Назад"
+  searching:
+    en: "Searching…"
+    ru: "Поиск…"
+  previous_match:
+    en: "Previous match"
+    ru: "Предыдущее совпадение"
+  next_match:
+    en: "Next match"
+    ru: "Следующее совпадение"
+  close_search:
+    en: "Close search"
+    ru: "Закрыть поиск"
+  picker:
+    unsupported_extension:
+      en: "\"%{name}\" does not have a supported file extension."
+      ru: "У файла «%{name}» неподдерживаемое расширение."
+    failed:
+      en: "The file picker could not be shown."
+      ru: "Не удалось открыть окно выбора файла."
+    no_platform:
+      en: "the platform is not running"
+      ru: "платформа не запущена"

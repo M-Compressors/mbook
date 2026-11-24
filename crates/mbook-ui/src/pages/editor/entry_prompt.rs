@@ -1,5 +1,6 @@
 //! The dialog of an entry of the contents: its title and where it leads.
 
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -11,6 +12,8 @@ use gpui_kit::{
     SharedString, Styled as _, Window, div,
 };
 
+use rust_i18n::t;
+
 use super::EditorPage;
 use super::place_picker::{ChapterChoice, OnPlace, Place, place_picker, resolve};
 use crate::features::edit_book::command::{ContentsChange, EntryDraft};
@@ -18,14 +21,24 @@ use crate::features::edit_book::outline::ChapterOutline;
 use crate::shared::ui::status_line;
 
 /// The label of the field that holds the title of an entry.
-pub(super) const TITLE_LABEL: &str = "Title of the entry";
+pub(super) fn title_label() -> Cow<'static, str> {
+    t!("prompt.entry.title_label")
+}
+
 /// The words over the controls that choose where an entry leads.
-pub(super) const PLACE_LABEL: &str = "Where the entry leads";
+pub(super) fn place_label() -> Cow<'static, str> {
+    t!("prompt.entry.place_label")
+}
+
 /// What the dialog says when the title is empty.
-pub(super) const NO_TITLE: &str = "Enter the title of the entry.";
+pub(super) fn no_title() -> Cow<'static, str> {
+    t!("prompt.entry.no_title")
+}
+
 /// What the dialog says when the entry leads to nothing the book has.
-pub(super) const NO_PLACE: &str =
-    "Choose a chapter of the book, and its start or one of its headings.";
+pub(super) fn no_place() -> Cow<'static, str> {
+    t!("prompt.entry.no_place")
+}
 
 /// What the dialog starts from.
 pub(super) struct EntryRequest {
@@ -81,12 +94,12 @@ pub(super) fn entry_draft(
     title: &str,
     place: &Place,
     choices: &[ChapterChoice],
-) -> Result<EntryDraft, &'static str> {
+) -> Result<EntryDraft, Cow<'static, str>> {
     let title = title.trim().replace(['\n', '\r', '\t'], " ");
     if title.is_empty() {
-        return Err(NO_TITLE);
+        return Err(no_title());
     }
-    let (chapter, anchor) = resolve(place, choices).ok_or(NO_PLACE)?;
+    let (chapter, anchor) = resolve(place, choices).ok_or_else(no_place)?;
     Ok(EntryDraft {
         title,
         chapter,
@@ -149,19 +162,23 @@ pub(super) fn ask_entry(
             title.focus_handle(cx).focus(window, cx);
         }
         let danger = cx.theme().danger;
-        let label = |words: &'static str| div().font_weight(FontWeight::MEDIUM).child(words);
+        let label = |words: Cow<'static, str>| {
+            div()
+                .font_weight(FontWeight::MEDIUM)
+                .child(SharedString::from(words))
+        };
         let form = v_flex()
             .gap_3()
             .child(
                 v_flex()
                     .gap_1()
-                    .child(label(TITLE_LABEL))
-                    .child(Input::new(&title).aria_label(TITLE_LABEL)),
+                    .child(label(title_label()))
+                    .child(Input::new(&title).aria_label(title_label())),
             )
             .child(
                 v_flex()
                     .gap_1()
-                    .child(label(PLACE_LABEL))
+                    .child(label(place_label()))
                     .child(place_picker(
                         "entry",
                         &selected,
@@ -180,18 +197,18 @@ pub(super) fn ask_entry(
         let (error, choices) = (error.clone(), choices.clone());
         alert
             .title(if index.is_some() {
-                "Edit the entry"
+                t!("prompt.entry.edit_title")
             } else {
-                "Add an entry to the contents"
+                t!("prompt.entry.add_title")
             })
             .description(form)
             .confirm()
             .ok_text(if index.is_some() {
-                "Apply"
+                t!("prompt.apply")
             } else {
-                "Add the entry"
+                t!("prompt.entry.add")
             })
-            .cancel_text("Cancel")
+            .cancel_text(t!("prompt.cancel"))
             .on_ok(move |_, window, cx| {
                 let draft = entry_draft(&title.read(cx).value(), selected.read(cx), &choices);
                 match draft {
@@ -219,7 +236,7 @@ pub(super) fn ask_entry(
 
 #[cfg(test)]
 mod tests {
-    use super::{NO_PLACE, NO_TITLE, entry_draft, suggested_titles};
+    use super::{entry_draft, no_place, no_title, suggested_titles};
     use crate::features::edit_book::command::EntryDraft;
     use crate::features::edit_book::outline::{ChapterOutline, PlaceOutline};
     use crate::pages::editor::place_picker::{Place, heading_choices};
@@ -304,7 +321,7 @@ mod tests {
         let choices = heading_choices(&chapters());
         assert_eq!(
             entry_draft("  ", &at("a.md", None), &choices),
-            Err(NO_TITLE)
+            Err(no_title())
         );
     }
 
@@ -317,7 +334,7 @@ mod tests {
             at("a.md", Some("gone")),
             at("a.md", Some("fig-1")),
         ] {
-            assert_eq!(entry_draft("Lost", &place, &choices), Err(NO_PLACE));
+            assert_eq!(entry_draft("Lost", &place, &choices), Err(no_place()));
         }
     }
 }

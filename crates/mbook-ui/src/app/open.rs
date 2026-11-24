@@ -7,6 +7,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rust_i18n::t;
+
 use crate::entities::catalogue::{Catalogue, CatalogueError};
 use crate::shared::roots::Roots;
 
@@ -18,17 +20,17 @@ const BOOK_EXTENSION: &str = "mbook";
 #[non_exhaustive]
 pub(super) enum OpenError {
     /// A folder of the library could not be made or emptied.
-    #[error("the folders of the library could not be prepared")]
+    #[error("{}", t!("app.error_folders"))]
     Folders(#[source] io::Error),
     /// The catalogue could not be opened, or rebuilt from the books.
-    #[error("the catalogue could not be opened")]
+    #[error("{}", t!("app.error_catalogue"))]
     Catalogue(#[from] CatalogueError),
     /// The folder of the books could not be read.
-    #[error("the folder of the books could not be read")]
+    #[error("{}", t!("app.error_books"))]
     Books(#[source] io::Error),
     /// The catalogue could not be opened and the unreadable file could not be
     /// moved aside to make a new one.
-    #[error("the damaged catalogue could not be moved aside")]
+    #[error("{}", t!("app.error_damaged"))]
     Damaged(#[source] io::Error),
 }
 

@@ -1,6 +1,7 @@
 //! Choosing a place of the book in a dialog: a chapter by its number and
 //! title, and optionally a heading or a named line inside it.
 
+use std::borrow::Cow;
 use std::rc::Rc;
 
 use gpui_kit::component::Disableable as _;
@@ -8,13 +9,17 @@ use gpui_kit::component::button::Button;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::{App, Entity, IntoElement, ParentElement as _, SharedString, Styled as _, px};
+use rust_i18n::t;
 
 use super::session::chapter_choice;
 use crate::features::edit_book::outline::{ChapterOutline, PlaceOutline};
 use crate::shared::ui::target_size;
 
 /// What the second menu calls the first line of a chapter.
-pub(super) const CHAPTER_START: &str = "Start of the chapter";
+pub(super) fn start_of_chapter() -> Cow<'static, str> {
+    t!("prompt.place.chapter_start")
+}
+
 /// The tallest a menu of chapters or places grows before it scrolls.
 const MENU_HEIGHT: f32 = 320.0;
 
@@ -86,12 +91,12 @@ pub(super) fn place_label(place: &PlaceOutline) -> String {
 /// The words of the control that chooses the chapter.
 pub(super) fn chapter_words(place: &Place, choices: &[ChapterChoice]) -> String {
     match &place.chapter {
-        None => "Choose a chapter".to_owned(),
+        None => t!("prompt.place.choose_chapter").into_owned(),
         Some(path) => choices
             .iter()
             .find(|choice| &choice.path == path)
             .map_or_else(
-                || format!("{path} (missing)"),
+                || t!("prompt.place.missing_chapter", path = path).into_owned(),
                 |choice| choice.label.clone(),
             ),
     }
@@ -100,14 +105,14 @@ pub(super) fn chapter_words(place: &Place, choices: &[ChapterChoice]) -> String 
 /// The words of the control that chooses the place inside the chapter.
 pub(super) fn place_words(place: &Place, choices: &[ChapterChoice]) -> String {
     let Some(anchor) = &place.anchor else {
-        return CHAPTER_START.to_owned();
+        return start_of_chapter().into_owned();
     };
     choices
         .iter()
         .find(|choice| Some(&choice.path) == place.chapter.as_ref())
         .and_then(|choice| choice.places.iter().find(|(name, _)| name == anchor))
         .map_or_else(
-            || format!("#{anchor} (missing)"),
+            || t!("prompt.place.missing_place", anchor = anchor).into_owned(),
             |(_, label)| label.trim_start().to_owned(),
         )
 }
@@ -169,7 +174,7 @@ pub(super) fn place_picker(
         let current = place.chapter.clone();
         Button::new(SharedString::from(format!("{id}-chapter")))
             .label(chapter_label.clone())
-            .accessibility_label(format!("Chapter, {chapter_label}"))
+            .accessibility_label(t!("prompt.place.chapter_spoken", label = chapter_label))
             .min_h(px(target_size()))
             .dropdown_caret(true)
             .dropdown_menu(move |menu, _, _| {
@@ -202,7 +207,7 @@ pub(super) fn place_picker(
         let has_chapter = chapter.is_some();
         Button::new(SharedString::from(format!("{id}-place")))
             .label(inner_label.clone())
-            .accessibility_label(format!("Place in the chapter, {inner_label}"))
+            .accessibility_label(t!("prompt.place.place_spoken", label = inner_label))
             .min_h(px(target_size()))
             .dropdown_caret(true)
             .disabled(!has_chapter)
@@ -225,7 +230,7 @@ pub(super) fn place_picker(
                 places.iter().fold(
                     menu.scrollable(true)
                         .max_h(px(MENU_HEIGHT))
-                        .item(item(CHAPTER_START.to_owned(), None)),
+                        .item(item(start_of_chapter().into_owned(), None)),
                     |menu, (anchor, label)| menu.item(item(label.clone(), Some(anchor.clone()))),
                 )
             })
@@ -240,8 +245,8 @@ pub(super) fn place_picker(
 #[cfg(test)]
 mod tests {
     use super::{
-        CHAPTER_START, Place, chapter_choices, chapter_words, heading_choices, place_label,
-        place_words,
+        Place, chapter_choices, chapter_words, heading_choices, place_label, place_words,
+        start_of_chapter,
     };
     use crate::features::edit_book::outline::{ChapterOutline, PlaceOutline};
 
@@ -314,7 +319,7 @@ mod tests {
         let choices = chapter_choices(&chapters());
         let nothing = Place::default();
         assert_eq!(chapter_words(&nothing, &choices), "Choose a chapter");
-        assert_eq!(place_words(&nothing, &choices), CHAPTER_START);
+        assert_eq!(place_words(&nothing, &choices), start_of_chapter());
         let deep = Place {
             chapter: Some("a.md".to_owned()),
             anchor: Some("deep".to_owned()),

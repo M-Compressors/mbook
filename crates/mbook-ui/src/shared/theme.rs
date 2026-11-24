@@ -194,13 +194,14 @@ impl PageTone {
         }
     }
 
-    pub(crate) const fn label(self) -> &'static str {
+    /// The name of the tone in the current language.
+    pub(crate) fn label(self) -> std::borrow::Cow<'static, str> {
         match self {
-            Self::Paper => "Paper",
-            Self::Neutral => "Neutral",
-            Self::Sepia => "Sepia",
-            Self::Night => "Night",
-            Self::HighContrast => "High contrast",
+            Self::Paper => rust_i18n::t!("tone.paper"),
+            Self::Neutral => rust_i18n::t!("tone.neutral"),
+            Self::Sepia => rust_i18n::t!("tone.sepia"),
+            Self::Night => rust_i18n::t!("tone.night"),
+            Self::HighContrast => rust_i18n::t!("tone.high_contrast"),
         }
     }
 

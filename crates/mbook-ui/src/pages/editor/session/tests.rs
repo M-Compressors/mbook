@@ -133,7 +133,7 @@ fn typing_marks_the_chapter_edited_and_the_book_unsaved() {
     assert!(session.is_edited("a.md"));
     assert!(!session.is_edited("b.md"));
     assert!(session.has_unsaved());
-    assert_eq!(session.status(false), Some("Unsaved changes"));
+    assert_eq!(session.status(false).as_deref(), Some("Unsaved changes"));
 }
 
 #[test]
@@ -228,7 +228,7 @@ fn a_picture_that_is_being_encoded_counts_as_unsaved() {
 #[test]
 fn the_header_says_saving_while_a_save_runs() {
     let session = session_with(&[]);
-    assert_eq!(session.status(true), Some("Saving"));
+    assert_eq!(session.status(true).as_deref(), Some("Saving"));
 }
 
 #[test]
@@ -366,7 +366,7 @@ fn a_picture_path_that_is_used_gets_a_number() {
 fn a_path_is_trimmed_and_an_empty_one_is_refused() {
     assert_eq!(clean_path("  ch01.md "), Ok("ch01.md".to_owned()));
     assert_eq!(
-        clean_path("   "),
+        clean_path("   ").as_ref().map_err(AsRef::as_ref),
         Err("Enter a file name, such as img/pond.avif.")
     );
     assert_eq!(required("", "Enter it."), Err("Enter it."));

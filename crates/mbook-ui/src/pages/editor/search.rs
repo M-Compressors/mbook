@@ -6,6 +6,7 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::{AppContext as _, Context, Entity, SharedString, Window};
 use markdown_editor::{BlockId, BlockPosition, BlockSelection};
 use regex::Regex;
+use rust_i18n::t;
 use unicode_segmentation::UnicodeSegmentation as _;
 
 use super::EditorPage;
@@ -126,8 +127,7 @@ impl EditorPage {
             ViewMode::Source | ViewMode::Split => Draft::Source(self.text.read(cx).value()),
             ViewMode::Preview => Draft::Preview(self.text.read(cx).value()),
             ViewMode::Visual if visual.is_readonly() => {
-                self.search
-                    .finish(None, "Open Source to search this chapter");
+                self.search.finish(None, t!("editor.search.open_source"));
                 cx.notify();
                 return None;
             }
@@ -156,8 +156,8 @@ impl EditorPage {
                 let feedback = hit.excerpt.clone();
                 self.search.finish(Some(hit), feedback);
             }
-            Ok(None) => self.search.finish(None, "No matches"),
-            Err(_) => self.search.finish(None, "This search is too long"),
+            Ok(None) => self.search.finish(None, t!("editor.search.no_matches")),
+            Err(_) => self.search.finish(None, t!("editor.search.too_long")),
         }
         cx.notify();
     }

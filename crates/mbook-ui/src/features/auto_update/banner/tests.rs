@@ -443,7 +443,7 @@ fn a_restart_waits_while_the_application_is_busy(cx: &mut TestAppContext) {
     // The application is still here, was told why, and can be asked again.
     assert_eq!(state(&started, cx), UpdateState::Installed(update("0.2.0")));
     assert_eq!(notifications(&started, cx), before + 1);
-    assert!(RESTART_WAITS.contains("close the editor"));
+    assert!(t!("update.restart_waits").contains("close the editor"));
 }
 
 #[gpui_kit::test]

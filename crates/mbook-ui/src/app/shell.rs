@@ -9,6 +9,8 @@ use gpui_kit::{
     AnyElement, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Pixels, Render,
     Styled as _, Subscription, Task, Window,
 };
+use rust_i18n::t;
+use std::borrow::Cow;
 use std::error::Error as _;
 
 use super::open::{OpenError, Opened as OpenedCatalogue, open_catalogue};
@@ -23,8 +25,9 @@ use crate::shared::ui::{announce, empty_state, fit_notifications, status_line};
 
 /// What the user is told once when the index of the library could not be read
 /// and was made again from the books.
-pub(super) const DAMAGED_NOTICE: &str =
-    "The library index was damaged and has been rebuilt. Reading places and settings were reset.";
+pub(super) fn damaged_notice() -> Cow<'static, str> {
+    t!("app.damaged_notice")
+}
 
 /// Where the start of the application is.
 enum State {
@@ -130,7 +133,7 @@ impl Shell {
             Err(error) => self.state = State::Failed(error),
             Ok(OpenedCatalogue { catalogue, damaged }) => {
                 if damaged {
-                    announce(DAMAGED_NOTICE, window, cx);
+                    announce(damaged_notice(), window, cx);
                 }
                 Store {
                     roots: self.roots.clone(),
@@ -153,6 +156,8 @@ impl Shell {
     }
 
     fn refresh<T>(&mut self, _: Entity<T>, window: &mut Window, cx: &mut Context<'_, Self>) {
+        // The language may have changed with the settings.
+        super::keys::sync_menus(cx);
         self.refresh_now(window, cx);
     }
 
@@ -213,7 +218,7 @@ impl Shell {
             .bg(theme.background)
             .text_color(theme.muted_foreground)
             .child(indicator)
-            .child(status_line("opening-status", "Opening your library"))
+            .child(status_line("opening-status", t!("app.opening")))
             .into_any_element()
     }
 
@@ -231,15 +236,13 @@ impl Shell {
             .text_color(cx.theme().foreground)
             .child(
                 empty_state(
-                    "mbook could not open your library",
-                    format!(
-                        "{reason}. Close other copies of mbook, check that its folder can be written to, and try again."
-                    ),
+                    t!("app.open_failed"),
+                    t!("app.open_failed_hint", reason = reason),
                 )
                 .action(
                     Button::new("retry")
                         .primary()
-                        .label("Try again")
+                        .label(t!("app.try_again"))
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, window, cx| this.open(window, cx))),
                 ),

@@ -1,0 +1,132 @@
+_version: 2
+landmark:
+  start:
+    en: "Where the text begins"
+    ru: "Начало текста"
+  notes:
+    en: "Notes"
+    ru: "Примечания"
+  glossary:
+    en: "Glossary"
+    ru: "Глоссарий"
+  index:
+    en: "Index"
+    ru: "Предметный указатель"
+  bibliography:
+    en: "Bibliography"
+    ru: "Библиография"
+  appendix:
+    en: "Appendix"
+    ru: "Приложение"
+  list_of_figures:
+    en: "List of figures"
+    ru: "Список иллюстраций"
+  list_of_tables:
+    en: "List of tables"
+    ru: "Список таблиц"
+  foreword:
+    en: "Foreword"
+    ru: "Вступительное слово"
+  preface:
+    en: "Preface"
+    ru: "Предисловие"
+  introduction:
+    en: "Introduction"
+    ru: "Введение"
+  prologue:
+    en: "Prologue"
+    ru: "Пролог"
+  epilogue:
+    en: "Epilogue"
+    ru: "Эпилог"
+  conclusion:
+    en: "Conclusion"
+    ru: "Заключение"
+  afterword:
+    en: "Afterword"
+    ru: "Послесловие"
+  title_page:
+    en: "Title page"
+    ru: "Титульный лист"
+  copyright:
+    en: "Copyright page"
+    ru: "Страница с авторскими правами"
+  dedication:
+    en: "Dedication"
+    ru: "Посвящение"
+  epigraph:
+    en: "Epigraph"
+    ru: "Эпиграф"
+  acknowledgements:
+    en: "Acknowledgements"
+    ru: "Благодарности"
+  about_the_author:
+    en: "About the author"
+    ru: "Об авторе"
+  colophon:
+    en: "Colophon"
+    ru: "Выходные сведения"
+  group:
+    looked_up:
+      en: "Looked up while reading"
+      ru: "Нужно во время чтения"
+    text:
+      en: "Parts of the text"
+      ru: "Части текста"
+    about_book:
+      en: "Pages about the book"
+      ru: "Страницы о книге"
+book:
+  err:
+    open:
+      en: "the book could not be opened"
+      ru: "не удалось открыть книгу"
+    read:
+      en: "the book could not be read"
+      ru: "не удалось прочитать книгу"
+    no_chapter:
+      en: "the book has no chapter %{index}"
+      ru: "в книге нет главы %{index}"
+    no_picture:
+      en: "the book has no such picture"
+      ru: "в книге нет такого изображения"
+    unusable:
+      en: "the file of the book is no longer usable"
+      ru: "файл книги больше нельзя использовать"
+catalogue:
+  err:
+    storage:
+      en: "the catalogue database failed"
+      ru: "сбой базы данных каталога"
+    newer_schema:
+      en: "the catalogue has schema version %{found}, and this application knows versions up to %{supported}"
+      ru: "версия схемы каталога — %{found}, а это приложение знает версии только до %{supported}"
+    folder:
+      en: "cannot list the folder of books %{path}"
+      ru: "не удаётся прочитать содержимое папки книг %{path}"
+    library:
+      en: "the catalogue could not be read or written"
+      ru: "не удалось прочитать или записать каталог"
+    delete:
+      en: "the file of a book could not be deleted"
+      ru: "не удалось удалить файл книги"
+picture:
+  err:
+    undecodable:
+      en: "the bytes are not a picture that can be decoded"
+      ru: "эти данные не являются изображением, которое можно декодировать"
+    decoder_thread:
+      en: "the picture decoder thread could not be started"
+      ru: "не удалось запустить поток декодирования изображений"
+    decoder_stopped:
+      en: "the picture decoder stopped unexpectedly"
+      ru: "декодер изображений неожиданно остановился"
+    too_many_pixels:
+      en: "the picture has %{pixels} pixels, more than the %{limit} allowed"
+      ru: "в изображении слишком много пикселей: %{pixels}, а допустимо не больше %{limit}"
+    unsupported:
+      en: "the picture is in a format that is not supported"
+      ru: "формат изображения не поддерживается"
+    encoding:
+      en: "the picture could not be encoded"
+      ru: "не удалось закодировать изображение"

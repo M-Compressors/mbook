@@ -2,18 +2,30 @@
 //! stands among the others. The names of the kinds are those of
 //! [`crate::entities::book::landmark`], which the reader lists too.
 
+use std::borrow::Cow;
+
 use mbook::Landmark;
+use rust_i18n::t;
 
 use crate::entities::book::landmark::display_name;
-pub(super) use crate::entities::book::landmark::{GROUPS, START, START_NAME, kind_name};
+pub(super) use crate::entities::book::landmark::{GROUPS, START, kind_name, start_name};
 use crate::features::edit_book::outline::ChapterOutline;
 
 /// What a reader gets from a marked start.
-pub(super) const START_EFFECT: &str =
-    "A new book opens here instead of at its cover or title page.";
+pub(super) fn start_effect() -> Cow<'static, str> {
+    t!("prompt.landmark.start_effect")
+}
+
 /// What a reader gets while the start is not marked.
-pub(super) const NO_START_EFFECT: &str =
-    "Not marked yet. A new book opens at its first page, which is often the title page.";
+pub(super) fn no_start_effect() -> Cow<'static, str> {
+    t!("prompt.landmark.no_start_effect")
+}
+
+/// The name of a kind, or, for a kind the editor does not know, the kind as
+/// the book writes it.
+pub(super) fn kind_words(id: &str) -> String {
+    display_name(id, "")
+}
 
 /// The name a landmark is listed by: its title, or the name of its kind, or,
 /// for a kind the editor does not know, the kind as the book writes it.
@@ -24,17 +36,9 @@ pub(super) fn landmark_name(landmark: &Landmark) -> String {
 /// What a landmark of a kind does for a reader, in one sentence.
 pub(super) fn kind_effect(id: Option<&str>) -> String {
     match id {
-        Some(START) => START_EFFECT.to_owned(),
-        Some(id) => {
-            let name = kind_name(id).unwrap_or(id);
-            format!(
-                "A reading application can list this place as “{name}” and take a reader straight to it."
-            )
-        }
-        None => {
-            "A reading application lists the place by its kind and takes a reader straight to it."
-                .to_owned()
-        }
+        Some(START) => start_effect().into_owned(),
+        Some(id) => t!("prompt.landmark.kind_effect", name = kind_words(id)).into_owned(),
+        None => t!("prompt.landmark.any_kind_effect").into_owned(),
     }
 }
 
@@ -87,7 +91,9 @@ pub(super) fn insertion_index(
 mod tests {
     use mbook::Landmark;
 
-    use super::{START, START_EFFECT, START_NAME, insertion_index, kind_effect, landmark_name};
+    use super::{
+        START, insertion_index, kind_effect, kind_words, landmark_name, start_effect, start_name,
+    };
     use crate::features::edit_book::outline::{ChapterOutline, PlaceOutline};
 
     fn chapters() -> Vec<ChapterOutline> {
@@ -118,7 +124,10 @@ mod tests {
             "Endnotes"
         );
         assert_eq!(landmark_name(&Landmark::new("notes", "", "a.md")), "Notes");
-        assert_eq!(landmark_name(&Landmark::new(START, "", "a.md")), START_NAME);
+        assert_eq!(
+            landmark_name(&Landmark::new(START, "", "a.md")),
+            start_name()
+        );
         assert_eq!(
             landmark_name(&Landmark::new("x-recipes", "", "a.md")),
             "x-recipes"
@@ -127,10 +136,17 @@ mod tests {
 
     #[test]
     fn the_effect_of_a_kind_names_it_as_a_reader_sees_it() {
-        assert_eq!(kind_effect(Some(START)), START_EFFECT);
+        assert_eq!(kind_effect(Some(START)), start_effect());
         assert!(kind_effect(Some("glossary")).contains("“Glossary”"));
         assert!(kind_effect(Some("x-recipes")).contains("“x-recipes”"));
         assert!(kind_effect(None).contains("by its kind"));
+    }
+
+    #[test]
+    fn a_kind_is_named_in_words_or_as_the_book_writes_it() {
+        assert_eq!(kind_words("glossary"), "Glossary");
+        assert_eq!(kind_words(START), start_name());
+        assert_eq!(kind_words("x-recipes"), "x-recipes");
     }
 
     #[test]

@@ -6,6 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use gpui_kit::{App, Window};
+use rust_i18n::t;
 
 use super::export;
 use crate::entities::catalogue::Store;
@@ -17,15 +18,15 @@ use crate::shared::ui::announce;
 #[derive(Debug, thiserror::Error)]
 pub(super) enum ShareError {
     /// The copy named after the book could not be made.
-    #[error("a copy of the book could not be made")]
+    #[error("{}", t!("library.share_copy"))]
     Copy(#[from] io::Error),
     /// The share sheet of the platform could not be shown.
     #[cfg(not(target_os = "android"))]
-    #[error("the share sheet could not be shown")]
+    #[error("{}", t!("library.share_sheet"))]
     Sheet(#[from] robius_share::Error),
     /// The activity of Android could not show the share sheet.
     #[cfg(target_os = "android")]
-    #[error("the share sheet could not be shown")]
+    #[error("{}", t!("library.share_sheet"))]
     Sheet(#[source] android::SheetError),
 }
 
@@ -71,7 +72,7 @@ mod android {
         #[error("{0}")]
         Java(String),
         /// The file is not one the activity may lend.
-        #[error("the file is not in the folder of shared files")]
+        #[error("{}", rust_i18n::t!("library.share_not_shared"))]
         NotShared,
     }
 
@@ -163,7 +164,12 @@ fn stage(source: &Path, folder: &Path, name: &str) -> io::Result<PathBuf> {
 
 /// The announcement of a book that could not be offered.
 fn failure(title: &str, error: &ShareError) -> String {
-    format!("Could not share {title}. {}.", error_chain(error))
+    t!(
+        "library.share_failed",
+        title = title,
+        reason = error_chain(error)
+    )
+    .into_owned()
 }
 
 #[cfg(test)]

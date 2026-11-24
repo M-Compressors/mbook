@@ -18,6 +18,7 @@ use gpui_kit::{
     ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
     TestSupportExt as _, Window, canvas, div, linear_color_stop, linear_gradient, px, relative,
 };
+use rust_i18n::t;
 
 use super::controls::{chapter_title, status_text};
 use super::keys::{
@@ -80,7 +81,7 @@ impl Render for ReaderPage {
         v_flex()
             .id("reader-page")
             .role(Role::Main)
-            .aria_label("Reader")
+            .aria_label(t!("reader.reader"))
             .test_support()
             .key_context(reader_context(show))
             .track_focus(&self.focus_handle)
@@ -240,7 +241,7 @@ impl ReaderPage {
         let border = cx.theme().border;
         let key = self.key;
         let mut leading = capsule(border).child(
-            icon_button("back", IconName::ChevronLeft, "Back")
+            icon_button("back", IconName::ChevronLeft, t!("reader.back"))
                 .rounded_full()
                 .track_focus(&self.handles.back)
                 .on_click(cx.listener(|this, _, _, cx| this.close(cx))),
@@ -252,7 +253,7 @@ impl ReaderPage {
         }
         if matches!(self.phase, Phase::Ready(_)) {
             trailing = trailing.child(
-                icon_button("find-book", IconName::Search, "Find in book")
+                icon_button("find-book", IconName::Search, t!("reader.find_in_book"))
                     .rounded_full()
                     .track_focus(&self.handles.search)
                     .on_click(cx.listener(|this, _, window, cx| this.show_search(window, cx))),
@@ -260,7 +261,7 @@ impl ReaderPage {
         }
         if ready {
             trailing = trailing.child(
-                icon_button("edit", IconName::Pencil, "Edit this book")
+                icon_button("edit", IconName::Pencil, t!("reader.edit_book"))
                     .rounded_full()
                     .track_focus(&self.handles.edit)
                     .on_click(cx.listener(move |_, _, _, cx| cx.emit(ReaderEvent::Edit(key)))),
@@ -279,14 +280,14 @@ impl ReaderPage {
     /// The control of the contents: a popover on an expanded window, a sheet
     /// otherwise.
     fn contents_control(&mut self, class: SizeClass, cx: &mut Context<'_, Self>) -> AnyElement {
-        let trigger = icon_button("contents", IconName::List, "Contents")
+        let trigger = icon_button("contents", IconName::List, t!("reader.contents"))
             .rounded_full()
             .track_focus(&self.handles.contents);
         let panel = self.contents.clone();
         self.panel_control(
             Panel::Contents,
             "contents-popover",
-            "Contents",
+            t!("reader.contents").into(),
             trigger,
             move || panel.clone().into_any_element(),
             class,
@@ -299,7 +300,7 @@ impl ReaderPage {
         let trigger = icon_button(
             "appearance",
             IconName::ALargeSmall,
-            "Text and page appearance",
+            t!("reader.appearance_panel"),
         )
         .rounded_full()
         .track_focus(&self.handles.appearance);
@@ -307,7 +308,7 @@ impl ReaderPage {
         self.panel_control(
             Panel::Appearance,
             "appearance-popover",
-            "Appearance",
+            t!("reader.appearance").into(),
             trigger,
             move || panel.clone().into_any_element(),
             class,
@@ -323,7 +324,7 @@ impl ReaderPage {
         &mut self,
         which: Panel,
         id: &'static str,
-        title: &'static str,
+        title: SharedString,
         trigger: Button,
         content: impl Fn() -> AnyElement + Clone + 'static,
         class: SizeClass,
@@ -355,10 +356,11 @@ impl ReaderPage {
                 this.set_panel(Some(which), cx);
                 let page = cx.entity().downgrade();
                 let content = content.clone();
+                let title = title.clone();
                 window.open_sheet_at(Placement::Bottom, cx, move |sheet, _, _| {
                     let page = page.clone();
                     sheet
-                        .title(title)
+                        .title(title.clone())
                         .size(relative(0.7))
                         .on_close(move |_, _, cx| {
                             page.update(cx, |page, cx| page.set_panel(None, cx)).ok();
@@ -418,7 +420,7 @@ impl ReaderPage {
             .hover(|style| style.opacity(1.0))
             .child(
                 Slider::new(&self.scrubber.slider)
-                    .accessibility_label("Reading position")
+                    .accessibility_label(t!("reader.reading_position"))
                     .bg(ink)
                     .text_color(ink),
             )
@@ -441,7 +443,7 @@ impl ReaderPage {
         let strip = div()
             .id("reader-footer-strip")
             .role(Role::Toolbar)
-            .aria_label("Reading controls")
+            .aria_label(t!("reader.reading_controls"))
             .test_support()
             .flex_none()
             .w_full()
@@ -562,9 +564,9 @@ impl ReaderPage {
             "previous-page",
             IconName::ChevronLeft,
             if paged {
-                "Previous page"
+                t!("reader.previous_page")
             } else {
-                "Scroll back"
+                t!("reader.scroll_back")
             },
         )
         .rounded_full()
@@ -573,7 +575,11 @@ impl ReaderPage {
         let next = icon_button(
             "next-page",
             IconName::ChevronRight,
-            if paged { "Next page" } else { "Scroll forward" },
+            if paged {
+                t!("reader.next_page")
+            } else {
+                t!("reader.scroll_forward")
+            },
         )
         .rounded_full()
         .track_focus(&self.handles.next)
@@ -585,7 +591,7 @@ impl ReaderPage {
         icon_button(
             "reader-return",
             IconName::Undo2,
-            "Return to previous passage",
+            t!("reader.return_to_passage"),
         )
         .rounded_full()
         .track_focus(&self.handles.return_to_passage)
@@ -600,7 +606,7 @@ impl ReaderPage {
     fn body(&mut self, cx: &mut Context<'_, Self>) -> AnyElement {
         match &self.phase {
             Phase::Opening => {
-                let text: SharedString = format!("Opening {}", self.title).into();
+                let text: SharedString = t!("reader.opening", title = self.title).into();
                 let indicator = if cx.reduce_motion() {
                     Icon::new(IconName::Loader).large().into_any_element()
                 } else {
@@ -618,33 +624,31 @@ impl ReaderPage {
                     .into_any_element()
             }
             Phase::Failed(reason) => empty_state(
-                "This book could not be opened",
-                format!("{reason}. Go back to the library and try again, or add the book again."),
+                t!("reader.open_failed"),
+                t!("reader.open_failed_hint", reason = reason),
             )
             .action(
                 Button::new("retry")
                     .primary()
-                    .label("Try again")
+                    .label(t!("reader.try_again"))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| this.start(cx))),
             )
             .into_any_element(),
-            Phase::Empty => empty_state(
-                "This book has no text",
-                "It has no chapters to read. Edit the book to add some.",
-            )
-            .into_any_element(),
+            Phase::Empty => {
+                empty_state(t!("reader.no_text"), t!("reader.no_text_hint")).into_any_element()
+            }
             Phase::Ready(reading) => match &reading.error {
                 Some(reason) => {
                     let index = reading.chapter;
                     empty_state(
-                        "This chapter could not be read",
-                        format!("{reason}. Try again, or go back to the library."),
+                        t!("reader.chapter_failed"),
+                        t!("reader.chapter_failed_hint", reason = reason),
                     )
                     .action(
                         Button::new("retry")
                             .primary()
-                            .label("Try again")
+                            .label(t!("reader.try_again"))
                             .cursor_pointer()
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.load_chapter(index, super::Arrival::Start, cx);

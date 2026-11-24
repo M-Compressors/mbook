@@ -1,0 +1,92 @@
+_version: 2
+# The menu bar of macOS.
+menu:
+  about:
+    en: "About %{name}"
+    ru: "О программе %{name}"
+  settings:
+    en: "Settings…"
+    ru: "Настройки…"
+  services:
+    en: "Services"
+    ru: "Службы"
+  quit:
+    en: "Quit %{name}"
+    ru: "Завершить %{name}"
+  file:
+    en: "File"
+    ru: "Файл"
+  add_book:
+    en: "Add a book…"
+    ru: "Добавить книгу…"
+  save:
+    en: "Save"
+    ru: "Сохранить"
+  edit:
+    en: "Edit"
+    ru: "Правка"
+  undo:
+    en: "Undo"
+    ru: "Отменить"
+  redo:
+    en: "Redo"
+    ru: "Повторить"
+  cut:
+    en: "Cut"
+    ru: "Вырезать"
+  copy:
+    en: "Copy"
+    ru: "Скопировать"
+  paste:
+    en: "Paste"
+    ru: "Вставить"
+  select_all:
+    en: "Select all"
+    ru: "Выбрать все"
+  find:
+    en: "Find…"
+    ru: "Найти…"
+# Opening the library, and the About dialog.
+app:
+  opening:
+    en: "Opening your library"
+    ru: "Открытие библиотеки"
+  damaged_notice:
+    en: "The library index was damaged and has been rebuilt. Reading places and settings were reset."
+    ru: "Индекс библиотеки был повреждён и создан заново. Места чтения и настройки сброшены."
+  open_failed:
+    en: "mbook could not open your library"
+    ru: "mbook не удалось открыть библиотеку"
+  open_failed_hint:
+    en: "%{reason}. Close other copies of mbook, check that its folder can be written to, and try again."
+    ru: "%{reason}. Закройте другие копии mbook, проверьте, что в его папку разрешена запись, и повторите попытку."
+  try_again:
+    en: "Try again"
+    ru: "Повторить"
+  error_folders:
+    en: "the folders of the library could not be prepared"
+    ru: "не удалось подготовить папки библиотеки"
+  error_catalogue:
+    en: "the catalogue could not be opened"
+    ru: "не удалось открыть каталог"
+  error_books:
+    en: "the folder of the books could not be read"
+    ru: "не удалось прочитать папку с книгами"
+  error_damaged:
+    en: "the damaged catalogue could not be moved aside"
+    ru: "не удалось переместить повреждённый каталог"
+  add_books:
+    en: "Add books"
+    ru: "Добавить книги"
+  books_filter:
+    en: "Books"
+    ru: "Книги"
+  about_version:
+    en: "Version %{version}"
+    ru: "Версия %{version}"
+  about_licence:
+    en: "MIT or Apache-2.0"
+    ru: "MIT или Apache-2.0"
+  close:
+    en: "Close"
+    ru: "Закрыть"

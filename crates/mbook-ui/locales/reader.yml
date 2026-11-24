@@ -1,0 +1,212 @@
+_version: 2
+reader:
+  reader:
+    en: "Reader"
+    ru: "Чтение"
+  book:
+    en: "Book"
+    ru: "Книга"
+  back:
+    en: "Back"
+    ru: "Назад"
+  find_in_book:
+    en: "Find in book"
+    ru: "Поиск по книге"
+  edit_book:
+    en: "Edit this book"
+    ru: "Редактировать книгу"
+  contents:
+    en: "Contents"
+    ru: "Оглавление"
+  go_to:
+    en: "Go to"
+    ru: "Перейти"
+  no_contents:
+    en: "This book has no contents"
+    ru: "В этой книге нет оглавления"
+  current_chapter:
+    en: "%{title}, current chapter"
+    ru: "%{title}, текущая глава"
+  chapter_number:
+    en: "Chapter %{number}"
+    ru: "Глава %{number}"
+  status:
+    en: "%{title}, %{percent}%"
+    ru: "%{title}, %{percent}%"
+  page_of:
+    en: "%{current} of %{total}"
+    ru: "%{current} из %{total}"
+  page_estimate:
+    en: "≈ %{current} of %{total}"
+    ru: "≈ %{current} из %{total}"
+  appearance:
+    en: "Appearance"
+    ru: "Оформление"
+  appearance_panel:
+    en: "Text and page appearance"
+    ru: "Оформление текста и страницы"
+  basic_appearance:
+    en: "Basic appearance"
+    ru: "Основное оформление"
+  advanced_appearance:
+    en: "Advanced appearance"
+    ru: "Дополнительное оформление"
+  reset_appearance:
+    en: "Reset appearance"
+    ru: "Сбросить оформление"
+  page_colour:
+    en: "Page colour"
+    ru: "Цвет страницы"
+  text_size:
+    en: "Text size"
+    ru: "Размер текста"
+  decrease_text_size:
+    en: "Decrease text size"
+    ru: "Уменьшить текст"
+  increase_text_size:
+    en: "Increase text size"
+    ru: "Увеличить текст"
+  standard_text_size:
+    en: "Standard text size"
+    ru: "Обычный размер текста"
+  enlarge_text:
+    en: "Enlarge text (44 pixels)"
+    ru: "Крупный текст (44 пикселя)"
+  pixels:
+    one:
+      en: "%{count} pixel"
+      ru: "%{count} пиксель"
+    few:
+      ru: "%{count} пикселя"
+    many:
+      ru: "%{count} пикселей"
+    other:
+      en: "%{count} pixels"
+      ru: "%{count} пикселя"
+  typeface:
+    en: "Typeface"
+    ru: "Шрифт"
+  line_height:
+    en: "Line height"
+    ru: "Межстрочный интервал"
+  decrease_line_height:
+    en: "Decrease line height"
+    ru: "Уменьшить межстрочный интервал"
+  increase_line_height:
+    en: "Increase line height"
+    ru: "Увеличить межстрочный интервал"
+  column:
+    en: "Wide-window column"
+    ru: "Колонка в широком окне"
+  decrease_column:
+    en: "Decrease column width"
+    ru: "Сузить колонку"
+  increase_column:
+    en: "Increase column width"
+    ru: "Расширить колонку"
+  column_width:
+    en: "%{width} ch"
+    ru: "%{width} симв."
+  paragraph_spacing:
+    en: "Paragraph spacing"
+    ru: "Отступ между абзацами"
+  decrease_paragraph_spacing:
+    en: "Decrease paragraph spacing"
+    ru: "Уменьшить отступ между абзацами"
+  increase_paragraph_spacing:
+    en: "Increase paragraph spacing"
+    ru: "Увеличить отступ между абзацами"
+  heavier_text:
+    en: "Heavier text"
+    ru: "Более жирный текст"
+  paged:
+    en: "Read one page at a time"
+    ru: "Читать по одной странице"
+  animate_pages:
+    en: "Animate page turns"
+    ru: "Анимировать перелистывание"
+  reduce_motion:
+    en: "Reduce motion"
+    ru: "Уменьшить движение"
+  hide_progress:
+    en: "Hide reading progress"
+    ru: "Скрыть прогресс чтения"
+  selected:
+    en: "%{name}, selected"
+    ru: "%{name}, выбрано"
+  reading_position:
+    en: "Reading position"
+    ru: "Место в книге"
+  reading_controls:
+    en: "Reading controls"
+    ru: "Управление чтением"
+  previous_page:
+    en: "Previous page"
+    ru: "Предыдущая страница"
+  next_page:
+    en: "Next page"
+    ru: "Следующая страница"
+  scroll_back:
+    en: "Scroll back"
+    ru: "Прокрутить назад"
+  scroll_forward:
+    en: "Scroll forward"
+    ru: "Прокрутить вперёд"
+  return_to_passage:
+    en: "Return to previous passage"
+    ru: "Вернуться к предыдущему месту"
+  opening:
+    en: "Opening %{title}"
+    ru: "Открывается «%{title}»"
+  open_failed:
+    en: "This book could not be opened"
+    ru: "Не удалось открыть книгу"
+  open_failed_hint:
+    en: "%{reason}. Go back to the library and try again, or add the book again."
+    ru: "%{reason}. Вернитесь в библиотеку и попробуйте снова или добавьте книгу заново."
+  no_text:
+    en: "This book has no text"
+    ru: "В этой книге нет текста"
+  no_text_hint:
+    en: "It has no chapters to read. Edit the book to add some."
+    ru: "В ней нет глав. Откройте книгу в редакторе, чтобы добавить их."
+  chapter_failed:
+    en: "This chapter could not be read"
+    ru: "Не удалось прочитать главу"
+  chapter_failed_hint:
+    en: "%{reason}. Try again, or go back to the library."
+    ru: "%{reason}. Попробуйте снова или вернитесь в библиотеку."
+  try_again:
+    en: "Try again"
+    ru: "Повторить"
+  search_too_long:
+    en: "This search is too long"
+    ru: "Слишком длинный запрос"
+  no_matches:
+    en: "No matches"
+    ru: "Совпадений нет"
+  search_incomplete:
+    en: "Search incomplete. %{reason}"
+    ru: "Поиск не завершён. %{reason}"
+  picture:
+    en: "Picture"
+    ru: "Изображение"
+  picture_failed:
+    en: "This picture could not be shown."
+    ru: "Не удалось показать изображение."
+  close:
+    en: "Close"
+    ru: "Закрыть"
+  zoom_in:
+    en: "Zoom in"
+    ru: "Увеличить"
+  zoom_out:
+    en: "Zoom out"
+    ru: "Уменьшить"
+  fit_to_window:
+    en: "Fit to window"
+    ru: "По размеру окна"
+chapter_view:
+  footnote:
+    en: "Footnote %{mark}"
+    ru: "Сноска %{mark}"

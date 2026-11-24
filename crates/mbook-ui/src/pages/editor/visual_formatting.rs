@@ -9,6 +9,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Window,
 };
 use markdown_editor::{BlockEditorState, BlockKind, EditorCommand, MarkKind, MarkState};
+use rust_i18n::t;
 
 use crate::shared::ui::icon_button;
 
@@ -19,26 +20,36 @@ pub(super) fn formatting(input: &Entity<BlockEditorState>, cx: &App) -> impl Int
     let kind = editor.block_kind_at_caret();
     let marks_enabled = enabled && kind.is_some() && kind != Some(BlockKind::CodeBlock);
     let marks = [
-        ("format-bold", IconName::Bold, "Bold", MarkKind::Bold),
+        (
+            "format-bold",
+            IconName::Bold,
+            t!("visual.bold"),
+            MarkKind::Bold,
+        ),
         (
             "format-italic",
             IconName::Italic,
-            "Italic",
+            t!("visual.italic"),
             MarkKind::Italic,
         ),
         (
             "format-strike",
             IconName::Strikethrough,
-            "Strikethrough",
+            t!("visual.strikethrough"),
             MarkKind::Strikethrough,
         ),
-        ("format-code", IconName::Code, "Inline code", MarkKind::Code),
+        (
+            "format-code",
+            IconName::Code,
+            t!("visual.inline_code"),
+            MarkKind::Code,
+        ),
     ];
     let structure = [
         (
             "format-quote",
             IconName::TextQuote,
-            "Quote",
+            t!("visual.quote"),
             EditorCommand::ToggleBlockquote,
             kind.is_some() && kind != Some(BlockKind::TableCell),
             model.in_blockquote(),
@@ -46,7 +57,7 @@ pub(super) fn formatting(input: &Entity<BlockEditorState>, cx: &App) -> impl Int
         (
             "format-outdent",
             IconName::ListIndentDecrease,
-            "Decrease list indent",
+            t!("visual.outdent"),
             EditorCommand::Outdent,
             model.can_outdent(),
             false,
@@ -54,7 +65,7 @@ pub(super) fn formatting(input: &Entity<BlockEditorState>, cx: &App) -> impl Int
         (
             "format-indent",
             IconName::ListIndentIncrease,
-            "Increase list indent",
+            t!("visual.indent"),
             EditorCommand::Indent,
             model.can_indent(),
             false,
@@ -63,7 +74,7 @@ pub(super) fn formatting(input: &Entity<BlockEditorState>, cx: &App) -> impl Int
     h_flex()
         .id("visual-formatting")
         .role(Role::Toolbar)
-        .aria_label("Text formatting")
+        .aria_label(t!("visual.formatting"))
         .gap_1()
         .flex_wrap()
         .child(style_menu(input.clone(), kind, enabled))
@@ -95,9 +106,9 @@ fn style_menu(
     enabled: bool,
 ) -> impl IntoElement {
     let label = match kind {
-        Some(BlockKind::CodeBlock) => "Code block".to_owned(),
-        Some(BlockKind::Heading { level }) => format!("Heading {level}"),
-        _ => "Normal text".to_owned(),
+        Some(BlockKind::CodeBlock) => t!("visual.code_block"),
+        Some(BlockKind::Heading { level }) => t!("visual.heading", level = level),
+        _ => t!("visual.normal_text"),
     };
     Button::new("visual-paragraph-style")
         .ghost()
@@ -109,7 +120,7 @@ fn style_menu(
                 menu.item(
                     command_item(
                         &input,
-                        "Normal text",
+                        t!("visual.normal_text"),
                         EditorCommand::SetBlockKind(BlockKind::Paragraph),
                     )
                     .checked(kind == Some(BlockKind::Paragraph)),
@@ -119,7 +130,7 @@ fn style_menu(
                     menu.item(
                         command_item(
                             &input,
-                            format!("Heading {level}"),
+                            t!("visual.heading", level = level),
                             EditorCommand::SetBlockKind(heading),
                         )
                         .checked(kind == Some(heading)),
@@ -134,23 +145,32 @@ fn style_menu(
 pub(super) fn insert_menu(input: Entity<BlockEditorState>, enabled: bool) -> impl IntoElement {
     Button::new("visual-insert")
         .ghost()
-        .label("Insert")
+        .label(t!("visual.insert"))
         .dropdown_caret(true)
         .disabled(!enabled)
         .dropdown_menu(move |menu, _, _| {
             [
-                ("Table", EditorCommand::InsertTable { rows: 3, cols: 3 }),
-                ("Code block", EditorCommand::SetCodeBlock { lang: None }),
                 (
-                    "Horizontal rule",
+                    t!("visual.table"),
+                    EditorCommand::InsertTable { rows: 3, cols: 3 },
+                ),
+                (
+                    t!("visual.code_block"),
+                    EditorCommand::SetCodeBlock { lang: None },
+                ),
+                (
+                    t!("visual.horizontal_rule"),
                     EditorCommand::InsertBlock(BlockKind::HorizontalRule),
                 ),
                 (
-                    "Bulleted list",
+                    t!("visual.bulleted_list"),
                     EditorCommand::ToggleList { ordered: false },
                 ),
-                ("Numbered list", EditorCommand::ToggleList { ordered: true }),
-                ("Task list", EditorCommand::ToggleTask),
+                (
+                    t!("visual.numbered_list"),
+                    EditorCommand::ToggleList { ordered: true },
+                ),
+                (t!("visual.task_list"), EditorCommand::ToggleTask),
             ]
             .into_iter()
             .fold(menu, |menu, (label, command)| {

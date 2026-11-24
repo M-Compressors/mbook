@@ -6,6 +6,7 @@ use std::rc::Rc;
 use gpui_kit::{Entity, Hsla, TestAppContext, WindowAppearance};
 
 use super::*;
+use crate::shared::i18n::{InterfaceLanguage, Language};
 use crate::testing::{self, Fixture};
 
 /// An appearance over a library in a temporary root, with the Kit
@@ -475,4 +476,114 @@ fn a_failure_of_the_catalogue_is_kept_until_a_write_succeeds(cx: &mut TestAppCon
         appearance.read_with(cx, |appearance, _| appearance.error().is_none()),
         "the settings were saved after all"
     );
+}
+
+#[gpui_kit::test]
+fn without_a_known_system_the_language_is_english(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let appearance = appearance(cx, &fixture);
+    cx.run_until_parked();
+    appearance.read_with(cx, |appearance, _| {
+        assert_eq!(appearance.system_language(), Language::English);
+        assert_eq!(appearance.language(), Language::English);
+    });
+}
+
+#[gpui_kit::test]
+fn a_language_that_follows_the_system_is_the_language_of_the_system(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    cx.update(|cx| cx.set_global(SystemLanguage::assumed(Language::Russian)));
+    let appearance = appearance(cx, &fixture);
+    cx.run_until_parked();
+    appearance.read_with(cx, |appearance, _| {
+        assert_eq!(appearance.system_language(), Language::Russian);
+        assert_eq!(appearance.language(), Language::Russian);
+    });
+}
+
+#[gpui_kit::test]
+fn a_chosen_language_wins_over_the_system(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    cx.update(|cx| cx.set_global(SystemLanguage::assumed(Language::Russian)));
+    let appearance = appearance(cx, &fixture);
+    cx.run_until_parked();
+    change(&appearance, cx, |settings| {
+        settings.language = Some(Language::English);
+    });
+    appearance.read_with(cx, |appearance, _| {
+        assert_eq!(appearance.language(), Language::English);
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        fixture.catalogue.settings().unwrap().language,
+        Some(Language::English),
+        "the choice is stored"
+    );
+}
+
+#[gpui_kit::test]
+fn a_test_does_not_change_the_language_of_the_process(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    cx.update(|cx| cx.set_global(SystemLanguage::assumed(Language::Russian)));
+    let appearance = appearance(cx, &fixture);
+    change(&appearance, cx, |settings| {
+        settings.language = Some(Language::Russian);
+    });
+    assert_eq!(Language::current(), Language::English);
+}
+
+#[gpui_kit::test]
+fn the_views_are_told_the_language_the_interface_is_drawn_in(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    let appearance = appearance(cx, &fixture);
+    cx.run_until_parked();
+    let told = |cx: &mut TestAppContext| {
+        cx.update(|cx| cx.try_global::<InterfaceLanguage>().map(|told| told.0))
+    };
+    assert_eq!(told(cx), Some(Language::English));
+    change(&appearance, cx, |settings| {
+        settings.language = Some(Language::Russian);
+    });
+    assert_eq!(told(cx), Some(Language::Russian));
+}
+
+// The two tests below set the language of the process, which every test
+// shares; they set English, which it already is, so no other test sees a
+// change.
+
+#[gpui_kit::test]
+fn the_application_makes_the_language_of_the_system_current_at_once(cx: &mut TestAppContext) {
+    let system = SystemLanguage::owning(Language::English);
+    assert_eq!(Language::current(), Language::English);
+    let fixture = Fixture::new();
+    cx.update(|cx| cx.set_global(system));
+    let appearance = appearance(cx, &fixture);
+    cx.run_until_parked();
+    appearance.read_with(cx, |appearance, _| {
+        assert!(appearance.owns_language);
+        assert_eq!(appearance.language(), Language::English);
+    });
+}
+
+#[gpui_kit::test]
+fn an_application_that_owns_the_language_sets_the_chosen_one(cx: &mut TestAppContext) {
+    let fixture = Fixture::new();
+    cx.update(|cx| cx.set_global(SystemLanguage::owning(Language::English)));
+    let appearance = appearance(cx, &fixture);
+    cx.run_until_parked();
+    // A choice that differs from what was projected, though it is English.
+    appearance.update(cx, |appearance, cx| {
+        appearance.projected_language = None;
+        appearance.update(|settings| settings.language = Some(Language::English), cx);
+    });
+    assert_eq!(Language::current(), Language::English);
+    assert_eq!(
+        cx.update(|cx| cx.try_global::<InterfaceLanguage>().map(|told| told.0)),
+        Some(Language::English)
+    );
+}
+
+#[test]
+fn the_language_of_the_system_is_one_the_interface_has() {
+    assert!(Language::ALL.contains(&Language::of_system()));
 }

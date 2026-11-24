@@ -3,6 +3,8 @@
 
 use std::time::Duration;
 
+use rust_i18n::t;
+
 use crate::entities::book::snapshot::BookSnapshot;
 
 /// How long the controls stay after the last sign of the user.
@@ -33,7 +35,12 @@ pub(super) fn plan(idle: Duration, held: bool) -> Plan {
 
 /// "Chapter title, 38%": what the line under the text says.
 pub(super) fn status_text(title: &str, permille: u16) -> String {
-    format!("{title}, {}%", permille.min(1000) / 10)
+    t!(
+        "reader.status",
+        title = title,
+        percent = permille.min(1000) / 10
+    )
+    .into_owned()
 }
 
 /// The title of the chapter at a place: the entry of the contents that
@@ -44,7 +51,7 @@ pub(super) fn chapter_title(snapshot: &BookSnapshot, chapter: usize, offset: u32
         .and_then(|entry| snapshot.contents.get(entry))
         .filter(|entry| entry.chapter == chapter && !entry.title.trim().is_empty())
         .map_or_else(
-            || format!("Chapter {}", chapter + 1),
+            || t!("reader.chapter_number", number = chapter + 1).into_owned(),
             |entry| entry.title.trim().to_owned(),
         )
 }

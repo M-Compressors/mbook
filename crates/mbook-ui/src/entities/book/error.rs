@@ -7,20 +7,20 @@
 #[non_exhaustive]
 pub(crate) enum BookError {
     /// The file could not be opened as a book.
-    #[error("the book could not be opened")]
+    #[error("{}", rust_i18n::t!("book.err.open"))]
     Open(#[source] mbook::Error),
     /// A chapter, a picture or a link could not be read from the file.
-    #[error("the book could not be read")]
+    #[error("{}", rust_i18n::t!("book.err.read"))]
     Read(#[source] mbook::Error),
     /// The book has no chapter with this index.
-    #[error("the book has no chapter {0}")]
+    #[error("{}", rust_i18n::t!("book.err.no_chapter", index = .0))]
     NoSuchChapter(usize),
     /// The book has no picture that this reference names.
-    #[error("the book has no such picture")]
+    #[error("{}", rust_i18n::t!("book.err.no_picture"))]
     NoSuchPicture,
     /// An earlier read panicked while it held the file, so the file cannot be
     /// trusted any more.
-    #[error("the file of the book is no longer usable")]
+    #[error("{}", rust_i18n::t!("book.err.unusable"))]
     Unusable,
 }
 

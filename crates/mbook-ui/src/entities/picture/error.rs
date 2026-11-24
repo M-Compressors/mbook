@@ -12,16 +12,16 @@ use thiserror::Error;
 pub(crate) enum PictureError {
     /// The bytes are not a picture that can be decoded: damaged, truncated, or
     /// not a picture at all.
-    #[error("the bytes are not a picture that can be decoded")]
+    #[error("{}", rust_i18n::t!("picture.err.undecodable"))]
     Undecodable(#[source] Box<dyn Error + Send + Sync>),
     /// The dedicated decoder thread could not be started.
-    #[error("the picture decoder thread could not be started")]
+    #[error("{}", rust_i18n::t!("picture.err.decoder_thread"))]
     DecoderThread(#[source] std::io::Error),
     /// The decoder thread stopped before returning a picture.
-    #[error("the picture decoder stopped unexpectedly")]
+    #[error("{}", rust_i18n::t!("picture.err.decoder_stopped"))]
     DecoderStopped,
     /// The picture has more pixels than the limit allows.
-    #[error("the picture has {pixels} pixels, more than the {limit} allowed")]
+    #[error("{}", rust_i18n::t!("picture.err.too_many_pixels", pixels = .pixels, limit = .limit))]
     TooManyPixels {
         /// The pixels the picture declares or has.
         pixels: u64,
@@ -30,10 +30,10 @@ pub(crate) enum PictureError {
     },
     /// The picture is in a format that is not read: AVIF, JPEG, PNG, GIF,
     /// WebP and BMP are.
-    #[error("the picture is in a format that is not supported")]
+    #[error("{}", rust_i18n::t!("picture.err.unsupported"))]
     UnsupportedFormat,
     /// The picture was decoded but could not be written in the target format.
-    #[error("the picture could not be encoded")]
+    #[error("{}", rust_i18n::t!("picture.err.encoding"))]
     Encoding(#[source] Box<dyn Error + Send + Sync>),
 }
 

@@ -8,12 +8,14 @@ use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Selectable as _, h_flex, v_flex};
 use gpui_kit::{
     AppContext as _, Context, Entity, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, Role, StatefulInteractiveElement as _, Styled as _, Subscription,
-    TestSupportExt as _, Window, div, px,
+    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Subscription, TestSupportExt as _, Window, div, px,
 };
+use rust_i18n::t;
 
 use crate::entities::catalogue::{LINE_HEIGHT, READING_FACES, ReadingFlow, Settings, TEXT_SIZE};
 use crate::features::appearance::Appearance;
+use crate::shared::i18n::count_text;
 use crate::shared::theme::PageTone;
 use crate::shared::ui::{icon_button, page_colors, target_size};
 
@@ -35,7 +37,23 @@ pub(super) fn step_line_height(height: f32, looser: bool) -> f32 {
 
 /// The size as it is read out: "18 pixels".
 pub(super) fn size_text(size: f32) -> String {
-    format!("{size:.0} pixels")
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a text size is a small positive number of pixels"
+    )]
+    let pixels = size.round().max(0.0) as usize;
+    count_text("reader.pixels", pixels)
+}
+
+/// What assistive technology hears for a choice: its name, and whether it
+/// is the one chosen.
+fn selected_name(name: &str, selected: bool) -> String {
+    if selected {
+        t!("reader.selected", name = name).into_owned()
+    } else {
+        name.to_owned()
+    }
 }
 
 /// The line height as it is read out: "1.6".
@@ -95,10 +113,9 @@ fn change(cx: &mut gpui_kit::App, change: impl FnOnce(&mut Settings)) {
 }
 
 /// One of the two buttons of a stepper.
-#[derive(Clone, Copy)]
 struct Step {
     id: &'static str,
-    label: &'static str,
+    label: SharedString,
     icon: IconName,
     disabled: bool,
     action: fn(&mut gpui_kit::App),
@@ -107,14 +124,14 @@ struct Step {
 impl Step {
     fn new(
         id: &'static str,
-        label: &'static str,
+        label: impl Into<SharedString>,
         icon: IconName,
         disabled: bool,
         action: fn(&mut gpui_kit::App),
     ) -> Self {
         Self {
             id,
-            label,
+            label: label.into(),
             icon,
             disabled,
             action,
@@ -130,12 +147,13 @@ fn step_button(step: Step) -> Button {
 }
 
 /// The title of a group of choices.
-fn section(id: &'static str, title: &'static str, muted: Hsla) -> impl IntoElement {
+fn section(id: &'static str, title: impl Into<SharedString>, muted: Hsla) -> impl IntoElement {
+    let title = title.into();
     div()
         .id(id)
         .role(Role::Heading)
         .aria_level(3)
-        .aria_label(title)
+        .aria_label(title.clone())
         .test_support()
         .text_sm()
         .text_color(muted)
@@ -172,11 +190,7 @@ fn choice(
     let button = Button::new(id)
         .outline()
         .label(name.to_owned())
-        .accessibility_label(if selected {
-            format!("{name}, selected")
-        } else {
-            name.to_owned()
-        })
+        .accessibility_label(selected_name(name, selected))
         .toggled(selected)
         .selected(selected)
         .w_full()
@@ -193,12 +207,8 @@ fn choice(
 
 /// A sample of the paper and ink, or a system appearance icon.
 fn tone_swatch(tone: Option<PageTone>, selected: bool, cx: &gpui_kit::App) -> Button {
-    let name = tone.map_or("Follow the system", PageTone::label);
-    let label = if selected {
-        format!("{name}, selected")
-    } else {
-        name.to_owned()
-    };
+    let name = tone.map_or_else(|| t!("settings.tone_system"), PageTone::label);
+    let label = selected_name(&name, selected);
     let id = format!("tone-{}", tone.map_or("system", PageTone::name));
     let theme = cx.theme();
     let (paper, ink) = tone.map_or((theme.background, theme.foreground), page_colors);
@@ -228,11 +238,15 @@ fn tone_swatch(tone: Option<PageTone>, selected: bool, cx: &gpui_kit::App) -> Bu
 }
 
 /// A named group of choices.
-fn group(id: &'static str, label: &'static str, choices: Vec<Button>) -> impl IntoElement {
+fn group(
+    id: &'static str,
+    label: impl Into<SharedString>,
+    choices: Vec<Button>,
+) -> impl IntoElement {
     v_flex()
         .id(id)
         .role(Role::Group)
-        .aria_label(label)
+        .aria_label(label.into())
         .test_support()
         .gap_1()
         .children(choices)
@@ -255,7 +269,7 @@ fn face_choices(current: &str, before: Option<&str>) -> impl IntoElement {
             )
         })
         .collect();
-    group("typefaces", "Typeface", faces)
+    group("typefaces", t!("reader.typeface"), faces)
 }
 
 impl Render for TypographyPanel {
@@ -266,7 +280,7 @@ impl Render for TypographyPanel {
             .id("appearance-panel")
             .key_context("ReaderAppearance")
             .role(Role::Group)
-            .aria_label("Text and page appearance")
+            .aria_label(t!("reader.appearance_panel"))
             .test_support()
             .w_full()
             .max_h(px(window.viewport_size().height.as_f32() * 0.61))
@@ -277,9 +291,9 @@ impl Render for TypographyPanel {
                 Button::new("reading-advanced")
                     .outline()
                     .label(if self.advanced {
-                        "Basic appearance"
+                        t!("reader.basic_appearance")
                     } else {
-                        "Advanced appearance"
+                        t!("reader.advanced_appearance")
                     })
                     .min_h(px(target_size()))
                     .on_click(cx.listener(|this, _, _, cx| {
@@ -290,7 +304,7 @@ impl Render for TypographyPanel {
             .child(
                 Button::new("reading-reset")
                     .outline()
-                    .label("Reset appearance")
+                    .label(t!("reader.reset_appearance"))
                     .min_h(px(target_size()))
                     .on_click(|_, window, cx| {
                         Appearance::global(cx)
@@ -307,7 +321,7 @@ fn basic(settings: &Settings, before: Option<&str>, cx: &gpui_kit::App) -> impl 
     let tones = h_flex()
         .id("tones")
         .role(Role::Group)
-        .aria_label("Page colour")
+        .aria_label(t!("reader.page_colour"))
         .test_support()
         .flex_wrap()
         .gap_2()
@@ -318,14 +332,18 @@ fn basic(settings: &Settings, before: Option<&str>, cx: &gpui_kit::App) -> impl 
         );
     v_flex()
         .gap_3()
-        .child(section("tone-heading", "Page colour", foreground))
+        .child(section(
+            "tone-heading",
+            t!("reader.page_colour"),
+            foreground,
+        ))
         .child(tones)
-        .child(section("size-heading", "Text size", foreground))
+        .child(section("size-heading", t!("reader.text_size"), foreground))
         .child(stepper(
             "text-size",
             Step::new(
                 "text-smaller",
-                "Decrease text size",
+                t!("reader.decrease_text_size"),
                 IconName::AArrowDown,
                 size <= MINIMUM_READER_SIZE,
                 |cx| {
@@ -334,7 +352,7 @@ fn basic(settings: &Settings, before: Option<&str>, cx: &gpui_kit::App) -> impl 
             ),
             Step::new(
                 "text-larger",
-                "Increase text size",
+                t!("reader.increase_text_size"),
                 IconName::AArrowUp,
                 size >= TEXT_SIZE.1,
                 |cx| {
@@ -347,9 +365,9 @@ fn basic(settings: &Settings, before: Option<&str>, cx: &gpui_kit::App) -> impl 
             Button::new("text-scale")
                 .outline()
                 .label(if size > STANDARD_MAX {
-                    "Standard text size"
+                    t!("reader.standard_text_size")
                 } else {
-                    "Enlarge text (44 pixels)"
+                    t!("reader.enlarge_text")
                 })
                 .min_h(px(target_size()))
                 .on_click(move |_, _, cx| {
@@ -362,7 +380,11 @@ fn basic(settings: &Settings, before: Option<&str>, cx: &gpui_kit::App) -> impl 
                     });
                 }),
         )
-        .child(section("typeface-heading", "Typeface", foreground))
+        .child(section(
+            "typeface-heading",
+            t!("reader.typeface"),
+            foreground,
+        ))
         .child(face_choices(&settings.typeface, before))
 }
 
@@ -372,12 +394,16 @@ fn advanced(settings: &Settings, foreground: Hsla) -> impl IntoElement {
     let gap = settings.reading.paragraph_gap;
     v_flex()
         .gap_2()
-        .child(section("line-heading", "Line height", foreground))
+        .child(section(
+            "line-heading",
+            t!("reader.line_height"),
+            foreground,
+        ))
         .child(stepper(
             "line-height",
             Step::new(
                 "line-tighter",
-                "Decrease line height",
+                t!("reader.decrease_line_height"),
                 IconName::Minus,
                 height <= LINE_HEIGHT.0,
                 |cx| {
@@ -388,7 +414,7 @@ fn advanced(settings: &Settings, foreground: Hsla) -> impl IntoElement {
             ),
             Step::new(
                 "line-looser",
-                "Increase line height",
+                t!("reader.increase_line_height"),
                 IconName::Plus,
                 height >= LINE_HEIGHT.1,
                 |cx| {
@@ -399,35 +425,35 @@ fn advanced(settings: &Settings, foreground: Hsla) -> impl IntoElement {
             ),
             line_height_text(height),
         ))
-        .child(section("column-heading", "Wide-window column", foreground))
+        .child(section("column-heading", t!("reader.column"), foreground))
         .child(stepper(
             "reading-column",
             Step::new(
                 "column-narrower",
-                "Decrease column width",
+                t!("reader.decrease_column"),
                 IconName::Minus,
                 column <= 45.0,
                 |cx| change(cx, |s| s.reading.column -= 5.0),
             ),
             Step::new(
                 "column-wider",
-                "Increase column width",
+                t!("reader.increase_column"),
                 IconName::Plus,
                 column >= 80.0,
                 |cx| change(cx, |s| s.reading.column += 5.0),
             ),
-            format!("{column:.0} ch"),
+            t!("reader.column_width", width = format!("{column:.0}")).into_owned(),
         ))
         .child(section(
             "paragraph-heading",
-            "Paragraph spacing",
+            t!("reader.paragraph_spacing"),
             foreground,
         ))
         .child(stepper(
             "paragraph-spacing",
             Step::new(
                 "paragraph-tighter",
-                "Decrease paragraph spacing",
+                t!("reader.decrease_paragraph_spacing"),
                 IconName::Minus,
                 gap <= 0.0,
                 |cx| {
@@ -439,7 +465,7 @@ fn advanced(settings: &Settings, foreground: Hsla) -> impl IntoElement {
             ),
             Step::new(
                 "paragraph-looser",
-                "Increase paragraph spacing",
+                t!("reader.increase_paragraph_spacing"),
                 IconName::Plus,
                 gap >= 2.0,
                 |cx| {
@@ -459,13 +485,13 @@ fn reading_behavior(settings: &Settings) -> impl IntoElement {
         .gap_2()
         .child(choice(
             "reading-heavy".to_owned(),
-            "Heavier text",
+            &t!("reader.heavier_text"),
             settings.reading.heavier,
             |cx| change(cx, |s| s.reading.heavier = !s.reading.heavier),
         ))
         .child(choice(
             "reading-paged".to_owned(),
-            "Read one page at a time",
+            &t!("reader.paged"),
             settings.reading.flow.is_paged(),
             |cx| {
                 change(cx, |s| {
@@ -480,7 +506,7 @@ fn reading_behavior(settings: &Settings) -> impl IntoElement {
         .children(settings.reading.flow.is_paged().then(|| {
             choice(
                 "reading-page-motion".to_owned(),
-                "Animate page turns",
+                &t!("reader.animate_pages"),
                 settings.reading.flow == ReadingFlow::AnimatedPages,
                 |cx| {
                     change(cx, |s| {
@@ -495,13 +521,13 @@ fn reading_behavior(settings: &Settings) -> impl IntoElement {
         }))
         .child(choice(
             "reading-reduced-motion".to_owned(),
-            "Reduce motion",
+            &t!("reader.reduce_motion"),
             settings.reduce_motion,
             |cx| change(cx, |s| s.reduce_motion = !s.reduce_motion),
         ))
         .child(choice(
             "reading-progress".to_owned(),
-            "Hide reading progress",
+            &t!("reader.hide_progress"),
             settings.reading.hide_progress,
             |cx| change(cx, |s| s.reading.hide_progress = !s.reading.hide_progress),
         ))

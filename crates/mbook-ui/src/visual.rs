@@ -18,6 +18,7 @@ use self::scenes::Library;
 use self::stage::{Look, Stage};
 use self::world::World;
 use crate::error::{Error, Result};
+use crate::shared::i18n::Language;
 
 /// The windows each screen is drawn in: a phone, a tablet and a desktop.
 const SIZES: [(f32, f32); 3] = [(390.0, 844.0), (800.0, 780.0), (1280.0, 780.0)];
@@ -27,8 +28,9 @@ fn can_render() -> bool {
     matches!(gpui_kit::platform::current_headless_renderer(), Ok(Some(_)))
 }
 
-/// Draws every screen of the application to a PNG file in `out`, and returns
-/// the files it wrote.
+/// Draws every screen of the application to a PNG file in `out`, with the
+/// interface in the language whose code is `language` (`en`, `ru`), and
+/// returns the files it wrote.
 ///
 /// Each screen is drawn 390, 800 and 1280 pixels wide in the light
 /// appearance, and 1280 pixels wide in the dark one. Reading samples are
@@ -45,13 +47,20 @@ fn can_render() -> bool {
 ///
 /// # Errors
 ///
-/// When a folder or a file cannot be written, when a book cannot be made, or
-/// when a screen cannot be put in its state. The screens that could be drawn
+/// When `language` is not a language of the interface, when a folder or a
+/// file cannot be written, when a book cannot be made, or when a screen
+/// cannot be put in its state. A screen is put in its state by the English
+/// names of its controls, so in another language some screens cannot be. The screens that could be drawn
 /// are written before the first of them is reported.
-pub fn render_screens(out: &Path) -> Result<Vec<PathBuf>> {
+pub fn render_screens(out: &Path, language: &str) -> Result<Vec<PathBuf>> {
+    let language = Language::from_code(language)
+        .ok_or_else(|| Error::Render(format!("the interface has no language {language}")))?;
     if !can_render() {
         return Ok(Vec::new());
     }
+    // The pictures are drawn in this process alone, which may set its
+    // language.
+    language.make_current();
     fs::create_dir_all(out)?;
     let empty = World::empty()?;
     let books = World::with_books()?;

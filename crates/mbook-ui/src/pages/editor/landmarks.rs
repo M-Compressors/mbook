@@ -4,14 +4,16 @@
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
 use gpui_kit::{
     AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
-    Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, px,
+    Role, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
+    div, px,
 };
 use mbook::Landmark;
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::commands::Origin;
 use super::landmark_kinds::{
-    NO_START_EFFECT, START, START_EFFECT, START_NAME, insertion_index, kind_name, landmark_name,
+    START, insertion_index, kind_words, landmark_name, no_start_effect, start_effect, start_name,
 };
 use super::landmark_prompt::{LandmarkRequest, ask_landmark};
 use super::place_picker::{ChapterChoice, Place, chapter_choices, chapter_words, place_words};
@@ -20,22 +22,6 @@ use super::sections::control;
 use super::session::Control;
 use crate::features::edit_book::command::Command;
 use crate::shared::ui::status_line;
-
-/// What the section says landmarks are for, in the words of a reader.
-pub(super) const LANDMARKS_HINT: &str = "Mark where the parts of the book are. A reading \
-     application can then open a new book where the text begins, and take a reader straight to \
-     the notes, the glossary or the index.";
-/// What the section says while the book has no chapter to mark.
-pub(super) const NO_CHAPTERS: &str = "Add a chapter before marking places in the book.";
-/// The words over the landmarks other than the start.
-pub(super) const OTHER_PLACES: &str = "Other places";
-/// What the section says when only the start, or nothing, is marked.
-pub(super) const NO_OTHER_PLACES: &str = "No other places are marked. Add the notes, the \
-     glossary, the index or any other part a reader may look for.";
-/// The control that marks the start.
-pub(super) const MARK_START: &str = "Mark where the text begins…";
-/// The control that adds a landmark other than the start.
-pub(super) const ADD_LANDMARK: &str = "Add a landmark…";
 
 /// Where a landmark leads, in words: its chapter, and its start or the place
 /// in it.
@@ -77,13 +63,17 @@ impl EditorPage {
         v_flex()
             .id("landmarks")
             .role(Role::Group)
-            .aria_label("Landmarks")
+            .aria_label(t!("prompt.landmarks.label"))
             .gap_5()
             .p_4()
             .max_w(px(640.0))
             .w_full()
-            .child(status_line("landmarks-hint", LANDMARKS_HINT).text_color(muted))
-            .children((!has_chapters).then(|| status_line("no-chapters-to-mark", NO_CHAPTERS)))
+            .child(status_line("landmarks-hint", t!("prompt.landmarks.hint")).text_color(muted))
+            .children(
+                (!has_chapters).then(|| {
+                    status_line("no-chapters-to-mark", t!("prompt.landmarks.no_chapters"))
+                }),
+            )
             .child(Self::render_start(
                 start,
                 start_target.as_deref(),
@@ -95,17 +85,20 @@ impl EditorPage {
                 v_flex()
                     .id("landmarks-other")
                     .role(Role::Group)
-                    .aria_label(OTHER_PLACES)
+                    .aria_label(t!("prompt.landmarks.other_places"))
                     .gap_2()
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(OTHER_PLACES))
-                    .children(
-                        others.is_empty().then(|| {
-                            status_line("no-other-places", NO_OTHER_PLACES).text_color(muted)
-                        }),
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(SharedString::from(t!("prompt.landmarks.other_places"))),
                     )
+                    .children(others.is_empty().then(|| {
+                        status_line("no-other-places", t!("prompt.landmarks.no_other_places"))
+                            .text_color(muted)
+                    }))
                     .child(v_flex().children(others))
                     .child(
-                        control("add-landmark", ADD_LANDMARK)
+                        control("add-landmark", t!("prompt.landmarks.add"))
                             .self_start()
                             .disabled(pending || !has_chapters)
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -129,9 +122,10 @@ impl EditorPage {
         cx: &Context<'_, Self>,
     ) -> impl IntoElement + use<> {
         let theme = cx.theme();
+        let start_words = start_name();
         let name = match target {
-            Some(target) => format!("{START_NAME}, {target}"),
-            None => format!("{START_NAME}, not marked"),
+            Some(target) => format!("{start_words}, {target}"),
+            None => t!("prompt.landmarks.start_not_marked", name = start_words).into_owned(),
         };
         let actions = match start {
             Some((index, landmark)) => {
@@ -140,16 +134,16 @@ impl EditorPage {
                     .gap_2()
                     .flex_wrap()
                     .child(
-                        control("edit-start", "Change…")
-                            .accessibility_label(format!("Change {name}"))
+                        control("edit-start", t!("prompt.landmarks.change"))
+                            .accessibility_label(t!("prompt.landmarks.change_named", name = name))
                             .disabled(pending || !has_chapters)
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 this.ask_landmark_at(index, &edited, window, cx);
                             })),
                     )
                     .child(
-                        control("remove-start", "Remove")
-                            .accessibility_label(format!("Remove {name}"))
+                        control("remove-start", t!("prompt.remove.ok"))
+                            .accessibility_label(t!("prompt.landmarks.remove_named", name = name))
                             .disabled(pending)
                             .on_click(cx.listener(move |_, _, window, cx| {
                                 Self::confirm_remove_landmark(index, removed.clone(), window, cx);
@@ -157,7 +151,7 @@ impl EditorPage {
                     )
             }
             None => h_flex().child(
-                control("mark-start", MARK_START)
+                control("mark-start", t!("prompt.landmarks.mark_start"))
                     .disabled(pending || !has_chapters)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.ask_new_landmark(Some(START), window, cx);
@@ -182,14 +176,18 @@ impl EditorPage {
                     .min_w_0()
                     .gap_1()
                     .p_4()
-                    .child(div().font_weight(FontWeight::SEMIBOLD).child(START_NAME))
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(SharedString::from(start_words)),
+                    )
                     .children(target.map(|target| div().child(target.to_owned())))
                     .child(div().text_sm().text_color(theme.muted_foreground).child(
-                        if target.is_some() {
-                            START_EFFECT
+                        SharedString::from(if target.is_some() {
+                            start_effect()
                         } else {
-                            NO_START_EFFECT
-                        },
+                            no_start_effect()
+                        }),
                     ))
                     .child(div().pt_2().child(actions)),
             )
@@ -207,11 +205,7 @@ impl EditorPage {
     ) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let name = landmark_name(landmark);
-        let kind = (!landmark.title.is_empty()).then(|| {
-            kind_name(&landmark.kind)
-                .unwrap_or(&landmark.kind)
-                .to_owned()
-        });
+        let kind = (!landmark.title.is_empty()).then(|| kind_words(&landmark.kind));
         let (edited, removed) = (landmark.clone(), landmark.clone());
         // Assistive technology hears the kind too when a title stands in
         // for it, as the eye sees it beside the title.
@@ -259,16 +253,16 @@ impl EditorPage {
                     ),
             )
             .child(
-                control(("edit-landmark", index), "Edit…")
-                    .accessibility_label(format!("Edit {spoken}"))
+                control(("edit-landmark", index), t!("prompt.landmarks.edit"))
+                    .accessibility_label(t!("prompt.landmarks.edit_named", name = spoken))
                     .disabled(pending || !has_chapters)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.ask_landmark_at(index, &edited, window, cx);
                     })),
             )
             .child(
-                control(("remove-landmark", index), "Remove")
-                    .accessibility_label(format!("Remove {spoken}"))
+                control(("remove-landmark", index), t!("prompt.remove.ok"))
+                    .accessibility_label(t!("prompt.landmarks.remove_named", name = spoken))
                     .disabled(pending)
                     .on_click(cx.listener(move |_, _, window, cx| {
                         Self::confirm_remove_landmark(index, removed.clone(), window, cx);
@@ -334,7 +328,10 @@ impl EditorPage {
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
-        let what = format!("the landmark “{}”", landmark_name(&landmark));
+        let what = t!(
+            "prompt.landmarks.remove_what",
+            name = landmark_name(&landmark)
+        );
         confirm_remove(&what, window, cx, move |this, window, cx| {
             let mut landmarks = this.session.landmarks().to_vec();
             if landmarks.get(index) != Some(&landmark) {

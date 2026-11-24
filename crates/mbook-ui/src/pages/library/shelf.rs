@@ -18,6 +18,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _, Window, div,
     list, px,
 };
+use rust_i18n::t;
 
 use super::LibraryPage;
 use super::cover::{cover_height, drawn_cover, thumbnail};
@@ -205,7 +206,7 @@ impl LibraryPage {
         div()
             .id("shelf")
             .role(gpui_kit::Role::List)
-            .aria_label("Books")
+            .aria_label(t!("library.shelf"))
             .test_support()
             .relative()
             .flex_1()
@@ -293,7 +294,7 @@ impl LibraryPage {
                 .px_2()
                 .py_0p5()
                 .font_weight(FontWeight::SEMIBOLD)
-                .child("NEW"),
+                .child(gpui_kit::SharedString::from(t!("library.new_badge"))),
             Progress::Reading(_) | Progress::Finished => div()
                 .text_color(theme.muted_foreground)
                 .child(progress.caption()),
@@ -361,7 +362,7 @@ impl LibraryPage {
         let more = icon_button(
             format!("more-{key}"),
             IconName::Ellipsis,
-            format!("Actions for {title}"),
+            t!("library.actions_for", title = title),
         )
         .track_focus(&more_focus)
         .tab_stop(false)

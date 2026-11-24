@@ -60,20 +60,20 @@ pub(crate) struct Imported {
 #[non_exhaustive]
 pub(crate) enum ImportError {
     /// The file, or the library, could not be read or written.
-    #[error("a file could not be read or written")]
+    #[error("{}", rust_i18n::t!("import.err.io"))]
     Io(#[from] io::Error),
     /// The file is in no format that can be converted, or the conversion
     /// failed.
-    #[error("the file could not be converted")]
+    #[error("{}", rust_i18n::t!("import.err.convert"))]
     Convert(#[from] mbook_converter::Error),
     /// The file is an mbook file that cannot be read.
-    #[error("the file is not a valid book")]
+    #[error("{}", rust_i18n::t!("import.err.invalid"))]
     Book(#[from] mbook::Error),
     /// The initial book could not be created or written.
-    #[error("the new book could not be written")]
+    #[error("{}", rust_i18n::t!("import.err.create"))]
     Create(#[source] mbook::Error),
     /// The book could not be recorded.
-    #[error("the book could not be added to the catalogue")]
+    #[error("{}", rust_i18n::t!("import.err.catalogue"))]
     Catalogue(#[from] CatalogueError),
 }
 

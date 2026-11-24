@@ -2,13 +2,15 @@
 //!
 //! The `settings` table is keyed by the name of a setting and holds its
 //! value as text: numbers in their shortest decimal form, booleans as `true`
-//! and `false`, a page tone by its name. A setting that is not stored has its
-//! default; a page tone that follows the system has no row. A stored value
+//! and `false`, a page tone by its name, a language by its code. A setting
+//! that is not stored has its default; a page tone or a language that follows
+//! the system has no row. A stored value
 //! that cannot be read, or is out of range, never fails a read: it is
 //! replaced by the default or brought into range (mbook-ui docs, "Settings").
 
 use std::collections::HashMap;
 
+use crate::shared::i18n::Language;
 use crate::shared::theme::PageTone;
 
 /// The names of the rows.
@@ -29,6 +31,8 @@ pub(super) mod name {
     pub(in crate::entities::catalogue) const REDUCE_MOTION: &str = "reduce_motion";
     /// Whether releases are checked.
     pub(in crate::entities::catalogue) const CHECK_UPDATES: &str = "check_updates";
+    /// The language of the interface.
+    pub(in crate::entities::catalogue) const LANGUAGE: &str = "language";
 }
 
 /// The range of the size of the text, in pixels.
@@ -116,6 +120,8 @@ pub(crate) struct Settings {
     pub(crate) reduce_motion: bool,
     /// Whether the releases of the repository are checked for an update.
     pub(crate) check_updates: bool,
+    /// The language of the interface; `None` follows the system.
+    pub(crate) language: Option<Language>,
 }
 
 impl Default for Settings {
@@ -130,13 +136,14 @@ impl Default for Settings {
             keep_controls: false,
             reduce_motion: false,
             check_updates: true,
+            language: None,
         }
     }
 }
 
 impl Settings {
     /// The rows that stand for these settings, as name and text. A page tone
-    /// that follows the system has none.
+    /// or a language that follows the system has none.
     pub(super) fn encode(&self) -> Vec<(&'static str, String)> {
         let mut rows = vec![
             (name::TYPEFACE, self.typeface.clone()),
@@ -164,6 +171,9 @@ impl Settings {
         }
         if let Some(tone) = self.page_tone {
             rows.push((name::PAGE_TONE, tone.name().to_owned()));
+        }
+        if let Some(language) = self.language {
+            rows.push((name::LANGUAGE, language.code().to_owned()));
         }
         rows
     }
@@ -206,6 +216,9 @@ impl Settings {
             keep_controls: flag(rows, name::KEEP_CONTROLS, default.keep_controls),
             reduce_motion: flag(rows, name::REDUCE_MOTION, default.reduce_motion),
             check_updates: flag(rows, name::CHECK_UPDATES, default.check_updates),
+            language: rows
+                .get(name::LANGUAGE)
+                .and_then(|code| Language::from_code(code)),
         }
     }
 }
@@ -248,6 +261,7 @@ mod tests {
         assert!(!settings.keep_controls);
         assert!(!settings.reduce_motion);
         assert!(settings.check_updates);
+        assert_eq!(settings.language, None, "the language follows the system");
     }
 
     #[test]
@@ -274,6 +288,7 @@ mod tests {
             keep_controls: true,
             reduce_motion: true,
             check_updates: false,
+            language: Some(Language::Russian),
         };
         let rows: HashMap<String, String> = settings
             .encode()
@@ -287,6 +302,28 @@ mod tests {
     fn a_page_tone_that_follows_the_system_has_no_row() {
         let rows = Settings::default().encode();
         assert!(rows.iter().all(|(key, _)| *key != name::PAGE_TONE));
+    }
+
+    #[test]
+    fn a_language_that_follows_the_system_has_no_row() {
+        let rows = Settings::default().encode();
+        assert!(rows.iter().all(|(key, _)| *key != name::LANGUAGE));
+    }
+
+    #[test]
+    fn a_chosen_language_is_stored_by_its_code() {
+        let settings = Settings {
+            language: Some(Language::English),
+            ..Settings::default()
+        };
+        let rows = settings.encode();
+        assert!(rows.contains(&(name::LANGUAGE, "en".to_owned())));
+    }
+
+    #[test]
+    fn an_unknown_language_follows_the_system() {
+        let settings = Settings::decode(&stored(&[(name::LANGUAGE, "de")]));
+        assert_eq!(settings.language, None);
     }
 
     #[test]

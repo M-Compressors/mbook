@@ -1,4 +1,5 @@
-//! The settings: typeface, text, page tone, interface, motion and updates.
+//! The settings: typeface, text, page tone, interface, language, motion and
+//! updates.
 //!
 //! One screen. Every control has a visible label that is also its name, and
 //! every change goes through [`Appearance::update`], so it shows at once: in
@@ -24,11 +25,12 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, TestSupportExt as _,
     Window, div, px, relative,
 };
+use rust_i18n::t;
 
 use self::choices::{
-    INTERFACE_PERCENT, INTERFACE_STEP, LINE_HEIGHT, TEXT_SIZE, TONES, Typeface, line_height_text,
-    same, scale_text, size_text, snap_line_height, snap_scale, snap_size, tone_index,
-    typeface_index, typeface_items,
+    INTERFACE_PERCENT, INTERFACE_STEP, LINE_HEIGHT, TEXT_SIZE, TONES, Typeface, language_index,
+    language_options, line_height_text, same, scale_text, size_text, snap_line_height, snap_scale,
+    snap_size, tone_index, tone_label, typeface_index, typeface_items,
 };
 use crate::entities::catalogue::{CatalogueError, Settings};
 use crate::features::appearance::Appearance;
@@ -36,6 +38,7 @@ use crate::features::appearance::Appearance;
 use crate::features::auto_update::UpdateBanner;
 use crate::features::update_banner;
 use crate::shared::actions::GoBack;
+use crate::shared::i18n::Language;
 use crate::shared::layout::SizeClass;
 use crate::shared::theme::PageTone;
 use crate::shared::ui::{back_button, icon_button, page_colors, page_header, status_line};
@@ -47,8 +50,11 @@ const SAMPLE_LATIN: &str =
     "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.";
 /// A sentence in Cyrillic letters, for the sample.
 const SAMPLE_CYRILLIC: &str = "Съешь же ещё этих мягких французских булок, да выпей чаю.";
+
 /// Why the updates are not offered.
-const NO_UPDATES: &str = "This build does not update itself";
+fn no_updates() -> String {
+    t!("settings.no_updates").into_owned()
+}
 
 /// What the settings ask the root to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,7 +223,7 @@ impl SettingsPage {
                     status: if banner.is_enabled() {
                         banner.state().summary()
                     } else {
-                        NO_UPDATES.to_owned()
+                        no_updates()
                     },
                 }
             }
@@ -246,7 +252,7 @@ impl Updates {
         Self {
             enabled: false,
             checking: false,
-            status: NO_UPDATES.to_owned(),
+            status: no_updates(),
         }
     }
 }
@@ -269,12 +275,13 @@ impl Focusable for SettingsPage {
 }
 
 /// The title of a group of settings.
-fn heading(id: &'static str, text: &'static str) -> impl IntoElement {
+fn heading(id: &'static str, text: impl Into<SharedString>) -> impl IntoElement {
+    let text = text.into();
     div()
         .id(id)
         .role(Role::Heading)
         .aria_level(2)
-        .aria_label(text)
+        .aria_label(text.clone())
         .test_support()
         .text_lg()
         .font_weight(FontWeight::SEMIBOLD)
@@ -293,21 +300,26 @@ fn value_text(id: &'static str, text: impl Into<SharedString>) -> impl IntoEleme
 }
 
 /// The visible label of a field.
-fn label(text: &'static str) -> Div {
-    div().font_weight(FontWeight::MEDIUM).child(text)
+fn label(text: impl Into<SharedString>) -> Div {
+    div().font_weight(FontWeight::MEDIUM).child(text.into())
 }
 
 /// A field: its visible label over its control.
-fn field(text: &'static str, control: impl IntoElement) -> Div {
+fn field(text: impl Into<SharedString>, control: impl IntoElement) -> Div {
     v_flex().w_full().gap_2().child(label(text)).child(control)
 }
 
 /// A field that is a group of choices, named by its label.
-fn choices(id: &'static str, text: &'static str, control: impl IntoElement) -> impl IntoElement {
+fn choices(
+    id: &'static str,
+    text: impl Into<SharedString>,
+    control: impl IntoElement,
+) -> impl IntoElement {
+    let text = text.into();
     v_flex()
         .id(id)
         .role(Role::Group)
-        .aria_label(text)
+        .aria_label(text.clone())
         .test_support()
         .w_full()
         .gap_2()
@@ -336,11 +348,11 @@ fn swatch(tone: PageTone, border: gpui_kit::Hsla) -> impl IntoElement {
 impl SettingsPage {
     fn typeface_field(&self) -> AnyElement {
         field(
-            "Typeface of books",
+            t!("settings.typeface"),
             Select::new(&self.typeface)
                 .id("typeface")
-                .accessibility_label("Typeface of books")
-                .search_placeholder("Search typefaces")
+                .accessibility_label(t!("settings.typeface"))
+                .search_placeholder(t!("settings.search_typefaces"))
                 .w_full(),
         )
         .into_any_element()
@@ -355,7 +367,7 @@ impl SettingsPage {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(label("Size of the text"))
+                    .child(label(t!("settings.text_size")))
                     .child(value_text("text-size-value", size_text(shown))),
             )
             .child(
@@ -364,17 +376,17 @@ impl SettingsPage {
                     .gap_2()
                     .items_center()
                     .child(
-                        icon_button("text-smaller", IconName::Minus, "Smaller text")
+                        icon_button("text-smaller", IconName::Minus, t!("settings.smaller_text"))
                             .disabled(size <= *TEXT_SIZE.start())
                             .on_click(|_, _, cx| {
                                 change(cx, |settings| settings.text_size -= 1.0);
                             }),
                     )
                     .child(div().flex_1().px_2().child(
-                        Slider::new(&self.text_size).accessibility_label("Size of the text"),
+                        Slider::new(&self.text_size).accessibility_label(t!("settings.text_size")),
                     ))
                     .child(
-                        icon_button("text-larger", IconName::Plus, "Larger text")
+                        icon_button("text-larger", IconName::Plus, t!("settings.larger_text"))
                             .disabled(size >= *TEXT_SIZE.end())
                             .on_click(|_, _, cx| {
                                 change(cx, |settings| settings.text_size += 1.0);
@@ -392,30 +404,28 @@ impl SettingsPage {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(label("Line height"))
+                    .child(label(t!("settings.line_height")))
                     .child(value_text("line-height-value", line_height_text(shown))),
             )
-            .child(
-                div()
-                    .w_full()
-                    .px_2()
-                    .child(Slider::new(&self.line_height).accessibility_label("Line height")),
-            )
+            .child(div().w_full().px_2().child(
+                Slider::new(&self.line_height).accessibility_label(t!("settings.line_height")),
+            ))
             .into_any_element()
     }
 
     fn page_tone_field(settings: &Settings, border: gpui_kit::Hsla) -> AnyElement {
         choices(
             "page-tone",
-            "Page tone",
+            t!("settings.page_tone"),
             RadioGroup::vertical("page-tone-options")
                 .selected_index(Some(tone_index(settings.page_tone)))
                 .on_click(|index, _, cx| {
-                    let tone = TONES.get(*index).and_then(|(tone, _)| *tone);
+                    let tone = TONES.get(*index).copied().flatten();
                     change(cx, |settings| settings.page_tone = tone);
                 })
-                .children(TONES.iter().map(|(tone, name)| {
-                    let radio = Radio::new(*name).label(*name);
+                .children(TONES.iter().map(|tone| {
+                    let name = tone_label(*tone);
+                    let radio = Radio::new(name.clone()).label(name);
                     match tone {
                         Some(tone) => radio.child(swatch(*tone, border)),
                         None => radio,
@@ -430,7 +440,7 @@ impl SettingsPage {
         v_flex()
             .id("settings-sample")
             .role(Role::Group)
-            .aria_label("Sample of the text")
+            .aria_label(t!("settings.sample"))
             .test_support()
             .w_full()
             .gap_2()
@@ -456,31 +466,32 @@ impl SettingsPage {
             .child(
                 h_flex()
                     .justify_between()
-                    .child(label("Size of the interface"))
+                    .child(label(t!("settings.interface_size")))
                     .child(value_text(
                         "interface-size-value",
                         scale_text(snap_scale(percent)),
                     )),
             )
-            .child(
-                div().w_full().px_2().child(
-                    Slider::new(&self.interface).accessibility_label("Size of the interface"),
-                ),
-            )
+            .child(div().w_full().px_2().child(
+                Slider::new(&self.interface).accessibility_label(t!("settings.interface_size")),
+            ))
             .into_any_element()
     }
 
     fn controls_field(settings: &Settings) -> AnyElement {
         choices(
             "reader-controls",
-            "Controls of the reader",
+            t!("settings.reader_controls"),
             RadioGroup::vertical("reader-controls-options")
                 .selected_index(Some(usize::from(settings.keep_controls)))
                 .on_click(|index, _, cx| {
                     let keep = *index == 1;
                     change(cx, |settings| settings.keep_controls = keep);
                 })
-                .children(["Hide while reading", "Always shown"]),
+                .children([
+                    SharedString::from(t!("settings.hide_while_reading")),
+                    SharedString::from(t!("settings.always_shown")),
+                ]),
         )
         .into_any_element()
     }
@@ -488,14 +499,36 @@ impl SettingsPage {
     fn motion_field(settings: &Settings) -> AnyElement {
         choices(
             "motion",
-            "Motion",
+            t!("settings.motion"),
             RadioGroup::vertical("motion-options")
                 .selected_index(Some(usize::from(settings.reduce_motion)))
                 .on_click(|index, _, cx| {
                     let reduce = *index == 1;
                     change(cx, |settings| settings.reduce_motion = reduce);
                 })
-                .children(["As the system says", "Reduced"]),
+                .children([
+                    SharedString::from(t!("settings.motion_system")),
+                    SharedString::from(t!("settings.motion_reduced")),
+                ]),
+        )
+        .into_any_element()
+    }
+
+    fn language_field(settings: &Settings, system: Language) -> AnyElement {
+        choices(
+            "language",
+            t!("settings.language"),
+            RadioGroup::vertical("language-options")
+                .selected_index(Some(language_index(settings.language)))
+                .on_click(|index, _, cx| {
+                    let language = language_options().get(*index).copied().flatten();
+                    change(cx, |settings| settings.language = language);
+                })
+                .children(
+                    language_options()
+                        .into_iter()
+                        .map(|language| choices::language_label(language, system)),
+                ),
         )
         .into_any_element()
     }
@@ -506,7 +539,7 @@ impl SettingsPage {
             .gap_3()
             .child(
                 Switch::new("check-updates")
-                    .label("Check for updates")
+                    .label(SharedString::from(t!("settings.check_updates")))
                     .checked(settings.check_updates)
                     .disabled(!updates.enabled)
                     .on_click(|checked, _, cx| {
@@ -516,12 +549,12 @@ impl SettingsPage {
             )
             .child(value_text(
                 "app-version",
-                format!("Version {}", env!("CARGO_PKG_VERSION")),
+                t!("settings.version", version = env!("CARGO_PKG_VERSION")),
             ))
             .child(
                 div().child(
                     Button::new("check-now")
-                        .label("Check now")
+                        .label(t!("settings.check_now"))
                         .min_h(px(crate::shared::ui::target_size()))
                         .disabled(!updates.enabled || updates.checking)
                         .on_click(|_, _, cx| check_now(cx)),
@@ -538,15 +571,16 @@ impl SettingsPage {
 /// a person. The changes stay in effect in the window; any change tries the
 /// write again.
 fn save_error_words(error: &CatalogueError) -> String {
-    format!(
-        "Settings could not be saved: {}. They still apply until the application closes; change a setting to try saving again.",
-        crate::features::import_book::error_chain(error)
+    t!(
+        "settings.save_failed",
+        reason = crate::features::import_book::error_chain(error)
     )
+    .into_owned()
 }
 
 impl Render for SettingsPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) -> impl IntoElement {
-        let (settings, class, tone, font, border) = {
+        let (settings, class, tone, font, border, system_language) = {
             let appearance = Appearance::global(cx).read(cx);
             (
                 appearance.settings().clone(),
@@ -554,6 +588,7 @@ impl Render for SettingsPage {
                 appearance.page_tone(window),
                 appearance.reading_font(cx),
                 crate::shared::ui::ChromeColors::from(&appearance.chrome(window)).outline,
+                appearance.system_language(),
             )
         };
         let updates = Self::updates(cx);
@@ -578,23 +613,24 @@ impl Render for SettingsPage {
                     .text_sm()
                     .text_color(cx.theme().danger)
             }))
-            .child(heading("reading-heading", "Reading"))
+            .child(heading("reading-heading", t!("settings.reading")))
             .child(self.typeface_field())
             .child(self.text_size_field(&settings, cx))
             .child(self.line_height_field(cx))
             .child(Self::page_tone_field(&settings, border))
             .child(Self::sample(&settings, tone, font, cx))
-            .child(heading("interface-heading", "Interface"))
+            .child(heading("interface-heading", t!("settings.interface")))
+            .child(Self::language_field(&settings, system_language))
             .child(self.interface_field(cx))
             .child(Self::controls_field(&settings))
             .child(Self::motion_field(&settings))
-            .child(heading("updates-heading", "Updates"))
+            .child(heading("updates-heading", t!("settings.updates")))
             .child(Self::updates_group(&settings, &updates));
 
         v_flex()
             .id("settings-page")
             .role(Role::Main)
-            .aria_label("Settings")
+            .aria_label(t!("settings.title"))
             .test_support()
             .key_context("Settings")
             .track_focus(&self.focus_handle)
@@ -603,7 +639,7 @@ impl Render for SettingsPage {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .child(
-                page_header("Settings").leading(
+                page_header(t!("settings.title")).leading(
                     back_button("back")
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(SettingsEvent::Close))),
                 ),

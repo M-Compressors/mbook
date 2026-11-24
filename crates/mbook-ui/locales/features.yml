@@ -1,0 +1,212 @@
+_version: 2
+import:
+  queued:
+    en: "Waiting"
+    ru: "В очереди"
+  probing:
+    en: "Looking at the file"
+    ru: "Проверка файла"
+  copying:
+    en: "Copying"
+    ru: "Копирование"
+  converting:
+    en: "Converting"
+    ru: "Преобразование"
+  indexing:
+    en: "Adding to the library"
+    ru: "Добавление в библиотеку"
+  added:
+    en: "Added"
+    ru: "Добавлено"
+  added_with_warnings:
+    one:
+      en: "Added, with %{count} warning"
+      ru: "Добавлено, %{count} предупреждение"
+    few:
+      ru: "Добавлено, %{count} предупреждения"
+    many:
+      ru: "Добавлено, %{count} предупреждений"
+    other:
+      en: "Added, with %{count} warnings"
+      ru: "Добавлено, %{count} предупреждения"
+  already:
+    en: "Already in the library"
+    ru: "Уже в библиотеке"
+  added_book:
+    en: "Added %{title}"
+    ru: "Добавлено: %{title}"
+  already_book:
+    en: "%{title} is already in the library"
+    ru: "«%{title}» уже есть в библиотеке"
+  not_added:
+    en: "%{name} could not be added: %{reason}"
+    ru: "Не удалось добавить %{name}: %{reason}"
+  err:
+    io:
+      en: "a file could not be read or written"
+      ru: "не удалось прочитать или записать файл"
+    convert:
+      en: "the file could not be converted"
+      ru: "не удалось преобразовать файл"
+    invalid:
+      en: "the file is not a valid book"
+      ru: "файл не является корректной книгой"
+    create:
+      en: "the new book could not be written"
+      ru: "не удалось записать новую книгу"
+    catalogue:
+      en: "the book could not be added to the catalogue"
+      ru: "не удалось добавить книгу в каталог"
+update:
+  checking:
+    en: "Checking for updates…"
+    ru: "Проверка обновлений…"
+  up_to_date:
+    en: "mbook is up to date"
+    ru: "У вас последняя версия mbook"
+  available:
+    en: "Version %{version} is available"
+    ru: "Доступна версия %{version}"
+  waiting:
+    en: "The update will be installed when the import or the edit is finished"
+    ru: "Обновление будет установлено, когда завершится импорт или редактирование"
+  installing:
+    en: "Downloading and verifying…"
+    ru: "Загрузка и проверка…"
+  restart_to_finish:
+    en: "Restart to finish"
+    ru: "Перезапустите, чтобы завершить"
+  check_failed:
+    en: "Could not check for updates: %{reason}"
+    ru: "Не удалось проверить обновления: %{reason}"
+  failed:
+    en: "The update failed: %{reason}"
+    ru: "Не удалось обновить: %{reason}"
+  installed:
+    en: "Version %{version} is installed. Restart to finish."
+    ru: "Версия %{version} установлена. Перезапустите, чтобы завершить."
+  being_installed:
+    en: "Version %{version} is being installed."
+    ru: "Устанавливается версия %{version}."
+  restart_waits:
+    en: "Finish the import or close the editor first; then restart to finish the update"
+    ru: "Сначала дождитесь конца импорта или закройте редактор, затем перезапустите, чтобы завершить обновление"
+  update:
+    en: "Update"
+    ru: "Обновить"
+  later:
+    en: "Later"
+    ru: "Позже"
+  restart:
+    en: "Restart"
+    ru: "Перезапустить"
+  try_again:
+    en: "Try again"
+    ru: "Повторить"
+  region:
+    en: "Application update"
+    ru: "Обновление приложения"
+  err:
+    releases:
+      en: "the releases of the repository could not be asked"
+      ru: "не удалось запросить выпуски из репозитория"
+    download:
+      en: "the update could not be downloaded"
+      ru: "не удалось загрузить обновление"
+    signature:
+      en: "the signature of the update is not valid"
+      ru: "подпись обновления недействительна"
+    unpack:
+      en: "the update could not be unpacked"
+      ru: "не удалось распаковать обновление"
+    missing:
+      en: "the update holds no %{file}"
+      ru: "в обновлении нет %{file}"
+    io:
+      en: "a file of the update could not be written"
+      ru: "не удалось записать файл обновления"
+    not_in_bundle:
+      en: "the running program is not inside an application bundle: %{path}"
+      ru: "запущенная программа находится не в пакете приложения: %{path}"
+    unsupported:
+      en: "updates cannot be installed on this platform"
+      ru: "на этой платформе нельзя устанавливать обновления"
+edit:
+  err:
+    open:
+      en: "the book could not be opened"
+      ru: "не удалось открыть книгу"
+    refused:
+      en: "the book refused the change"
+      ru: "книга не приняла изменение"
+    save:
+      en: "the book could not be saved"
+      ru: "не удалось сохранить книгу"
+    contents:
+      en: "the contents were not changed"
+      ru: "оглавление не изменено"
+    no_such_path:
+      en: "nothing in the book has the path %{path}"
+      ru: "в книге нет ничего по пути %{path}"
+    ended:
+      en: "the editing session has ended"
+      ru: "сеанс редактирования завершён"
+    automatic:
+      en: "the contents follow the headings, so there is no list to change"
+      ru: "оглавление строится по заголовкам, поэтому списка для изменения нет"
+    no_such_entry:
+      en: "the list has no entry at position %{position}"
+      ru: "в списке нет пункта на позиции %{position}"
+    no_title:
+      en: "an entry needs a title"
+      ru: "у пункта оглавления должно быть название"
+    no_such_place:
+      en: "the entry %{title} leads to no chapter or heading of the book"
+      ru: "пункт %{title} не ведёт ни к главе, ни к заголовку книги"
+    too_deep:
+      en: "an entry can be only one level under the entry above it"
+      ru: "пункт может быть только на один уровень ниже пункта над ним"
+    top_level:
+      en: "the entry is at the first level already"
+      ru: "пункт уже на первом уровне"
+search:
+  section:
+    all:
+      en: "All books"
+      ru: "Все книги"
+    reading:
+      en: "Reading"
+      ru: "Читаю"
+    finished:
+      en: "Finished"
+      ru: "Прочитано"
+  sort:
+    recent:
+      en: "Recent"
+      ru: "Недавние"
+    title:
+      en: "Title"
+      ru: "Название"
+    author:
+      en: "Author"
+      ru: "Автор"
+  progress:
+    new:
+      en: "New"
+      ru: "Новая"
+    finished:
+      en: "Finished"
+      ru: "Прочитано"
+  shelf:
+    by:
+      en: "%{title}, by %{authors}"
+      ru: "%{title}, %{authors}"
+    new:
+      en: "%{book}, new"
+      ru: "%{book}, новая"
+    read:
+      en: "%{book}, %{percent} percent read"
+      ru: "%{book}, прочитано %{percent}%"
+    finished:
+      en: "%{book}, finished"
+      ru: "%{book}, прочитана"

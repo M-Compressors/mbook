@@ -7,8 +7,10 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, WindowExt as _, h_flex, v_flex};
 use gpui_kit::{
     AnyElement, App, Entity, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
-    Role, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window, div, px,
+    Role, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
+    div, px,
 };
+use rust_i18n::t;
 
 use crate::features::import_book::{ImportEntry, ImportQueue, ImportStatus};
 use crate::shared::ui::{icon_button, status_line};
@@ -39,18 +41,18 @@ pub(super) fn imports_panel(
                 .id("imports-heading")
                 .role(Role::Heading)
                 .aria_level(2)
-                .aria_label("Imports")
+                .aria_label(t!("library.imports"))
                 .test_support()
                 .text_sm()
                 .font_weight(FontWeight::SEMIBOLD)
-                .child("Imports"),
+                .child(SharedString::from(t!("library.imports"))),
         )
         .children((finished > 0).then(|| {
             let queue = queue.clone();
             Button::new("imports-clear")
                 .ghost()
                 .small()
-                .label("Clear finished")
+                .label(t!("library.clear_finished"))
                 .cursor_pointer()
                 .on_click(move |_, _, cx| {
                     queue.update(cx, ImportQueue::clear_finished);
@@ -61,7 +63,7 @@ pub(super) fn imports_panel(
         v_flex()
             .id(LIST_ID)
             .role(Role::Group)
-            .aria_label("Imports")
+            .aria_label(t!("library.imports"))
             .test_support()
             .w_full()
             .gap_2()
@@ -126,35 +128,35 @@ fn import_row(entry: &ImportEntry, queue: &Entity<ImportQueue>, cx: &App) -> Any
             Button::new(format!("import-warnings-{id}"))
                 .ghost()
                 .small()
-                .label(if count == 1 {
-                    "1 warning".to_owned()
-                } else {
-                    format!("{count} warnings")
-                })
-                .accessibility_label(format!("Show the warnings of {name}"))
+                .label(crate::shared::i18n::count_text("library.warnings", count))
+                .accessibility_label(t!("library.show_warnings", name = name))
                 .cursor_pointer()
                 .on_click(move |_, window, cx| show_warnings(&shown, &warnings, window, cx))
                 .into_any_element()
         }))
         .children(status.is_finished().then(|| {
             let queue = queue.clone();
-            icon_button(format!("import-dismiss-{id}"), IconName::Close, "Dismiss")
-                .accessibility_label(format!("Dismiss {}", entry.display_name()))
-                .on_click(move |_, _, cx| {
-                    queue.update(cx, |queue, cx| {
-                        if let Some(index) = queue.entries().iter().position(|e| e.id() == id) {
-                            queue.dismiss(index, cx);
-                        }
-                    });
-                })
-                .into_any_element()
+            icon_button(
+                format!("import-dismiss-{id}"),
+                IconName::Close,
+                t!("library.dismiss"),
+            )
+            .accessibility_label(t!("library.dismiss_import", name = entry.display_name()))
+            .on_click(move |_, _, cx| {
+                queue.update(cx, |queue, cx| {
+                    if let Some(index) = queue.entries().iter().position(|e| e.id() == id) {
+                        queue.dismiss(index, cx);
+                    }
+                });
+            })
+            .into_any_element()
         }))
         .into_any_element()
 }
 
 /// Lists what the conversion could not keep.
 pub(super) fn show_warnings(name: &str, warnings: &[String], window: &mut Window, cx: &mut App) {
-    let title = format!("Warnings for {name}");
+    let title = SharedString::from(t!("library.warnings_for", name = name));
     let warnings = warnings.to_vec();
     window.open_alert_dialog(cx, move |alert, _, _| {
         alert
@@ -167,6 +169,6 @@ pub(super) fn show_warnings(name: &str, warnings: &[String], window: &mut Window
                     .gap_1()
                     .children(warnings.iter().map(|warning| div().child(warning.clone()))),
             )
-            .ok_text("Close")
+            .ok_text(t!("library.close"))
     });
 }

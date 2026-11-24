@@ -19,6 +19,7 @@ pub(crate) use root::{Root, show_about};
 #[cfg(feature = "visual")]
 pub(crate) use shell::Shell;
 
+use crate::features::appearance::SystemLanguage;
 use crate::shared::assets::{self, Assets};
 use crate::shared::compute;
 use crate::shared::roots::Roots;
@@ -42,6 +43,9 @@ pub fn run(application: Application, roots: Roots, files: Vec<PathBuf>) {
     });
     application.with_assets(Assets).run(move |cx| {
         gpui_kit::init(cx);
+        // Before the first screen, which is drawn in the language of the
+        // system until the settings are read.
+        cx.set_global(SystemLanguage::detect());
         assets::register_fonts(cx);
         keys::install(cx);
         opened::listen(urls, cx);

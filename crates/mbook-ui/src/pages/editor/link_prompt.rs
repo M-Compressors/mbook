@@ -1,6 +1,7 @@
 //! The dialog of a link: its words when none are selected, and where it
 //! leads, typed as an address or chosen as a place of the book.
 
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -11,6 +12,7 @@ use gpui_kit::{
     App, AppContext as _, Context, Entity, Focusable as _, FontWeight, IntoElement,
     ParentElement as _, SharedString, Styled as _, Window, div, px,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::markup::place_destination;
@@ -18,9 +20,14 @@ use super::place_picker::{ChapterChoice, OnPlace, Place, place_picker};
 use crate::shared::ui::{status_line, target_size};
 
 /// The label of the field that holds the words of a new link.
-pub(super) const TEXT_LABEL: &str = "Text of the link";
+pub(super) fn text_label() -> Cow<'static, str> {
+    t!("prompt.link.text_label")
+}
+
 /// The label of the field that holds where the link leads.
-pub(super) const ADDRESS_LABEL: &str = "Leads to";
+pub(super) fn address_label() -> Cow<'static, str> {
+    t!("prompt.link.address_label")
+}
 
 /// What the dialog starts from.
 pub(super) struct LinkRequest {
@@ -57,14 +64,14 @@ pub(super) enum LinkAnswer {
 pub(super) fn link_answer(
     text: Option<&str>,
     destination: &str,
-) -> Result<LinkAnswer, &'static str> {
+) -> Result<LinkAnswer, Cow<'static, str>> {
     let text = match text.map(str::trim) {
-        Some("") => return Err("Enter the text of the link."),
+        Some("") => return Err(t!("prompt.link.no_text")),
         text => text.map(|text| text.replace(['\n', '\r', '\t'], " ")),
     };
     let destination = destination.trim();
     if destination.is_empty() {
-        return Err("Enter a web address, or choose a place in this book.");
+        return Err(t!("prompt.link.no_address"));
     }
     Ok(LinkAnswer::Set {
         text,
@@ -87,20 +94,24 @@ impl Fields {
     /// book, what is still missing, and the control that removes the link.
     fn form(&self, ask_text: bool, remove: Option<Button>, cx: &App) -> impl IntoElement + use<> {
         let theme = cx.theme().clone();
-        let label = |words: &'static str| div().font_weight(FontWeight::MEDIUM).child(words);
+        let label = |words: Cow<'static, str>| {
+            div()
+                .font_weight(FontWeight::MEDIUM)
+                .child(SharedString::from(words))
+        };
         v_flex()
             .gap_2()
             .children(ask_text.then(|| {
                 v_flex()
                     .gap_1()
-                    .child(label(TEXT_LABEL))
-                    .child(Input::new(&self.text).aria_label(TEXT_LABEL))
+                    .child(label(text_label()))
+                    .child(Input::new(&self.text).aria_label(text_label()))
             }))
             .child(
                 v_flex()
                     .gap_1()
-                    .child(label(ADDRESS_LABEL))
-                    .child(Input::new(&self.address).aria_label(ADDRESS_LABEL)),
+                    .child(label(address_label()))
+                    .child(Input::new(&self.address).aria_label(address_label())),
             )
             .child(
                 v_flex()
@@ -109,7 +120,7 @@ impl Fields {
                         div()
                             .text_sm()
                             .text_color(theme.muted_foreground)
-                            .child("Type a web address, or choose a place in this book:"),
+                            .child(SharedString::from(t!("prompt.link.choose_hint"))),
                     )
                     .child(place_picker(
                         "link",
@@ -183,7 +194,7 @@ pub(super) fn ask_link(
         let remove = editing.then(|| {
             let (page, answer) = (page.clone(), answer.clone());
             Button::new("link-remove")
-                .label("Remove the link")
+                .label(t!("prompt.link.remove"))
                 .ghost()
                 .min_h(px(target_size()))
                 .on_click(move |_, window, cx| {
@@ -199,14 +210,18 @@ pub(super) fn ask_link(
         let (text, address, error) = (text.clone(), address.clone(), error.clone());
         alert
             .title(if editing {
-                "Edit the link"
+                t!("prompt.link.edit_title")
             } else {
-                "Add a link"
+                t!("prompt.link.add_title")
             })
             .description(form)
             .confirm()
-            .ok_text(if editing { "Apply" } else { "Add the link" })
-            .cancel_text("Cancel")
+            .ok_text(if editing {
+                t!("prompt.apply")
+            } else {
+                t!("prompt.link.add")
+            })
+            .cancel_text(t!("prompt.cancel"))
             .on_ok(move |_, window, cx| {
                 let words = ask_text.then(|| text.read(cx).value().to_string());
                 match link_answer(words.as_deref(), &address.read(cx).value()) {
@@ -258,11 +273,11 @@ mod tests {
     fn an_empty_field_is_named() {
         assert_eq!(
             link_answer(Some("  "), "ch02.md"),
-            Err("Enter the text of the link.")
+            Err("Enter the text of the link.".into())
         );
         assert_eq!(
             link_answer(None, " "),
-            Err("Enter a web address, or choose a place in this book.")
+            Err("Enter a web address, or choose a place in this book.".into())
         );
     }
 }

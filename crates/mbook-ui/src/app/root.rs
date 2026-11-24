@@ -13,6 +13,8 @@ use gpui_kit::{
     div,
 };
 
+use rust_i18n::t;
+
 use crate::entities::catalogue::Library;
 use crate::features::import_book::BOOK_FILE_EXTENSIONS;
 use crate::pages::editor::{EditorEvent, EditorPage};
@@ -264,7 +266,8 @@ impl Root {
     /// Asks which files to add, in the dialog of the platform.
     fn on_open_file(&mut self, _: &OpenFile, window: &mut Window, cx: &mut Context<'_, Self>) {
         self.prompt = Some(cx.spawn_in(window, async move |this, cx| {
-            match file_picker::choose("Add books", "Books", BOOK_FILE_EXTENSIONS, true).await {
+            let (title, filter) = (t!("app.add_books"), t!("app.books_filter"));
+            match file_picker::choose(&title, &filter, BOOK_FILE_EXTENSIONS, true).await {
                 Ok(Some(paths)) => {
                     this.update_in(cx, |this, window, cx| this.import(paths, window, cx))
                         .ok();
@@ -292,8 +295,6 @@ impl Root {
     }
 }
 
-/// The licence of the application, as the dialog says it.
-const LICENCE: &str = "MIT or Apache-2.0";
 /// The repository of the application.
 const REPOSITORY: &str = "https://github.com/M-Compressors/mbook";
 
@@ -319,9 +320,10 @@ pub(crate) fn show_about(_: &About, window: &mut Window, cx: &mut App) {
                     .gap_1()
                     .child(about_line(
                         "about-version",
-                        format!("Version {}", env!("CARGO_PKG_VERSION")),
+                        t!("app.about_version", version = env!("CARGO_PKG_VERSION")),
                     ))
-                    .child(about_line("about-licence", LICENCE))
+                    // The licence of the application, as the dialog says it.
+                    .child(about_line("about-licence", t!("app.about_licence")))
                     .child(
                         div()
                             .id("about-repository")
@@ -335,7 +337,7 @@ pub(crate) fn show_about(_: &About, window: &mut Window, cx: &mut App) {
                             ),
                     ),
             )
-            .ok_text("Close")
+            .ok_text(t!("app.close"))
     });
 }
 

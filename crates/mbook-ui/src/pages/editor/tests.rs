@@ -19,18 +19,18 @@ use mbook::{Book, BookReader, Landmark};
 
 use super::commands::{ChapterOp, Origin, TYPING_PAUSE};
 use super::contents::{
-    ADD_ENTRY, AUTOMATIC_HINT, FOLLOW_HEADINGS, IN_BOOK_ORDER, NEST, NO_HEADINGS, STORED_HINT,
-    UNNEST, nowhere_words, order_words,
+    add_entry, automatic_hint, follow_headings, in_book_order, nest, no_headings, nowhere_words,
+    order_words, stored_hint, unnest,
 };
 use super::encode::Target;
-use super::entry_prompt::{NO_PLACE, NO_TITLE, TITLE_LABEL};
-use super::files::PLACE_LATER;
-use super::files::{NEW_CHAPTER_LABEL, RENAME_LABEL, record_save};
-use super::link_prompt::{ADDRESS_LABEL, TEXT_LABEL};
-use super::panels::OPEN_CONTENTS;
-use super::picture_prompt::DESCRIPTION_LABEL;
+use super::entry_prompt::{no_place, no_title, title_label};
+use super::files::place_later;
+use super::files::{new_chapter_label, record_save, rename_label};
+use super::link_prompt::{address_label, text_label};
+use super::panels::open_contents;
+use super::picture_prompt::description_label;
 use super::session::{Control, Phase, Section, ViewMode};
-use super::visual_pictures::{CHOOSE_FIRST, INSERT, NO_PICTURES};
+use super::visual_pictures::{choose_first, insert, no_pictures};
 use super::{EditorEvent, EditorPage};
 use crate::entities::catalogue::{Library, Store};
 use crate::features::appearance::Appearance;
@@ -1018,7 +1018,7 @@ fn the_visual_link_dialog_wraps_selected_text(cx: &mut TestAppContext) {
     select_visual(&setup, "See the book.", 4..12, cx);
     click(&setup, "visual-link", cx);
     frame(&setup, cx, |window, cx| {
-        assert!(window.try_find_by_label(TEXT_LABEL).is_none());
+        assert!(window.try_find_by_label(&text_label()).is_none());
         window.input("https://example.com", cx);
     });
     click_named(&setup, "Add the link", cx);
@@ -1105,7 +1105,7 @@ fn visual_inserts_and_previews_a_picture_relative_to_the_chapter(cx: &mut TestAp
         assert!(window.try_find_by_label("img/sand.avif, chosen").is_some());
         window.input("Sand & [dunes]", cx);
     });
-    click_named(&setup, INSERT, cx);
+    click_named(&setup, &insert(), cx);
     click(&setup, "visual-image-preview", cx);
     frame(&setup, cx, |_, _| ());
     cx.run_until_parked();
@@ -1314,7 +1314,7 @@ fn the_chapter_menu_opens_the_rename_dialog(cx: &mut TestAppContext) {
     choose(&setup, "Rename the file…", cx);
     frame(&setup, cx, |window, cx| {
         assert_eq!(
-            window.find_by_label(RENAME_LABEL).role(),
+            window.find_by_label(&rename_label()).role(),
             Some(Role::TextInput)
         );
         window.press("cmd-a", cx);
@@ -2050,7 +2050,7 @@ fn a_new_chapter_is_asked_for_by_its_title_and_starts_with_it_as_a_heading(
     assert!(dialog_is_open(&setup, cx));
     frame(&setup, cx, |window, cx| {
         assert_eq!(
-            window.find_by_label(NEW_CHAPTER_LABEL).role(),
+            window.find_by_label(&new_chapter_label()).role(),
             Some(Role::TextInput)
         );
         assert_eq!(window.find_by_label("Cancel").role(), Some(Role::Button));
@@ -2547,24 +2547,24 @@ fn the_picture_dialog_asks_for_a_picture_before_it_inserts(cx: &mut TestAppConte
     click(&setup, "visual-image", cx);
     frame(&setup, cx, |window, _| {
         assert_eq!(
-            window.find_by_label(DESCRIPTION_LABEL).role(),
+            window.find_by_label(&description_label()).role(),
             Some(Role::TextInput)
         );
         assert_eq!(window.find("picture-upload").role(), Some(Role::Button));
     });
-    click_named(&setup, INSERT, cx);
+    click_named(&setup, &insert(), cx);
     assert!(dialog_is_open(&setup, cx));
     frame(&setup, cx, |window, _| {
         assert_eq!(
             window.find("picture-choice-error").label(),
-            Some(CHOOSE_FIRST)
+            Some(choose_first().as_ref())
         );
     });
     click_named(&setup, "img/sand.avif", cx);
     frame(&setup, cx, |window, _| {
         assert!(window.try_find("picture-choice-error").is_none());
     });
-    click_named(&setup, INSERT, cx);
+    click_named(&setup, &insert(), cx);
     assert!(!dialog_is_open(&setup, cx));
     assert_eq!(editor_text(&setup, cx), "![](../img/sand.avif)");
 }
@@ -2574,8 +2574,11 @@ fn the_picture_dialog_of_a_book_without_pictures_offers_a_file(cx: &mut TestAppC
     let setup = started(cx, 1280.0);
     click(&setup, "visual-image", cx);
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("no-book-pictures").label(), Some(NO_PICTURES));
-        assert!(window.try_find_by_label(DESCRIPTION_LABEL).is_none());
+        assert_eq!(
+            window.find("no-book-pictures").label(),
+            Some(no_pictures().as_ref())
+        );
+        assert!(window.try_find_by_label(&description_label()).is_none());
         assert_eq!(window.find("picture-upload").role(), Some(Role::Button));
     });
     click_named(&setup, "Cancel", cx);
@@ -2608,7 +2611,7 @@ fn a_picture_file_dropped_on_a_chapter_joins_the_book_and_the_text(cx: &mut Test
     assert!(dialog_is_open(&setup, cx));
     frame(&setup, cx, |window, cx| {
         assert_eq!(
-            window.find_by_label(DESCRIPTION_LABEL).role(),
+            window.find_by_label(&description_label()).role(),
             Some(Role::TextInput)
         );
         window.input("A pond", cx);
@@ -2645,7 +2648,7 @@ fn a_picture_that_arrives_after_its_chapter_was_left_is_kept_out_of_the_text(
     assert_eq!(state(&setup, cx, |page| page.session.pictures().len()), 1);
     assert_eq!(editor_text(&setup, cx), CHAPTERS[1].1);
     assert!(state(&setup, cx, |page| page.encoder.placing.is_none()));
-    assert_ne!(PLACE_LATER, "");
+    assert_ne!(place_later(), "");
 }
 
 #[gpui_kit::test]
@@ -2678,7 +2681,7 @@ fn a_picture_the_book_refuses_is_reported_at_the_chapter(cx: &mut TestAppContext
         page.encode_files(vec![file.clone()], Target::Chapter, window, cx);
     });
     // The name the dialog proposes is free; the one typed here is taken.
-    click_named(&setup, super::picture_prompt::NAME_LABEL, cx);
+    click_named(&setup, &super::picture_prompt::name_label(), cx);
     act(&setup, cx, |_, window, cx| {
         window.dispatch_action(Box::new(gpui_kit::component::input::SelectAll), cx);
     });
@@ -2711,9 +2714,9 @@ fn a_link_without_a_selection_asks_for_its_words_and_inserts_them(cx: &mut TestA
             Some("Enter the text of the link.")
         );
     });
-    click_named(&setup, TEXT_LABEL, cx);
+    click_named(&setup, &text_label(), cx);
     frame(&setup, cx, |window, cx| window.input("the *book*", cx));
-    click_named(&setup, ADDRESS_LABEL, cx);
+    click_named(&setup, &address_label(), cx);
     frame(&setup, cx, |window, cx| {
         window.input("https://example.com", cx);
     });
@@ -2770,7 +2773,10 @@ fn the_contents_follow_the_headings_and_lead_to_their_chapters(cx: &mut TestAppC
     click(&setup, "section-contents", cx);
     frame(&setup, cx, |window, _| {
         assert_eq!(window.find("section-heading").label(), Some("Contents"));
-        assert_eq!(window.find("contents-hint").label(), Some(AUTOMATIC_HINT));
+        assert_eq!(
+            window.find("contents-hint").label(),
+            Some(automatic_hint().as_ref())
+        );
         assert!(window.try_find("follow-headings").is_none());
         assert!(window.try_find("no-contents").is_none());
         for name in [
@@ -2818,7 +2824,10 @@ fn a_book_without_headings_says_how_the_contents_are_made(cx: &mut TestAppContex
     cx.run_until_parked();
     click(&setup, "section-contents", cx);
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("no-contents").label(), Some(NO_HEADINGS));
+        assert_eq!(
+            window.find("no-contents").label(),
+            Some(no_headings().as_ref())
+        );
     });
 }
 
@@ -2837,13 +2846,16 @@ fn stored_contents_are_shown_and_can_be_made_to_follow_the_headings(cx: &mut Tes
     cx.run_until_parked();
     click(&setup, "section-contents", cx);
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("contents-hint").label(), Some(STORED_HINT));
+        assert_eq!(
+            window.find("contents-hint").label(),
+            Some(stored_hint().as_ref())
+        );
         assert_eq!(
             window.find_by_label("Opening, level 1, in 1. One").role(),
             Some(Role::Button)
         );
         assert_eq!(
-            window.find_by_label(FOLLOW_HEADINGS).role(),
+            window.find_by_label(&follow_headings()).role(),
             Some(Role::Button)
         );
     });
@@ -2851,7 +2863,10 @@ fn stored_contents_are_shown_and_can_be_made_to_follow_the_headings(cx: &mut Tes
     assert!(dialog_is_open(&setup, cx));
     click_named(&setup, "Replace", cx);
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("contents-hint").label(), Some(AUTOMATIC_HINT));
+        assert_eq!(
+            window.find("contents-hint").label(),
+            Some(automatic_hint().as_ref())
+        );
         assert!(
             window
                 .try_find_by_label("One, level 1, in 1. One")
@@ -3013,7 +3028,10 @@ fn saved_entries(setup: &Setup) -> Vec<String> {
 fn an_entry_of_a_stored_list_gets_another_title_and_place_from_its_menu(cx: &mut TestAppContext) {
     let setup = editor_with_two_entries(cx);
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("contents-hint").label(), Some(STORED_HINT));
+        assert_eq!(
+            window.find("contents-hint").label(),
+            Some(stored_hint().as_ref())
+        );
         assert_eq!(
             window.find_by_label("Entry actions, Second").role(),
             Some(Role::Button)
@@ -3024,7 +3042,7 @@ fn an_entry_of_a_stored_list_gets_another_title_and_place_from_its_menu(cx: &mut
     click_named(&setup, "Entry actions, Second", cx);
     choose(&setup, "Edit…", cx);
     assert!(dialog_is_open(&setup, cx));
-    click_named(&setup, TITLE_LABEL, cx);
+    click_named(&setup, &title_label(), cx);
     press(&setup, "end", cx);
     frame(&setup, cx, |window, cx| window.input(" part", cx));
     click_named(&setup, "Chapter, 2. Two", cx);
@@ -3048,7 +3066,7 @@ fn a_new_entry_takes_the_title_of_the_heading_it_leads_to_and_its_place_in_the_l
 ) {
     let setup = editor_with_two_entries(cx);
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("add-entry").label(), Some(ADD_ENTRY));
+        assert_eq!(window.find("add-entry").label(), Some(add_entry().as_ref()));
     });
     click(&setup, "add-entry", cx);
     assert!(dialog_is_open(&setup, cx));
@@ -3071,7 +3089,7 @@ fn a_new_entry_takes_the_title_of_the_heading_it_leads_to_and_its_place_in_the_l
 fn a_title_the_author_typed_is_kept_when_another_place_is_chosen(cx: &mut TestAppContext) {
     let setup = editor_with_two_entries(cx);
     click(&setup, "add-entry", cx);
-    click_named(&setup, TITLE_LABEL, cx);
+    click_named(&setup, &title_label(), cx);
     press(&setup, "end", cx);
     frame(&setup, cx, |window, cx| window.input(" more", cx));
     click_named(&setup, "Chapter, 1. One", cx);
@@ -3099,9 +3117,12 @@ fn a_place_without_a_heading_takes_the_suggested_title_away(cx: &mut TestAppCont
     choose(&setup, "2. Untitled chapter", cx);
     click_named(&setup, "Add the entry", cx);
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("entry-error").label(), Some(NO_TITLE));
+        assert_eq!(
+            window.find("entry-error").label(),
+            Some(no_title().as_ref())
+        );
     });
-    click_named(&setup, TITLE_LABEL, cx);
+    click_named(&setup, &title_label(), cx);
     frame(&setup, cx, |window, cx| window.input("Loose pages", cx));
     click_named(&setup, "Add the entry", cx);
     assert_eq!(
@@ -3122,7 +3143,10 @@ fn an_entry_without_a_title_is_refused_in_the_dialog(cx: &mut TestAppContext) {
     click_named(&setup, "Apply", cx);
     assert!(dialog_is_open(&setup, cx));
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("entry-error").label(), Some(NO_TITLE));
+        assert_eq!(
+            window.find("entry-error").label(),
+            Some(no_title().as_ref())
+        );
     });
     assert_eq!(
         shown_entries(&setup, cx),
@@ -3134,7 +3158,7 @@ fn an_entry_without_a_title_is_refused_in_the_dialog(cx: &mut TestAppContext) {
 fn an_entry_moves_in_and_out_from_its_menu(cx: &mut TestAppContext) {
     let setup = editor_with_two_entries(cx);
     click_named(&setup, "Entry actions, Second", cx);
-    choose(&setup, NEST, cx);
+    choose(&setup, &nest(), cx);
     assert_eq!(
         shown_entries(&setup, cx),
         ["1 Opening -> ch01.md", "2 Second -> ch02.md"]
@@ -3147,7 +3171,7 @@ fn an_entry_moves_in_and_out_from_its_menu(cx: &mut TestAppContext) {
         );
     });
     click_named(&setup, "Entry actions, Second", cx);
-    choose(&setup, UNNEST, cx);
+    choose(&setup, &unnest(), cx);
     assert_eq!(
         shown_entries(&setup, cx),
         ["1 Opening -> ch01.md", "1 Second -> ch02.md"]
@@ -3156,10 +3180,10 @@ fn an_entry_moves_in_and_out_from_its_menu(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 fn the_first_entry_cannot_move_in_or_out(cx: &mut TestAppContext) {
-    for item in [NEST, UNNEST] {
+    for item in [nest(), unnest()] {
         let setup = editor_with_two_entries(cx);
         click_named(&setup, "Entry actions, Opening", cx);
-        choose(&setup, item, cx);
+        choose(&setup, &item, cx);
         assert_eq!(
             shown_entries(&setup, cx),
             ["1 Opening -> ch01.md", "1 Second -> ch02.md"],
@@ -3197,7 +3221,10 @@ fn removing_the_last_entry_lets_the_contents_follow_the_headings(cx: &mut TestAp
     choose(&setup, "Remove…", cx);
     click_named(&setup, "Remove", cx);
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("contents-hint").label(), Some(AUTOMATIC_HINT));
+        assert_eq!(
+            window.find("contents-hint").label(),
+            Some(automatic_hint().as_ref())
+        );
         assert!(window.try_find("add-entry").is_none());
         assert!(window.try_find_by_label("Entry actions, One").is_none());
     });
@@ -3219,7 +3246,10 @@ fn entries_whose_place_is_gone_are_counted_and_given_another_place(cx: &mut Test
     // The place it had is told as missing, and is not taken.
     click_named(&setup, "Apply", cx);
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("entry-error").label(), Some(NO_PLACE));
+        assert_eq!(
+            window.find("entry-error").label(),
+            Some(no_place().as_ref())
+        );
     });
     click_named(&setup, "Place in the chapter, #inside (missing)", cx);
     choose(&setup, "Start of the chapter", cx);
@@ -3322,7 +3352,7 @@ fn entries_that_swapped_headings_left_out_of_order_are_sorted_by_one_control(
         );
         assert_eq!(
             window.find("contents-in-order").label(),
-            Some(IN_BOOK_ORDER)
+            Some(in_book_order().as_ref())
         );
         assert!(
             window
@@ -3401,7 +3431,10 @@ fn removing_the_only_chapter_takes_its_entries_and_the_list_away(cx: &mut TestAp
         page.remove_chapter("ch01.md".to_owned(), window, cx);
     });
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("contents-hint").label(), Some(AUTOMATIC_HINT));
+        assert_eq!(
+            window.find("contents-hint").label(),
+            Some(automatic_hint().as_ref())
+        );
         assert!(window.try_find("add-entry").is_none());
     });
     // Without a chapter there is nowhere for an entry to lead.
@@ -3422,7 +3455,10 @@ fn a_problem_of_the_contents_leads_to_their_section(cx: &mut TestAppContext) {
         Section::Problems
     );
     frame(&setup, cx, |window, _| {
-        assert_eq!(window.find("open-contents").label(), Some(OPEN_CONTENTS));
+        assert_eq!(
+            window.find("open-contents").label(),
+            Some(open_contents().as_ref())
+        );
     });
     click(&setup, "open-contents", cx);
     assert_eq!(

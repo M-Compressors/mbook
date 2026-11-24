@@ -9,6 +9,7 @@ use gpui_kit::base::text::{
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::{App, Hsla, Styled as _, Window, px, relative};
 use markdown::mdast::Node;
+use rust_i18n::t;
 
 pub(super) type FollowNote = Arc<dyn Fn(u32, &mut Window, &mut App) + Send + Sync>;
 
@@ -36,7 +37,9 @@ impl MarkdownPlugin for Notes {
             MarkdownNode::new(NAME, offset)
                 .text(mark)
                 .markdown(source.to_owned())
-                .accessibility_label(format!("Footnote {}", reference.identifier)),
+                .accessibility_label(
+                    t!("chapter_view.footnote", mark = reference.identifier).into_owned(),
+                ),
         )
     }
 

@@ -35,25 +35,25 @@ impl OpenFailure {
 pub(crate) enum EditError {
     /// The book could not be opened when the session started; every command
     /// of the session gives this error.
-    #[error("the book could not be opened")]
+    #[error("{}", rust_i18n::t!("edit.err.open"))]
     Open(#[source] OpenFailure),
     /// `mbook` refused the change: an invalid or used path, a text it cannot
     /// store, an unusable picture, an invalid metadata value or a position
     /// past the end.
-    #[error("the book refused the change")]
+    #[error("{}", rust_i18n::t!("edit.err.refused"))]
     Book(#[source] mbook::Error),
     /// The book could not be written; the file on disk is as it was.
-    #[error("the book could not be saved")]
+    #[error("{}", rust_i18n::t!("edit.err.save"))]
     Save(#[source] mbook::Error),
     /// The list of contents refused the change.
-    #[error("the contents were not changed")]
+    #[error("{}", rust_i18n::t!("edit.err.contents"))]
     Contents(#[from] ContentsError),
     /// The path does not identify a resource of the kind the command needs.
-    #[error("nothing in the book has the path {0:?}")]
+    #[error("{}", rust_i18n::t!("edit.err.no_such_path", path = format!("{:?}", .0)))]
     NoSuchPath(String),
     /// The task that owns the book is gone: the future of the session was
     /// dropped or has ended.
-    #[error("the editing session has ended")]
+    #[error("{}", rust_i18n::t!("edit.err.ended"))]
     Ended,
 }
 
@@ -62,27 +62,27 @@ pub(crate) enum EditError {
 #[non_exhaustive]
 pub(crate) enum ContentsError {
     /// The contents follow the headings: the book keeps no list.
-    #[error("the contents follow the headings, so there is no list to change")]
+    #[error("{}", rust_i18n::t!("edit.err.automatic"))]
     Automatic,
     /// The list has no entry at this position, counted from 0.
-    #[error("the list has no entry at position {0}")]
+    #[error("{}", rust_i18n::t!("edit.err.no_such_entry", position = .0))]
     NoSuchEntry(usize),
     /// The title is empty.
-    #[error("an entry needs a title")]
+    #[error("{}", rust_i18n::t!("edit.err.no_title"))]
     NoTitle,
     /// The entry leads to something that is neither a chapter of the book
     /// nor a heading of one.
-    #[error("the entry {title:?} leads to no chapter or heading of the book")]
+    #[error("{}", rust_i18n::t!("edit.err.no_such_place", title = format!("{:?}", .title)))]
     NoSuchPlace {
         /// The title of the entry.
         title: String,
     },
     /// The entry is already one level under the entry above it, or it is
     /// the first.
-    #[error("an entry can be only one level under the entry above it")]
+    #[error("{}", rust_i18n::t!("edit.err.too_deep"))]
     TooDeep,
     /// The entry is at the first level.
-    #[error("the entry is at the first level already")]
+    #[error("{}", rust_i18n::t!("edit.err.top_level"))]
     TopLevel,
 }
 

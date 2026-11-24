@@ -75,10 +75,10 @@ pub(crate) struct ShelfBook {
 #[non_exhaustive]
 pub(crate) enum LibraryError {
     /// The catalogue could not be read or written.
-    #[error("the catalogue could not be read or written")]
+    #[error("{}", rust_i18n::t!("catalogue.err.library"))]
     Catalogue(#[from] CatalogueError),
     /// The file of a removed book could not be deleted.
-    #[error("the file of a book could not be deleted")]
+    #[error("{}", rust_i18n::t!("catalogue.err.delete"))]
     File(#[from] io::Error),
 }
 

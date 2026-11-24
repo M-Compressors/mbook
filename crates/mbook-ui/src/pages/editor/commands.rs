@@ -7,6 +7,7 @@ use gpui_kit::component::RopeExt as _;
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::{Context, Window};
 use markdown_editor::{BlockKind, EditorCommand};
+use rust_i18n::t;
 
 use super::session::{
     Control, MetaField, Phase, Section, ViewMode, edit_error_words, line_and_column, meta_change,
@@ -277,7 +278,13 @@ impl EditorPage {
         let offset = error.text_offset();
         if let Some(offset) = offset {
             let (line, column) = line_and_column(&text, offset);
-            message = format!("{message} It is at line {line}, column {column}.");
+            message = t!(
+                "editor.error.at_place",
+                message = message,
+                line = line,
+                column = column
+            )
+            .into_owned();
         }
         self.session.text_refused(path, text, message);
         if let Some(offset) = offset
@@ -585,9 +592,7 @@ impl EditorPage {
             }
         }
         if let Some(path) = self.session.first_refused().map(str::to_owned) {
-            let message = format!(
-                "The book was not saved: it refused the text of {path}. Correct it, then save."
-            );
+            let message = t!("editor.error.refused_text", path = path).into_owned();
             self.session.set_error(Control::Save, message.clone());
             announce(message, window, cx);
             self.saving.leave_after = false;

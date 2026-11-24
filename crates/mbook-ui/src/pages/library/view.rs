@@ -14,6 +14,7 @@ use gpui_kit::{
     ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
     TestSupportExt as _, Window, div, px,
 };
+use rust_i18n::t;
 
 use super::imports::imports_panel;
 use super::shelf::{gap, side};
@@ -37,43 +38,30 @@ const TAB_HEIGHT: f32 = 48.0;
 
 /// The words under the heading of the shelf: how many books it shows.
 pub(super) fn count_label(count: usize) -> String {
-    if count == 1 {
-        "1 book".to_owned()
-    } else {
-        format!("{count} books")
-    }
+    crate::shared::i18n::count_text("library.books", count)
 }
 
 /// What the shelf says when it has no books to show.
 pub(super) fn empty_words(query: &str, section: Section, library_empty: bool) -> (String, String) {
     let query = query.trim();
-    if library_empty {
-        (
-            "No books yet".to_owned(),
-            "Add a file in mbook, EPUB, FB2, PDF, CBZ, DOCX, HTML, Markdown or text.".to_owned(),
-        )
+    let (title, hint) = if library_empty {
+        (t!("library.no_books"), t!("library.no_books_hint"))
     } else if !query.is_empty() {
         (
-            format!("Nothing matches {query}"),
-            "Check the spelling, or search for a title, an author or a series.".to_owned(),
+            t!("library.nothing_matches", query = query),
+            t!("library.nothing_matches_hint"),
         )
     } else {
         match section {
-            Section::Reading => (
-                "No books are being read".to_owned(),
-                "A book you open and do not finish appears here.".to_owned(),
-            ),
+            Section::Reading => (t!("library.none_reading"), t!("library.none_reading_hint")),
             Section::Finished => (
-                "No books are finished".to_owned(),
-                "A book you mark as finished appears here.".to_owned(),
+                t!("library.none_finished"),
+                t!("library.none_finished_hint"),
             ),
-            Section::All => (
-                "No books yet".to_owned(),
-                "Add a file in mbook, EPUB, FB2, PDF, CBZ, DOCX, HTML, Markdown or text."
-                    .to_owned(),
-            ),
+            Section::All => (t!("library.no_books"), t!("library.no_books_hint")),
         }
-    }
+    };
+    (title.into_owned(), hint.into_owned())
 }
 
 impl LibraryPage {
@@ -82,7 +70,7 @@ impl LibraryPage {
         let sidebar = self.sidebar.clone();
         window.open_sheet_at(Placement::Left, cx, move |sheet: Sheet, _, _| {
             sheet
-                .title("Library")
+                .title(SharedString::from(t!("library.title")))
                 .size(px(WIDTH + 40.0))
                 .child(sidebar.clone())
         });
@@ -91,7 +79,7 @@ impl LibraryPage {
     fn render_header(&self, class: SizeClass, cx: &mut Context<'_, Self>) -> AnyElement {
         let sort = self.sort;
         let page = cx.weak_entity();
-        let sort_label = format!("Sort: {}", sort.label());
+        let sort_label = t!("library.sort_by", sort = sort.label());
         let sort_button = icon_button("sort", IconName::SortAscending, sort_label).dropdown_menu(
             move |menu, _, _| {
                 Sort::ALL.into_iter().fold(menu, |menu, choice| {
@@ -106,26 +94,30 @@ impl LibraryPage {
                 })
             },
         );
-        let mut header = page_header("Library");
+        let mut header = page_header(t!("library.title"));
         if class == SizeClass::Medium {
             header = header.leading(
-                icon_button("show-sections", IconName::PanelLeft, "Show the sections")
-                    .on_click(cx.listener(|this, _, window, cx| this.show_sections(window, cx))),
+                icon_button(
+                    "show-sections",
+                    IconName::PanelLeft,
+                    t!("library.show_sections"),
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.show_sections(window, cx))),
             );
         }
         header
             .trailing(sort_button)
             .trailing(
-                icon_button("add-book", IconName::Plus, "Add a book…")
+                icon_button("add-book", IconName::Plus, t!("library.add_book"))
                     .on_click(|_, window, cx| window.dispatch_action(OpenFile.boxed_clone(), cx)),
             )
             .trailing(
-                icon_button("new-book", IconName::FilePenLine, "New book…")
+                icon_button("new-book", IconName::FilePenLine, t!("library.new_book"))
                     .disabled(self.creating.is_some())
                     .on_click(cx.listener(|this, _, window, cx| this.ask_to_create(window, cx))),
             )
             .trailing(
-                icon_button("settings", IconName::Settings, "Settings")
+                icon_button("settings", IconName::Settings, t!("library.settings"))
                     .on_click(cx.listener(|_, _, _, cx| cx.emit(LibraryEvent::Settings))),
             )
             .into_any_element()
@@ -146,7 +138,7 @@ impl LibraryPage {
         h_flex()
             .id("continue-card")
             .role(Role::Group)
-            .aria_label(format!("Continue reading: {title}"))
+            .aria_label(t!("library.continue_reading_book", title = title))
             .test_support()
             .mx(px(side(self.cover_width)))
             .mt_4()
@@ -169,11 +161,11 @@ impl LibraryPage {
                             .id("continue-heading")
                             .role(Role::Heading)
                             .aria_level(2)
-                            .aria_label("Continue reading")
+                            .aria_label(t!("library.continue_reading"))
                             .test_support()
                             .text_xs()
                             .text_color(muted)
-                            .child("Continue reading"),
+                            .child(SharedString::from(t!("library.continue_reading"))),
                     )
                     .child(
                         div()
@@ -192,14 +184,17 @@ impl LibraryPage {
                         div()
                             .text_sm()
                             .text_color(muted)
-                            .child(format!("{} read", progress.caption())),
+                            .child(SharedString::from(t!(
+                                "library.progress_read",
+                                progress = progress.caption()
+                            ))),
                     ),
             )
             .child(
                 Button::new("continue-reading")
                     .primary()
-                    .label("Read")
-                    .accessibility_label(format!("Read {title}"))
+                    .label(t!("library.read"))
+                    .accessibility_label(t!("library.read_book", title = title))
                     .h(px(target_size()))
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _, _, cx| {
@@ -217,7 +212,7 @@ impl LibraryPage {
         let words: SharedString = if self.shelf.is_ready() {
             count_label(self.shelf.visible().len()).into()
         } else {
-            "Loading".into()
+            t!("library.loading").into()
         };
         h_flex()
             .w_full()
@@ -249,7 +244,7 @@ impl LibraryPage {
     /// The bar of a compact window: Reading, Library, Search.
     fn render_bar(&self, window: &Window, cx: &mut Context<'_, Self>) -> AnyElement {
         let bottom = crate::shared::safe_area::insets(window).bottom;
-        let tab = |id: &'static str, label: &'static str, icon: IconName, tab: Tab| {
+        let tab = |id: &'static str, label: SharedString, icon: IconName, tab: Tab| {
             let active = self.tab == tab;
             Button::new(id)
                 .ghost()
@@ -257,11 +252,11 @@ impl LibraryPage {
                 .flex_1()
                 .h(px(TAB_HEIGHT.max(target_size())))
                 .icon(icon)
-                .label(label)
+                .label(label.clone())
                 .accessibility_label(if active {
-                    format!("{label}, current")
+                    t!("library.tab_current", tab = label).into()
                 } else {
-                    label.to_owned()
+                    label
                 })
                 .selected(active)
                 .cursor_pointer()
@@ -270,7 +265,7 @@ impl LibraryPage {
         h_flex()
             .id("library-tabs")
             .role(Role::TabList)
-            .aria_label("Library views")
+            .aria_label(t!("library.views"))
             .test_support()
             .w_full()
             .flex_none()
@@ -280,17 +275,22 @@ impl LibraryPage {
             .bg(cx.theme().background)
             .child(tab(
                 "tab-reading",
-                "Reading",
+                t!("library.tab_reading").into(),
                 IconName::BookOpen,
                 Tab::Reading,
             ))
             .child(tab(
                 "tab-library",
-                "Library",
+                t!("library.title").into(),
                 IconName::Library,
                 Tab::Library,
             ))
-            .child(tab("tab-search", "Search", IconName::Search, Tab::Search))
+            .child(tab(
+                "tab-search",
+                t!("library.search").into(),
+                IconName::Search,
+                Tab::Search,
+            ))
             .into_any_element()
     }
 
@@ -308,7 +308,7 @@ impl LibraryPage {
                         .child(
                             Button::new("add-first-book")
                                 .primary()
-                                .label("Add a book…")
+                                .label(t!("library.add_book"))
                                 .h(px(target_size()))
                                 .cursor_pointer()
                                 .on_click(|_, window, cx| {
@@ -317,7 +317,7 @@ impl LibraryPage {
                         )
                         .child(
                             Button::new("create-first-book")
-                                .label("New book…")
+                                .label(t!("library.new_book"))
                                 .h(px(target_size()))
                                 .cursor_pointer()
                                 .disabled(self.creating.is_some())
@@ -348,7 +348,7 @@ impl LibraryPage {
                 // failure covers the right end of the row.
                 .child(
                     Button::new("library-retry")
-                        .label("Try again")
+                        .label(t!("library.try_again"))
                         .h(px(target_size()))
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -407,7 +407,7 @@ impl Render for LibraryPage {
         let books_area: AnyElement = if loading || (!self.shelf.is_ready() && !library_empty) {
             div()
                 .p_6()
-                .child(status_line("library-status", "Loading your books").text_color(muted))
+                .child(status_line("library-status", t!("library.loading_books")).text_color(muted))
                 .child(Spinner::new())
                 .into_any_element()
         } else if self.shelf.visible().is_empty() {
@@ -461,7 +461,7 @@ impl Render for LibraryPage {
         v_flex()
             .id("library-page")
             .role(Role::Main)
-            .aria_label("Library")
+            .aria_label(t!("library.title"))
             .test_support()
             .key_context("Library")
             .track_focus(&self.focus_handle)

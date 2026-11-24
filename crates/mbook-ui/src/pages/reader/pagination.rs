@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use gpui_kit::{Pixels, SharedString};
+use rust_i18n::t;
 
 use crate::entities::book::snapshot::BookSnapshot;
 
@@ -108,8 +109,11 @@ impl BookPages {
             }
             total += pages;
         }
-        let prefix = if estimated { "≈ " } else { "" };
-        format!("{prefix}{current} of {total}")
+        if estimated {
+            t!("reader.page_estimate", current = current, total = total).into_owned()
+        } else {
+            t!("reader.page_of", current = current, total = total).into_owned()
+        }
     }
 }
 

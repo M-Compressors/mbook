@@ -5,7 +5,10 @@
 //! "Threads"): a library has thousands of books, and a filter is no work for
 //! the main thread.
 
+use std::borrow::Cow;
 use std::cmp::Reverse;
+
+use rust_i18n::t;
 
 use crate::entities::catalogue::ShelfBook;
 use crate::shared::model::BookKey;
@@ -31,11 +34,11 @@ impl Section {
 
     /// The name of the section, as the sidebar and the heading of the shelf
     /// say it.
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> Cow<'static, str> {
         match self {
-            Self::All => "All books",
-            Self::Reading => "Reading",
-            Self::Finished => "Finished",
+            Self::All => t!("search.section.all"),
+            Self::Reading => t!("search.section.reading"),
+            Self::Finished => t!("search.section.finished"),
         }
     }
 
@@ -66,11 +69,11 @@ impl Sort {
     pub(crate) const ALL: [Self; 3] = [Self::Recent, Self::Title, Self::Author];
 
     /// The name of the order, as the menu says it.
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> Cow<'static, str> {
         match self {
-            Self::Recent => "Recent",
-            Self::Title => "Title",
-            Self::Author => "Author",
+            Self::Recent => t!("search.sort.recent"),
+            Self::Title => t!("search.sort.title"),
+            Self::Author => t!("search.sort.author"),
         }
     }
 }
@@ -197,9 +200,9 @@ impl Progress {
     /// The words under a cover: `38%`, `New` or `Finished`.
     pub(crate) fn caption(self) -> String {
         match self {
-            Self::New => "New".to_owned(),
+            Self::New => t!("search.progress.new").into_owned(),
             Self::Reading(permille) => progress_label(permille),
-            Self::Finished => "Finished".to_owned(),
+            Self::Finished => t!("search.progress.finished").into_owned(),
         }
     }
 }
@@ -208,19 +211,26 @@ impl Progress {
 /// state, such as `The Master and Margarita, by Mikhail Bulgakov, 38 percent
 /// read`.
 pub(crate) fn shelf_label(book: &ShelfBook) -> String {
-    let mut label = book.row.title.clone();
-    if !book.row.authors.is_empty() {
-        label.push_str(", by ");
-        label.push_str(&book.row.authors.join(", "));
-    }
+    let title = &book.row.title;
+    let named = if book.row.authors.is_empty() {
+        Cow::Borrowed(title.as_str())
+    } else {
+        t!(
+            "search.shelf.by",
+            title = title,
+            authors = book.row.authors.join(", ")
+        )
+    };
     match Progress::of(book) {
-        Progress::New => label.push_str(", new"),
-        Progress::Reading(permille) => {
-            label = format!("{label}, {} percent read", permille.min(1000) / 10);
-        }
-        Progress::Finished => label.push_str(", finished"),
+        Progress::New => t!("search.shelf.new", book = named),
+        Progress::Reading(permille) => t!(
+            "search.shelf.read",
+            book = named,
+            percent = permille.min(1000) / 10
+        ),
+        Progress::Finished => t!("search.shelf.finished", book = named),
     }
-    label
+    .into_owned()
 }
 
 /// The share read as a whole percentage: `38%` for 380 thousandths.

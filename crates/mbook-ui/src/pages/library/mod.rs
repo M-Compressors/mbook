@@ -34,6 +34,7 @@ use gpui_kit::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, SharedString,
     Subscription, Task, Window,
 };
+use rust_i18n::t;
 
 use self::shelf::Shelf;
 use self::sidebar::LibrarySidebar;
@@ -43,7 +44,7 @@ use crate::features::search_library::{Counts, Section, Sort, counts, select};
 use crate::shared::compute;
 use crate::shared::layout::SizeClass;
 use crate::shared::model::BookKey;
-use crate::shared::ui::announce;
+use crate::shared::ui::{announce, follow_language};
 
 /// What the library asks the root to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,11 +119,8 @@ impl LibraryPage {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
         let library = Library::global(cx);
         let queue = ImportQueue::install(window, cx);
-        let search = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("Search")
-                .clean_on_escape()
-        });
+        let search = cx.new(|cx| InputState::new(window, cx).clean_on_escape());
+        let search_language = follow_language(&search, || t!("library.search"), window, cx);
         let page = cx.weak_entity();
         let sidebar = cx.new(|cx| LibrarySidebar::new(page, search.clone(), queue.clone(), cx));
         let subscriptions = vec![
@@ -139,6 +137,7 @@ impl LibraryPage {
                     this.set_query(query, cx);
                 }
             }),
+            search_language,
         ];
         let mut page = Self {
             focus_handle: cx.focus_handle(),
@@ -389,10 +388,11 @@ impl LibraryPage {
 
 /// What went wrong with the catalogue, in words for a person.
 pub(super) fn error_words(error: &crate::entities::catalogue::LibraryError) -> String {
-    format!(
-        "The library could not be read or changed: {}.",
-        crate::features::import_book::error_chain(error)
+    t!(
+        "library.error",
+        reason = crate::features::import_book::error_chain(error)
     )
+    .into_owned()
 }
 
 impl Focusable for LibraryPage {

@@ -29,6 +29,7 @@ use gpui_kit::{
     Role, ScrollEvent, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _,
     StyledImage as _, TestSupportExt as _, Window, actions, canvas, div, img, point, px,
 };
+use rust_i18n::t;
 
 use self::zoom::{Scales, anchored, dragged, raster_density, scales, step};
 use crate::entities::figure::Figure;
@@ -269,7 +270,7 @@ impl PictureViewer {
     /// or a word for a picture that has none.
     fn name(&self) -> SharedString {
         if self.alt.is_empty() {
-            "Picture".into()
+            t!("reader.picture").into()
         } else {
             self.alt.clone()
         }
@@ -382,7 +383,7 @@ impl Render for PictureViewer {
                     .bg(cx.theme().popover)
                     .text_color(cx.theme().popover_foreground)
                     .child(
-                        icon_button("picture-viewer-close", IconName::Close, "Close")
+                        icon_button("picture-viewer-close", IconName::Close, t!("reader.close"))
                             .rounded_full()
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(ViewerEvent::Close))),
                     ),
@@ -438,7 +439,7 @@ impl PictureViewer {
             }
             (ViewerContent::Failed, _) => div()
                 .text_color(ink)
-                .child("This picture could not be shown.")
+                .child(SharedString::from(t!("reader.picture_failed")))
                 .into_any_element(),
             _ => {
                 let indicator = if cx.reduce_motion() {
@@ -643,10 +644,14 @@ impl PictureViewer {
             .bg(theme.popover)
             .text_color(theme.popover_foreground)
             .child(
-                icon_button("picture-viewer-zoom-out", IconName::ZoomOut, "Zoom out")
-                    .rounded_full()
-                    .disabled(!smaller)
-                    .on_click(cx.listener(|this, _, _, cx| this.step(false, cx))),
+                icon_button(
+                    "picture-viewer-zoom-out",
+                    IconName::ZoomOut,
+                    t!("reader.zoom_out"),
+                )
+                .rounded_full()
+                .disabled(!smaller)
+                .on_click(cx.listener(|this, _, _, cx| this.step(false, cx))),
             )
             .child(
                 div()
@@ -660,16 +665,24 @@ impl PictureViewer {
                     .child(percent),
             )
             .child(
-                icon_button("picture-viewer-zoom-in", IconName::ZoomIn, "Zoom in")
-                    .rounded_full()
-                    .disabled(!larger)
-                    .on_click(cx.listener(|this, _, _, cx| this.step(true, cx))),
+                icon_button(
+                    "picture-viewer-zoom-in",
+                    IconName::ZoomIn,
+                    t!("reader.zoom_in"),
+                )
+                .rounded_full()
+                .disabled(!larger)
+                .on_click(cx.listener(|this, _, _, cx| this.step(true, cx))),
             )
             .child(
-                icon_button("picture-viewer-fit", IconName::Scan, "Fit to window")
-                    .rounded_full()
-                    .disabled(self.zoom.is_none())
-                    .on_click(cx.listener(|this, _, _, cx| this.fit(cx))),
+                icon_button(
+                    "picture-viewer-fit",
+                    IconName::Scan,
+                    t!("reader.fit_to_window"),
+                )
+                .rounded_full()
+                .disabled(self.zoom.is_none())
+                .on_click(cx.listener(|this, _, _, cx| this.fit(cx))),
             )
     }
 }

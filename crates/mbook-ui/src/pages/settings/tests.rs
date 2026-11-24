@@ -224,6 +224,10 @@ fn every_setting_has_a_control_named_by_its_visible_label(cx: &mut TestAppContex
             ("Motion", Role::Group),
             ("As the system says", Role::RadioButton),
             ("Reduced", Role::RadioButton),
+            ("Language", Role::Group),
+            ("System language (English)", Role::RadioButton),
+            ("English", Role::RadioButton),
+            ("Русский", Role::RadioButton),
             ("Check for updates", Role::Switch),
             ("Check now", Role::Button),
             ("Back", Role::Button),
@@ -346,6 +350,18 @@ fn the_controls_of_the_reader_are_chosen_by_name(cx: &mut TestAppContext) {
     assert!(settings(&started, cx).keep_controls);
     click_label(&started, "Hide while reading", cx);
     assert!(!settings(&started, cx).keep_controls);
+}
+
+#[gpui_kit::test]
+fn a_language_is_chosen_by_its_own_name_and_the_system_comes_back(cx: &mut TestAppContext) {
+    let started = start(cx, 800.0);
+    assert_eq!(settings(&started, cx).language, None);
+    click_label(&started, "Русский", cx);
+    assert_eq!(settings(&started, cx).language, Some(Language::Russian));
+    click_label(&started, "English", cx);
+    assert_eq!(settings(&started, cx).language, Some(Language::English));
+    click_label(&started, "System language (English)", cx);
+    assert_eq!(settings(&started, cx).language, None);
 }
 
 #[gpui_kit::test]

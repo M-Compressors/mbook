@@ -14,6 +14,7 @@ use super::theme;
 use crate::entities::catalogue::{
     CatalogueError, LINE_HEIGHT, READING_FACES, Settings, Store, TEXT_SIZE,
 };
+use crate::shared::i18n::{InterfaceLanguage, Language};
 use crate::shared::layout::SizeClass;
 use crate::shared::theme::{Chrome, PageTone};
 
@@ -47,6 +48,14 @@ pub(crate) struct Appearance {
     families: Option<Vec<String>>,
     /// Whether the dark or the light theme was last given to the Kit.
     projected_dark: Option<bool>,
+    /// The language the system prefers, which a language setting that
+    /// follows the system follows.
+    system_language: Language,
+    /// Whether the appearance sets the language of the process: in the
+    /// application, not in a test, whose threads share it.
+    owns_language: bool,
+    /// The language last made current.
+    projected_language: Option<Language>,
     writes: UnboundedSender<Settings>,
     _load: Task<()>,
     _fonts: Task<()>,
@@ -55,6 +64,44 @@ pub(crate) struct Appearance {
 
 /// The handle of the one [`Appearance`] of the application.
 struct AppearanceHandle(Entity<Appearance>);
+
+/// The language the system prefers, read once at start, and whether the
+/// [`Appearance`] sets the language of the process. Without it the system
+/// prefers English and the language of the process is left alone.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SystemLanguage {
+    language: Language,
+    owns_process: bool,
+}
+
+impl Global for SystemLanguage {}
+
+impl SystemLanguage {
+    /// The language the system prefers now, made the language of the process
+    /// at once, so that the first screen is drawn in it.
+    pub(crate) fn detect() -> Self {
+        Self::owning(Language::of_system())
+    }
+
+    /// A system that prefers `language`, made the language of the process.
+    fn owning(language: Language) -> Self {
+        language.make_current();
+        Self {
+            language,
+            owns_process: true,
+        }
+    }
+
+    /// A system that prefers `language`, for a test: the language of the
+    /// process, which the threads of the tests share, is not touched.
+    #[cfg(test)]
+    pub(crate) fn assumed(language: Language) -> Self {
+        Self {
+            language,
+            owns_process: false,
+        }
+    }
+}
 
 impl Global for AppearanceHandle {}
 
@@ -87,6 +134,7 @@ impl Appearance {
 
         let (writes, queue) = unbounded();
         let applying = cx.spawn(async move |this, cx| write_all(queue, this, cx).await);
+        let system_language = cx.try_global::<SystemLanguage>().copied();
 
         Self {
             settings: Settings::default(),
@@ -97,6 +145,10 @@ impl Appearance {
             class: SizeClass::Expanded,
             families: None,
             projected_dark: None,
+            system_language: system_language
+                .map_or_else(Language::default, |system| system.language),
+            owns_language: system_language.is_some_and(|system| system.owns_process),
+            projected_language: None,
             writes,
             _load: load,
             _fonts: fonts,
@@ -187,6 +239,17 @@ impl Appearance {
     /// follows the system, paper for a light window and night for a dark one.
     pub(crate) fn page_tone(&self, window: &Window) -> PageTone {
         resolve(self.settings.page_tone, window.appearance())
+    }
+
+    /// The language the interface is drawn in: the chosen one, or, when the
+    /// setting follows the system, the one the system prefers.
+    pub(crate) fn language(&self) -> Language {
+        self.settings.language.unwrap_or(self.system_language)
+    }
+
+    /// The language the system prefers.
+    pub(crate) fn system_language(&self) -> Language {
+        self.system_language
     }
 
     /// The colours of the interface that go with the page tone.
@@ -313,9 +376,20 @@ impl Appearance {
         cx.notify();
     }
 
-    /// Gives the settings to what draws: the theme of the Kit and the flag
-    /// for reduced motion.
+    /// Gives the settings to what draws: the theme of the Kit, the flag for
+    /// reduced motion and the language.
     fn apply(&mut self, cx: &mut Context<'_, Self>) {
+        let language = self.language();
+        if self.projected_language != Some(language) {
+            self.projected_language = Some(language);
+            if self.owns_language {
+                language.make_current();
+                // Text is made as a view is drawn: every view draws again.
+                cx.refresh_windows();
+            }
+            // Views that keep text they made make it again.
+            cx.set_global(InterfaceLanguage(language));
+        }
         let tone = resolve(self.settings.page_tone, self.system);
         let dark = tone.is_dark();
         if self.projected_dark != Some(dark) {

@@ -6,10 +6,12 @@
 
 use gpui_kit::component::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
 use gpui_kit::{
-    Action, App, KeyBinding, Menu, MenuItem, OperatingSystem, OsAction, SystemMenuType,
+    Action, App, Global, KeyBinding, Menu, MenuItem, OperatingSystem, OsAction, SystemMenuType,
 };
+use rust_i18n::t;
 
 use crate::shared::actions::{About, Find, GoBack, OpenFile, OpenSettings, Quit, Save};
+use crate::shared::i18n::Language;
 
 /// The name of the application in its menus.
 const NAME: &str = "mbook";
@@ -19,9 +21,30 @@ const NAME: &str = "mbook";
 pub(super) fn install(cx: &mut App) {
     cx.on_action(|_: &Quit, cx| cx.quit());
     bind(cx);
-    if cx.platform_info().os == OperatingSystem::Mac {
-        cx.set_menus(menus());
+    sync_menus(cx);
+}
+
+/// The language the menu bar of macOS was last made in.
+struct MenuLanguage(Language);
+
+impl Global for MenuLanguage {}
+
+/// Makes the menu bar of macOS again when the language of the interface is
+/// not the one it was made in; the system draws it, so it does not follow a
+/// change of language by itself.
+pub(super) fn sync_menus(cx: &mut App) {
+    if cx.platform_info().os != OperatingSystem::Mac {
+        return;
     }
+    let language = Language::current();
+    if cx
+        .try_global::<MenuLanguage>()
+        .is_some_and(|made| made.0 == language)
+    {
+        return;
+    }
+    cx.set_global(MenuLanguage(language));
+    cx.set_menus(menus());
 }
 
 /// What a key does.
@@ -67,29 +90,29 @@ fn bindings(cx: &App) -> Vec<KeyBinding> {
 fn menus() -> Vec<Menu> {
     vec![
         Menu::new(NAME).items([
-            MenuItem::action(format!("About {NAME}"), About),
+            MenuItem::action(t!("menu.about", name = NAME), About),
             MenuItem::separator(),
-            MenuItem::action("Settings…", OpenSettings),
+            MenuItem::action(t!("menu.settings"), OpenSettings),
             MenuItem::separator(),
-            MenuItem::os_submenu("Services", SystemMenuType::Services),
+            MenuItem::os_submenu(t!("menu.services"), SystemMenuType::Services),
             MenuItem::separator(),
-            MenuItem::action(format!("Quit {NAME}"), Quit),
+            MenuItem::action(t!("menu.quit", name = NAME), Quit),
         ]),
-        Menu::new("File").items([
-            MenuItem::action("Add a book…", OpenFile),
+        Menu::new(t!("menu.file")).items([
+            MenuItem::action(t!("menu.add_book"), OpenFile),
             MenuItem::separator(),
-            MenuItem::action("Save", Save),
+            MenuItem::action(t!("menu.save"), Save),
         ]),
-        Menu::new("Edit").items([
-            MenuItem::os_action("Undo", Undo, OsAction::Undo),
-            MenuItem::os_action("Redo", Redo, OsAction::Redo),
+        Menu::new(t!("menu.edit")).items([
+            MenuItem::os_action(t!("menu.undo"), Undo, OsAction::Undo),
+            MenuItem::os_action(t!("menu.redo"), Redo, OsAction::Redo),
             MenuItem::separator(),
-            MenuItem::os_action("Cut", Cut, OsAction::Cut),
-            MenuItem::os_action("Copy", Copy, OsAction::Copy),
-            MenuItem::os_action("Paste", Paste, OsAction::Paste),
-            MenuItem::os_action("Select all", SelectAll, OsAction::SelectAll),
+            MenuItem::os_action(t!("menu.cut"), Cut, OsAction::Cut),
+            MenuItem::os_action(t!("menu.copy"), Copy, OsAction::Copy),
+            MenuItem::os_action(t!("menu.paste"), Paste, OsAction::Paste),
+            MenuItem::os_action(t!("menu.select_all"), SelectAll, OsAction::SelectAll),
             MenuItem::separator(),
-            MenuItem::action("Find…", Find),
+            MenuItem::action(t!("menu.find"), Find),
         ]),
     ]
 }
@@ -174,6 +197,19 @@ mod tests {
             item,
             MenuItem::Action { name, action, .. } if name == "Save" && action.partial_eq(&Save)
         )));
+    }
+
+    #[gpui_kit::test]
+    fn the_menus_are_made_once_per_language(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            install(cx);
+            let mac = cx.platform_info().os == OperatingSystem::Mac;
+            let made = |cx: &App| cx.try_global::<MenuLanguage>().map(|made| made.0);
+            assert_eq!(made(cx), mac.then_some(Language::English));
+            // The language has not changed: nothing is made again.
+            sync_menus(cx);
+            assert_eq!(made(cx), mac.then_some(Language::English));
+        });
     }
 
     #[gpui_kit::test]

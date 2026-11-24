@@ -627,6 +627,47 @@ sequenceDiagram
 | Editor | Visual, Source or Preview; the list slides over from a menu button in the header | Visual, Source or Preview; the list slides over | The list beside Visual, Source, Split or Preview |
 | Menu of a book | A long press | A long press, or `…` | A right click, or `…` |
 
+## Languages
+
+The interface is in English and in Russian. English is the language every
+other falls back to: a text that has no translation is shown in English.
+
+- **Where the text is.** Every text a person sees or hears — labels,
+  buttons, menus, messages, the names a screen reader announces, the errors
+  of this crate — is in `crates/mbook-ui/locales/*.yml`, one file per part
+  of the application (`app`, `library`, `reader`, `editor`, `settings`…).
+  A key has an English and a Russian text with the same `%{values}`. A
+  view looks a key up with `t!` of `rust-i18n` while it draws.
+- **Counts.** A text with a number, such as "3 books", has a form per
+  plural category of the CLDR: `one` and `other` in English, `one`, `few`
+  and `many` in Russian ("1 книга", "3 книги", "5 книг").
+  `shared::i18n::count_text` asks `icu_plurals` for the category and
+  replaces `%{count}`.
+- **The language of the process.** There is one: the one `rust-i18n` keeps,
+  which GPUI Component also translates its own controls in. `Appearance`
+  sets it, from the language setting, when the settings are read and
+  whenever the setting changes, and every window draws again. A test never
+  sets it, so that the tests, whose threads share it, run in English.
+- **At start.** Before the first screen, the application takes the first of
+  the languages the system lists, in its order of preference, that the
+  interface is translated into, and English when it lists none. The screen
+  that says the library is opening is drawn in it. Once the settings are
+  read, a chosen language replaces it.
+- **A change of language** shows in every view when it is next drawn, which
+  is at once. The menu bar of macOS is made again, and so are the
+  placeholders of the search fields of the library, the reader and the
+  editor, which observe the global `InterfaceLanguage` through
+  `shared::ui::follow_language`; a dialog makes its own when it opens. Text
+  made once and kept stays in the language it was made in: a message
+  already on the screen, such as the status of an import or a failed
+  update, and the labels of the footnotes of a chapter until the chapter is
+  read again.
+- **Not translated**: the names of formats, the name of the application,
+  the text of a book, and the messages of the `mbook` and `mbook-converter`
+  crates that an error of this crate quotes as its cause.
+- **A new language** is a code in `shared::i18n::Language`, its plural rules
+  there, and its text beside each key; a test fails while a key lacks it.
+
 ## Updates
 
 Updates exist on desktop only, behind the Cargo feature `self-update`, which

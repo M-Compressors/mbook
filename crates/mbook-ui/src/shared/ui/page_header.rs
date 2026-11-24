@@ -149,7 +149,11 @@ impl RenderOnce for PageHeader {
                         .children(trailing),
                 )
         } else {
-            row.w_full()
+            // As above: the row takes what the window controls leave, so a
+            // long title is cut short instead of pushing the actions off.
+            row.w(px(0.0))
+                .flex_1()
+                .min_w_0()
                 .children(leading)
                 .child(heading)
                 .children(trailing)
@@ -226,6 +230,32 @@ mod tests {
             let settings = window.find_by_label("Settings").bounds().origin.x;
             assert!(back < title, "{back:?} {title:?}");
             assert!(title < settings, "{title:?} {settings:?}");
+        });
+    }
+
+    /// A narrow page with a long title and a wide action, as the editor on a
+    /// phone in Russian.
+    struct Narrow;
+
+    impl Render for Narrow {
+        fn render(&mut self, _: &mut Window, _: &mut Context<'_, Self>) -> impl IntoElement {
+            div().w_full().child(
+                page_header("The Quiet Orchard of the Long Evenings")
+                    .leading(back_button("back"))
+                    .trailing(Button::new("save").label("Сохранить изменения")),
+            )
+        }
+    }
+
+    #[gpui_kit::test]
+    fn a_long_title_gives_way_to_the_actions(cx: &mut TestAppContext) {
+        let (window, _) = testing::open(cx, 390.0, 300.0, |_, _| Narrow);
+        testing::frame(cx, window, |window, _| {
+            let save = window.find("save").bounds();
+            let right = save.origin.x + save.size.width;
+            assert!(right <= px(390.0), "the action ends at {right:?}");
+            let title = window.find("page-heading").bounds();
+            assert!(title.origin.x + title.size.width <= save.origin.x);
         });
     }
 

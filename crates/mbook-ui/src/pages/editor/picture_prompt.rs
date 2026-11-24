@@ -1,5 +1,6 @@
 //! The output settings for adding a picture to a book.
 
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -9,6 +10,7 @@ use gpui_kit::{
     AppContext as _, Context, Entity, Focusable as _, ParentElement as _, SharedString,
     Styled as _, Window, div,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::session::clean_path;
@@ -17,11 +19,19 @@ use crate::shared::ui::status_line;
 
 /// The label of the field that describes a picture for those who cannot see
 /// it, wherever a picture is put into a chapter.
-pub(super) const DESCRIPTION_LABEL: &str = "Description, read to those who cannot see the picture";
+pub(super) fn description_label() -> Cow<'static, str> {
+    t!("prompt.picture.description_label")
+}
+
 /// What the empty description field shows.
-pub(super) const DESCRIPTION_HINT: &str = "What the picture shows";
+pub(super) fn description_hint() -> Cow<'static, str> {
+    t!("prompt.picture.description_hint")
+}
+
 /// The label of the field that names the picture inside the book.
-pub(super) const NAME_LABEL: &str = "File name in the book";
+pub(super) fn name_label() -> Cow<'static, str> {
+    t!("prompt.picture.name_label")
+}
 
 pub(super) struct PictureSettings {
     pub(super) path: String,
@@ -37,7 +47,7 @@ pub(super) struct PictureSettings {
     reason = "the dialog takes its words and both of its outcomes"
 )]
 pub(super) fn ask_picture(
-    title: &'static str,
+    title: impl Into<SharedString>,
     name: String,
     proposal: String,
     describe: bool,
@@ -47,6 +57,7 @@ pub(super) fn ask_picture(
     + 'static,
     cancel: impl Fn(&mut EditorPage, &mut Window, &mut Context<'_, EditorPage>) + 'static,
 ) {
+    let title = title.into();
     let page = cx.weak_entity();
     let path = cx.new(|cx| InputState::new(window, cx));
     path.update(cx, |field, cx| field.set_value(proposal, window, cx));
@@ -54,9 +65,11 @@ pub(super) fn ask_picture(
     quality.update(cx, |field, cx| {
         field.set_value(EncodeOptions::default().quality.to_string(), window, cx);
     });
-    let description = cx.new(|cx| InputState::new(window, cx).placeholder(DESCRIPTION_HINT));
-    let width = cx.new(|cx| InputState::new(window, cx).placeholder("Original"));
-    let height = cx.new(|cx| InputState::new(window, cx).placeholder("Original"));
+    let description = cx.new(|cx| InputState::new(window, cx).placeholder(description_hint()));
+    let width =
+        cx.new(|cx| InputState::new(window, cx).placeholder(t!("prompt.picture.original_size")));
+    let height =
+        cx.new(|cx| InputState::new(window, cx).placeholder(t!("prompt.picture.original_size")));
     let error = cx.new(|_| None::<SharedString>);
     let (accept, cancel) = (Rc::new(accept), Rc::new(cancel));
     let first = Cell::new(true);
@@ -70,18 +83,21 @@ pub(super) fn ask_picture(
         let form = v_flex()
             .gap_2()
             .child(div().child(name.clone()))
-            .children(describe.then(|| labeled(DESCRIPTION_LABEL, &description)))
-            .child(labeled(NAME_LABEL, &path))
-            .child(labeled("Quality (1–100)", &quality))
+            .children(describe.then(|| labeled(description_label(), &description)))
+            .child(labeled(name_label(), &path))
+            .child(labeled(t!("prompt.picture.quality"), &quality))
             .child(
                 h_flex()
                     .gap_2()
-                    .child(labeled("Max width (px)", &width).flex_1())
-                    .child(labeled("Max height (px)", &height).flex_1()),
+                    .child(labeled(t!("prompt.picture.max_width"), &width).flex_1())
+                    .child(labeled(t!("prompt.picture.max_height"), &height).flex_1()),
             )
-            .child(div().text_sm().text_color(muted).child(
-                "Quality 80 suits most pictures. Leave the sizes empty to keep the original size.",
-            ))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(muted)
+                    .child(SharedString::from(t!("prompt.picture.size_hint"))),
+            )
             .children(
                 error
                     .read(cx)
@@ -99,11 +115,11 @@ pub(super) fn ask_picture(
         let (page_ok, page_cancel) = (page.clone(), page.clone());
         let (accept, cancel) = (accept.clone(), cancel.clone());
         alert
-            .title(title)
+            .title(title.clone())
             .description(form)
             .confirm()
-            .ok_text("Add")
-            .cancel_text("Cancel")
+            .ok_text(t!("prompt.add"))
+            .cancel_text(t!("prompt.cancel"))
             .on_ok(move |_, window, cx| {
                 match settings(
                     &path.read(cx).value(),
@@ -137,11 +153,12 @@ pub(super) fn ask_picture(
     });
 }
 
-fn labeled(label: &'static str, input: &Entity<InputState>) -> gpui_kit::Div {
+fn labeled(label: impl Into<SharedString>, input: &Entity<InputState>) -> gpui_kit::Div {
+    let label = label.into();
     v_flex()
         .min_w_0()
         .gap_1()
-        .child(div().child(label))
+        .child(div().child(label.clone()))
         .child(Input::new(input).aria_label(label))
 }
 
@@ -150,14 +167,14 @@ fn settings(
     quality: &str,
     width: &str,
     height: &str,
-) -> Result<PictureSettings, &'static str> {
+) -> Result<PictureSettings, Cow<'static, str>> {
     let path = clean_path(path)?;
     let quality = quality
         .trim()
         .parse::<u8>()
         .ok()
         .filter(|value| (1..=100).contains(value))
-        .ok_or("Enter a quality from 1 to 100.")?;
+        .ok_or_else(|| t!("prompt.picture.no_quality"))?;
     let resolution = (dimension(width)?, dimension(height)?);
     Ok(PictureSettings {
         path,
@@ -171,7 +188,7 @@ fn settings(
     })
 }
 
-fn dimension(value: &str) -> Result<Option<u32>, &'static str> {
+fn dimension(value: &str) -> Result<Option<u32>, Cow<'static, str>> {
     let value = value.trim();
     if value.is_empty() {
         return Ok(None);
@@ -179,9 +196,7 @@ fn dimension(value: &str) -> Result<Option<u32>, &'static str> {
     value
         .parse::<std::num::NonZeroU32>()
         .map(|value| Some(value.get()))
-        .map_err(
-            |_| "Enter a positive number of pixels or leave the field empty for original size.",
-        )
+        .map_err(|_| t!("prompt.picture.no_size"))
 }
 
 #[cfg(test)]

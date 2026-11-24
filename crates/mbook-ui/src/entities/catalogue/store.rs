@@ -590,6 +590,7 @@ mod tests {
             keep_controls: true,
             reduce_motion: true,
             check_updates: false,
+            language: Some(crate::shared::i18n::Language::Russian),
             reading: super::super::settings::ReadingOptions {
                 size_set: true,
                 ..Default::default()

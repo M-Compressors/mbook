@@ -306,6 +306,7 @@ screen on a compact one.
 | Reading layout | Scroll or pages | Scroll |
 | Page-turn animation | Off or on, subject to reduced motion | Off |
 | Reading progress | Visible or hidden | Visible |
+| Language | System language, English, Русский | System language |
 | Size of the interface | 100% to 200% | 100% |
 | Controls of the reader | Hide while reading, or always shown | Hide while reading |
 | Motion | As the system says, or reduced | As the system says |
@@ -313,6 +314,14 @@ screen on a compact one.
 
 A change shows at once in an open book. A page tone that follows the system
 is Paper while the system is light and Night while it is dark.
+
+The interface is in English and in Russian. With **System language** it is
+in the first language of the system it is translated into, and in English
+when the system prefers none of them; the choice names the language it
+stands for, and each language is named in itself, so that a person who
+cannot read the current one finds theirs. A new language shows at once,
+the menu bar of macOS included; a message already on the screen keeps its
+language ([Languages](architecture.md#languages)).
 
 ## Using the application without a pointer or without sight
 

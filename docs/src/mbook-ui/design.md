@@ -58,6 +58,9 @@ several packages share.
 | `futures` | already in the tree of GPUI | MIT OR Apache-2.0 | The channel of the editing task; the future of work on the pool |
 | `rayon` | The version of the workspace; already in the tree of `image`, `ravif` and `rav1e` | MIT OR Apache-2.0 | The pool of CPU-bound work |
 | `tree-sitter-mermaid`, `codebook-tree-sitter-latex` | 0.3.5 and 0.6.1 | MIT | Syntax highlighting in the Mermaid and KaTeX source dialogs |
+| `rust-i18n` | 4.2.4, 2026-09-29; Longbridge, the authors of GPUI Component | MIT | The texts of `locales/` and the language of the process; GPUI Component already uses it, so its controls and the application share one language |
+| `sys-locale` | 0.3.2, 2024-11-01; 1Password | MIT OR Apache-2.0 | The languages of the system in order of preference, on every platform including Android |
+| `icu_plurals`, `icu_locale_core` | 2.4.0, 2026-10-22; ICU4X of Unicode; `icu_locale_core` already in the tree | Unicode-3.0 | The plural category of a count |
 | `uuid`, `tempfile`, `thiserror`, `markdown` | The versions of the workspace | | Keys; files of imports; errors; block offsets |
 | `gpui-pre-mobile` (gpui-mobile), Android only | Commit `d8945a8` of [longbridge/gpui-mobile#56](https://github.com/longbridge/gpui-mobile/pull/56), opened 2026-11-11; repository pushed 2026-11-03 | GPL-3.0-or-later OR AGPL-3.0-or-later OR Apache-2.0, used under Apache-2.0 | The GPUI platform of Android: window, input, renderer, document picker and, with its `clipboard` feature, the clipboard of the system; its Java activities and emoji font go into the APK |
 | `android-activity`, `android_logger`, `log` (in `mbook-android`) | 0.6, 0.15, 0.4 | MIT OR Apache-2.0 | `NativeActivity` glue that calls `android_main`; logcat |
@@ -89,6 +92,9 @@ Ruled out:
 | `istmo-share` 0.1.1-alpha | An alpha whose API changes between releases; needs the window registry and runtime of the istmo framework |
 | `gpui-mobile` 0.1.0 on crates.io (itsbalamurali/gpui-mobile) | Declares no dependency, not even on GPUI: it implements no platform for the GPUI of the Kit |
 | `cargo-apk`, `xbuild` | `cargo-apk` is deprecated in favour of `xbuild` and packs no Java code, which the activities of gpui-mobile are; `xbuild` packs it through Gradle. `android.sh` compiles them with the tools of the SDK |
+| `fluent-bundle` | A second system of translation beside the `rust-i18n` of GPUI Component, with a language of its own to keep in two places; its plurals are what `icu_plurals` gives |
+| `gettext-rs` | Binds the C library gettext, which a build for Windows and Android must bring |
+| `intl_pluralrules` 7.0.2 | No release since 2022-10-19; ICU4X, which follows the CLDR, is already in the tree |
 | `cargo-ndk` | Sets the same four variables `android.sh` sets; a tool to install on every machine for no other gain |
 | A Gradle project | Gradle and the Android Gradle plugin are downloaded on every clean build, for an APK of one activity without AndroidX |
 
@@ -149,6 +155,10 @@ Ruled out:
 | Where another app's document is received on Android | `OpenActivity`, without a window or native code, which starts `MbookActivity` in its own task | The intent filters on `MbookActivity` | An app that starts the receiver for a result, as Telegram does, gets a second `MbookActivity` in its own task, which cannot run the interface and closes; the document was imported, but mbook did not come up. |
 | A destroyed activity on Android | Ends the process | Keeping the process, as Android does | GPUI cannot start again in a process on the thread of a new activity, and the window of that activity stays black. The price is a fresh start after the language of the system changes. |
 | The sections of the editor in a compact window | A sheet from a menu button beside Back, as in a medium window | A screen of its own that Back returns to | Back that first opened the list and only then left the editor read as a bug; a menu button says what it opens. |
+| Translations | `rust-i18n` with a YAML file per part of the application, keys named by part and purpose; counts by the plural rules of the CLDR | Fluent; gettext; the English text as key | GPUI Component translates its controls with `rust-i18n` in a language of the process; a second system would need the language set twice. A key by purpose keeps a reworded English text from breaking its translations. |
+| The language at start | The first language of the system the interface has, else English | The first language of the system, else English; English always | A Russian speaker whose system lists German first still gets Russian; a language without a translation would be all fallback. |
+| The language setting | System language, then every language named in itself; stored by its code, no row while it follows the system | The names in the current language | A person who cannot read the current language finds theirs. No row keeps a change of the system's language working, as for the page tone. |
+| The language in tests | Never set: the tests run in English and a test checks the language `Appearance` chooses, not the text | Setting it per test | The language of `rust-i18n` belongs to the process, and the tests of a crate run on several threads at once. |
 | File picker filters | Native dialogs through `rfd` | GPUI file prompts | GPUI Kit 0.10 cannot pass extension filters to its platform picker. |
 | Sending a book to other people | The share sheet of the platform through `robius-share`, with the mbook file | Share links of social networks; code of this crate on AppKit and WinRT | A share link carries text and a web address, and a library book has no address. Calling the platform directly needs `unsafe`, which the workspace forbids; `robius-share` keeps it in a maintained crate. |
 | Export destination | Native save dialog and temporary file in the destination directory | Convert directly into the chosen file | The completed file is published in one operation and an existing file cannot be overwritten. |

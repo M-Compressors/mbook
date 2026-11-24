@@ -3,12 +3,16 @@
 use gpui_kit::assets::IconName;
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, h_flex, v_flex};
+use std::borrow::Cow;
+
 use gpui_kit::{
     AnyElement, App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, Styled as _, Task, Window, div,
+    ParentElement as _, SharedString, Styled as _, Subscription, Task, Window, div,
 };
 
-use super::{icon_button, status_line};
+use rust_i18n::t;
+
+use super::{follow_language, icon_button, status_line};
 
 /// The key context of the field and match navigation controls.
 pub(crate) const KEY_CONTEXT: &str = "FindBar";
@@ -26,27 +30,33 @@ pub(crate) struct SearchBar<T> {
     pub(crate) current: Option<T>,
     /// Dropping the task cancels an obsolete request.
     pub(crate) task: Option<Task<()>>,
-    label: &'static str,
+    /// The name of the field and its placeholder, in the current language.
+    label: fn() -> Cow<'static, str>,
     feedback: Option<SharedString>,
+    _language: Subscription,
 }
 
 type Step<P> = fn(&mut P, bool, &mut Context<'_, P>);
 type Close<P> = fn(&mut P, &mut Window, &mut Context<'_, P>);
 
 impl<T> SearchBar<T> {
-    /// Creates a closed find bar for the given scope.
+    /// Creates a closed find bar for the given scope, named by what `label`
+    /// says in the current language.
     pub(crate) fn new<P: 'static>(
-        label: &'static str,
+        label: fn() -> Cow<'static, str>,
         window: &mut Window,
         cx: &mut Context<'_, P>,
     ) -> Self {
+        let input = cx.new(|cx| InputState::new(window, cx));
+        let language = follow_language(&input, label, window, cx);
         Self {
-            input: cx.new(|cx| InputState::new(window, cx).placeholder(label)),
+            input,
             open: false,
             current: None,
             task: None,
             label,
             feedback: None,
+            _language: language,
         }
     }
 
@@ -90,7 +100,7 @@ impl<T> SearchBar<T> {
             let pending = self.task.is_some();
             let disabled = pending || self.current.is_none();
             let feedback = if pending {
-                Some("Searching…".into())
+                Some(t!("ui.searching").into())
             } else {
                 self.feedback.clone()
             };
@@ -111,20 +121,24 @@ impl<T> SearchBar<T> {
                             div()
                                 .flex_1()
                                 .min_w_0()
-                                .child(Input::new(&self.input).aria_label(self.label)),
+                                .child(Input::new(&self.input).aria_label((self.label)())),
                         )
                         .child(
-                            icon_button("find-previous", IconName::ChevronUp, "Previous match")
-                                .disabled(disabled)
-                                .on_click(cx.listener(move |this, _, _, cx| step(this, true, cx))),
+                            icon_button(
+                                "find-previous",
+                                IconName::ChevronUp,
+                                t!("ui.previous_match"),
+                            )
+                            .disabled(disabled)
+                            .on_click(cx.listener(move |this, _, _, cx| step(this, true, cx))),
                         )
                         .child(
-                            icon_button("find-next", IconName::ChevronDown, "Next match")
+                            icon_button("find-next", IconName::ChevronDown, t!("ui.next_match"))
                                 .disabled(disabled)
                                 .on_click(cx.listener(move |this, _, _, cx| step(this, false, cx))),
                         )
                         .child(
-                            icon_button("find-close", IconName::X, "Close search").on_click(
+                            icon_button("find-close", IconName::X, t!("ui.close_search")).on_click(
                                 cx.listener(move |this, _, window, cx| close(this, window, cx)),
                             ),
                         ),

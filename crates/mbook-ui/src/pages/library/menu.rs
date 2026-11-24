@@ -6,33 +6,22 @@ use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::ButtonVariant;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::prelude::FluentBuilder as _;
-use gpui_kit::{App, Context, WeakEntity, Window};
+use gpui_kit::{App, Context, SharedString, WeakEntity, Window};
 use mbook_converter::Format;
+use rust_i18n::t;
 
 use super::{LibraryEvent, LibraryPage};
 use super::{export, share};
 use crate::entities::catalogue::{Library, Store};
 use crate::shared::model::BookKey;
 
-/// The words of the entries of a book's menu, in the order they stand.
-pub(super) const OPEN: &str = "Open";
-/// Edit the book.
-pub(super) const EDIT: &str = "Edit";
-/// Show the file of the book in the file manager of the platform.
-pub(super) const SHOW_FILE: &str = "Show the file";
 /// Whether the platform has a file manager that can show a book of the
 /// library.
 const SHOWS_FILES: bool = !cfg!(target_os = "android");
-/// Save a copy in another format.
-pub(super) const EXPORT: &str = "Export";
-/// Send the file of the book through the share sheet of the platform.
-pub(super) const SHARE: &str = "Share";
-/// Remove the book from the library.
-pub(super) const REMOVE: &str = "Remove";
 
 /// The question put before a book is removed.
 pub(super) fn remove_question(title: &str) -> String {
-    format!("Remove {title} from the library? The file you added it from is not touched.")
+    t!("library.remove_question", title = title).into_owned()
 }
 
 /// Fills `menu` with what can be done to the book `key`, called `title`:
@@ -56,12 +45,12 @@ pub(super) fn book_menu(
     let share_title = title.clone();
     let page_for_remove = page.clone();
     menu.item(
-        PopupMenuItem::new(OPEN)
+        PopupMenuItem::new(t!("library.open"))
             .icon(IconName::BookOpen)
             .on_click(emit(LibraryEvent::Open(key))),
     )
     .item(
-        PopupMenuItem::new(EDIT)
+        PopupMenuItem::new(t!("library.edit"))
             .icon(IconName::Pencil)
             .on_click(emit(LibraryEvent::Edit(key))),
     )
@@ -69,7 +58,7 @@ pub(super) fn book_menu(
     // which no file manager shows; its file leaves through Share and Export.
     .when(SHOWS_FILES, |menu| {
         menu.item(
-            PopupMenuItem::new(SHOW_FILE)
+            PopupMenuItem::new(t!("library.show_file"))
                 .icon(IconName::FolderOpen)
                 .on_click(move |_, _, cx| {
                     let path = Store::global(cx).roots.book(key);
@@ -79,7 +68,7 @@ pub(super) fn book_menu(
     })
     .submenu_with_icon(
         Some(Icon::new(IconName::Download)),
-        EXPORT,
+        t!("library.export"),
         window,
         cx,
         move |menu, _, _| {
@@ -97,7 +86,7 @@ pub(super) fn book_menu(
         },
     )
     .item(
-        PopupMenuItem::new(SHARE)
+        PopupMenuItem::new(t!("library.share"))
             .icon(IconName::Share)
             .on_click(move |_, window, cx| {
                 share::choose(key, &share_title, window, cx, share::present);
@@ -105,7 +94,7 @@ pub(super) fn book_menu(
     )
     .separator()
     .item(
-        PopupMenuItem::new(REMOVE)
+        PopupMenuItem::new(t!("library.remove"))
             .icon(IconName::Trash)
             .on_click(move |_, window, cx| {
                 confirm_remove(key, &title, page_for_remove.clone(), window, cx);
@@ -127,12 +116,12 @@ pub(super) fn confirm_remove(
     window.open_alert_dialog(cx, move |alert, _, _| {
         let page = page.clone();
         alert
-            .title("Remove this book?")
+            .title(SharedString::from(t!("library.remove_title")))
             .description(question.clone())
             .confirm()
-            .ok_text(REMOVE)
+            .ok_text(t!("library.remove"))
             .ok_variant(ButtonVariant::Danger)
-            .cancel_text("Cancel")
+            .cancel_text(t!("library.cancel"))
             .on_ok(move |_, window, cx| {
                 Library::global(cx).update(cx, |library, cx| library.remove(key, cx));
                 if let Some(page) = page.upgrade() {

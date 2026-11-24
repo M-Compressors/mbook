@@ -70,6 +70,17 @@ tree-sitter-mermaid = "0.3.5"
 codebook-tree-sitter-latex = "0.6.1"
 # Keep original source blocks when updating Markdown from the visual editor.
 similar = { version = "3", default-features = false }
+# The languages of the interface (mbook-ui docs, "Languages"): the strings of
+# `locales/` and the locale GPUI Component translates its own controls in;
+# one process-wide locale serves both.
+rust-i18n = "4.2"
+# The languages the system prefers, in order, chosen from at start.
+sys-locale = "0.3"
+# The plural category of a count (`one`, `few`, `many`, `other`) by the rules
+# of the CLDR; Russian has three forms where English has two.
+icu_plurals = "2"
+# The `locale!` macro that names a locale to `icu_plurals`.
+icu_locale_core = "2"
 # The catalogue: reading places, settings and a copy of each book's metadata.
 redb = "5"
 # Decodes the AVIF pictures of a book; pure Rust, on `rav1d`. Without its

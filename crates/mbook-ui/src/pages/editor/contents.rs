@@ -2,6 +2,7 @@
 //! where it comes from, the way to each entry, and the controls that change
 //! a list the book keeps.
 
+use std::borrow::Cow;
 use std::rc::Rc;
 
 use gpui_kit::assets::IconName;
@@ -12,6 +13,7 @@ use gpui_kit::{
     AnyElement, Context, InteractiveElement as _, IntoElement, ParentElement as _, Role,
     StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::commands::Origin;
@@ -22,69 +24,71 @@ use super::sections::{control, list_row};
 use super::session::{Control, chapter_choice};
 use crate::features::edit_book::command::{Command, ContentsChange};
 use crate::features::edit_book::outline::{ContentsEntry, ContentsOutline, Fault};
+use crate::shared::i18n::count_text;
 use crate::shared::ui::{icon_button, status_line};
 
 /// What the section says about contents that follow the headings.
-pub(super) const AUTOMATIC_HINT: &str = "Readers see these contents. They follow the headings of \
-     the chapters: change a heading to rename its entry, add a heading to add one.";
+pub(super) fn automatic_hint() -> Cow<'static, str> {
+    t!("editor.contents.automatic_hint")
+}
 /// What the section says about contents the book keeps as a list of its own.
-pub(super) const STORED_HINT: &str = "Readers see these contents. The book keeps them as a list \
-     of its own, so they do not change when you edit a heading. Change an entry from the menu at \
-     its end.";
+pub(super) fn stored_hint() -> Cow<'static, str> {
+    t!("editor.contents.stored_hint")
+}
 /// What the section says when no chapter has a heading.
-pub(super) const NO_HEADINGS: &str =
-    "No chapter has a heading yet. Give a chapter a heading and it appears here.";
+pub(super) fn no_headings() -> Cow<'static, str> {
+    t!("editor.contents.no_headings")
+}
 /// The control that makes the contents follow the headings, wherever it is.
-pub(super) const FOLLOW_HEADINGS: &str = "Build the contents from the headings";
+pub(super) fn follow_headings() -> Cow<'static, str> {
+    t!("editor.contents.follow_headings")
+}
 /// The control that adds an entry to the list.
-pub(super) const ADD_ENTRY: &str = "Add an entry…";
+pub(super) fn add_entry() -> Cow<'static, str> {
+    t!("editor.contents.add_entry")
+}
 /// The control that sorts the list by where its entries lead.
-pub(super) const IN_BOOK_ORDER: &str = "Put the entries in the order of the book";
+pub(super) fn in_book_order() -> Cow<'static, str> {
+    t!("editor.contents.in_book_order")
+}
 /// The menu item that moves an entry under the one above it.
-pub(super) const NEST: &str = "Nest under the entry above";
+pub(super) fn nest() -> Cow<'static, str> {
+    t!("editor.contents.nest")
+}
 /// The menu item that moves an entry one level out.
-pub(super) const UNNEST: &str = "Move out one level";
+pub(super) fn unnest() -> Cow<'static, str> {
+    t!("editor.contents.unnest")
+}
 /// What a question about the last entry of the list says.
-const LAST_ENTRY: &str = "It is the last entry of the list. Without a list of its own, the book \
-     shows the headings of its chapters as its contents.";
+fn last_entry() -> Cow<'static, str> {
+    t!("editor.contents.last_entry")
+}
 
 /// How far an entry is set in for each level under the first, in pixels.
 const INDENT: f32 = 20.0;
 
 /// What the section says about entries that lead nowhere.
 pub(super) fn nowhere_words(count: usize) -> String {
-    if count == 1 {
-        "1 entry leads nowhere: its heading is gone. Give it another place, or remove it."
-            .to_owned()
-    } else {
-        format!(
-            "{count} entries lead nowhere: their headings are gone. Give each another place, or \
-             remove it."
-        )
-    }
+    count_text("editor.contents.nowhere", count)
 }
 
 /// What the section says about entries that are not in the order of the book.
 pub(super) fn order_words(count: usize) -> String {
-    if count == 1 {
-        "1 entry is not where its place is in the book.".to_owned()
-    } else {
-        format!("{count} entries are not where their places are in the book.")
-    }
+    count_text("editor.contents.out_of_order", count)
 }
 
 /// The question before an entry is removed. For the last entry of the list
 /// it says what the contents become without a list.
 fn remove_question(title: &str, last: bool) -> Question {
     Question {
-        title: format!("Remove the entry “{title}”?"),
+        title: t!("editor.contents.remove_title", title = title).into_owned(),
         detail: if last {
-            LAST_ENTRY
+            last_entry()
         } else {
-            "The chapter it leads to stays in the book. This cannot be undone."
+            t!("editor.contents.remove_detail")
         }
-        .to_owned(),
-        ok: "Remove",
+        .into_owned(),
+        ok: t!("prompt.remove.ok").into(),
     }
 }
 
@@ -107,14 +111,14 @@ impl EditorPage {
         let theme = cx.theme().clone();
         let contents = self.session.contents().cloned().unwrap_or_default();
         let hint = if contents.automatic {
-            AUTOMATIC_HINT
+            automatic_hint()
         } else {
-            STORED_HINT
+            stored_hint()
         };
         let mut list = v_flex()
             .id("contents-list")
             .role(Role::Group)
-            .aria_label("Contents")
+            .aria_label(t!("editor.section.contents"))
             .gap_1();
         for (index, entry) in contents.entries.iter().enumerate() {
             list = list.child(self.render_entry(index, entry, &contents, cx));
@@ -128,7 +132,7 @@ impl EditorPage {
             .child(status_line("contents-hint", hint).text_color(theme.muted_foreground))
             .children(
                 (contents.automatic && contents.entries.is_empty())
-                    .then(|| status_line("no-contents", NO_HEADINGS)),
+                    .then(|| status_line("no-contents", no_headings())),
             )
             .children((!contents.automatic).then(|| self.render_list_controls(&contents, cx)))
             .children(
@@ -162,23 +166,20 @@ impl EditorPage {
                     .gap_2()
                     .flex_wrap()
                     .child(
-                        control("add-entry", ADD_ENTRY)
+                        control("add-entry", add_entry())
                             .disabled(pending || self.session.chapters().is_empty())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.ask_contents_entry(None, window, cx);
                             })),
                     )
                     .child(
-                        control("follow-headings", FOLLOW_HEADINGS).on_click(cx.listener(
+                        control("follow-headings", follow_headings()).on_click(cx.listener(
                             |_, _, window, cx| {
                                 confirm(
                                     Question {
-                                        title: "Replace the contents?".to_owned(),
-                                        detail:
-                                            "The list the book keeps is replaced by the headings \
-                                             of its chapters. This cannot be undone."
-                                                .to_owned(),
-                                        ok: "Replace",
+                                        title: t!("editor.contents.replace_title").into_owned(),
+                                        detail: t!("editor.contents.replace_detail").into_owned(),
+                                        ok: t!("editor.contents.replace_ok").into(),
                                     },
                                     window,
                                     cx,
@@ -199,7 +200,7 @@ impl EditorPage {
                             .text_color(theme.danger),
                     )
                     .child(
-                        control("contents-in-order", IN_BOOK_ORDER)
+                        control("contents-in-order", in_book_order())
                             .self_start()
                             .disabled(pending)
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -225,16 +226,21 @@ impl EditorPage {
             chapter_choice(at + 1, heading)
         });
         let leads = match (&chapter, entry.fault) {
-            (Some(chapter), None) => format!("in {chapter}"),
+            (Some(chapter), None) => t!("editor.entry.in_chapter", chapter = chapter),
             (Some(chapter), Some(Fault::OutOfOrder)) => {
-                format!("in {chapter}, not in the order of the book")
+                t!("editor.entry.in_chapter_out_of_order", chapter = chapter)
             }
-            (None, _) | (_, Some(Fault::Nowhere)) => "leads nowhere".to_owned(),
+            (None, _) | (_, Some(Fault::Nowhere)) => t!("editor.entry.leads_nowhere"),
         };
-        let name = format!("{}, level {}, {leads}", entry.title, entry.level);
+        let name = t!(
+            "editor.entry.name",
+            title = entry.title,
+            level = entry.level,
+            leads = leads
+        );
         let tag = entry.fault.map(|fault| match fault {
-            Fault::Nowhere => "leads nowhere",
-            Fault::OutOfOrder => "out of order",
+            Fault::Nowhere => t!("editor.entry.leads_nowhere"),
+            Fault::OutOfOrder => t!("editor.entry.out_of_order"),
         });
         let indent = f32::from(entry.level.saturating_sub(1)) * INDENT;
         let path = entry.chapter.clone();
@@ -302,11 +308,11 @@ impl EditorPage {
         icon_button(
             ("entry-menu", index),
             IconName::Ellipsis,
-            format!("Entry actions, {title}"),
+            t!("editor.entry.actions", title = title),
         )
         .disabled(disabled)
         .dropdown_menu(move |menu, _, _| {
-            let shift = |label: &'static str, deeper: bool, allowed: bool| {
+            let shift = |label: Cow<'static, str>, deeper: bool, allowed: bool| {
                 let page = page.clone();
                 PopupMenuItem::new(label)
                     .disabled(!allowed)
@@ -318,19 +324,21 @@ impl EditorPage {
             };
             let (edit_page, remove_page) = (page.clone(), page.clone());
             let title = title.clone();
-            menu.item(PopupMenuItem::new("Edit…").on_click(move |_, window, cx| {
-                edit_page
-                    .update(cx, |this, cx| {
-                        this.ask_contents_entry(Some(index), window, cx);
-                    })
-                    .ok();
-            }))
+            menu.item(
+                PopupMenuItem::new(t!("editor.entry.edit")).on_click(move |_, window, cx| {
+                    edit_page
+                        .update(cx, |this, cx| {
+                            this.ask_contents_entry(Some(index), window, cx);
+                        })
+                        .ok();
+                }),
+            )
             .separator()
-            .item(shift(NEST, true, moves.nest))
-            .item(shift(UNNEST, false, moves.unnest))
+            .item(shift(nest(), true, moves.nest))
+            .item(shift(unnest(), false, moves.unnest))
             .separator()
             .item(
-                PopupMenuItem::new("Remove…").on_click(move |_, window, cx| {
+                PopupMenuItem::new(t!("editor.entry.remove")).on_click(move |_, window, cx| {
                     let question = remove_question(&title, moves.last);
                     remove_page
                         .update(cx, |_, cx| {
@@ -419,7 +427,7 @@ impl EditorPage {
 
 #[cfg(test)]
 mod tests {
-    use super::{LAST_ENTRY, nowhere_words, order_words, remove_question};
+    use super::{last_entry, nowhere_words, order_words, remove_question};
 
     #[test]
     fn the_question_names_the_entry_and_says_what_stays() {
@@ -431,7 +439,7 @@ mod tests {
 
     #[test]
     fn the_question_about_the_last_entry_says_what_the_contents_become() {
-        assert_eq!(remove_question("Opening", true).detail, LAST_ENTRY);
+        assert_eq!(remove_question("Opening", true).detail, last_entry());
     }
 
     #[test]

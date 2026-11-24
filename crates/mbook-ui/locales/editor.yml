@@ -1,0 +1,539 @@
+_version: 2
+# The editor of a book.
+editor:
+  # The page.
+  page:
+    en: "Editor"
+    ru: "Редактор"
+  book:
+    en: "Book"
+    ru: "Книга"
+  book_and_chapters:
+    en: "Book and chapters"
+    ru: "Книга и главы"
+  save:
+    en: "Save"
+    ru: "Сохранить"
+  opening:
+    en: "Opening the book"
+    ru: "Открытие книги"
+  open_failed:
+    en: "This book could not be opened"
+    ru: "Не удалось открыть эту книгу"
+  find_in_chapter:
+    en: "Find in chapter"
+    ru: "Найти в главе"
+  current_section:
+    en: ", current section"
+    ru: ", текущий раздел"
+  # The sections.
+  section:
+    details:
+      en: "Details"
+      ru: "Сведения"
+    cover:
+      en: "Cover"
+      ru: "Обложка"
+    contents:
+      en: "Contents"
+      ru: "Оглавление"
+    chapters:
+      en: "Chapters"
+      ru: "Главы"
+    landmarks:
+      en: "Landmarks"
+      ru: "Ориентиры"
+    pictures:
+      en: "Pictures"
+      ru: "Изображения"
+    diagrams:
+      en: "Diagrams"
+      ru: "Диаграммы"
+    formulas:
+      en: "Formulas"
+      ru: "Формулы"
+    problems:
+      en: "Problems"
+      ru: "Проблемы"
+  # The views of a chapter.
+  mode:
+    visual:
+      en: "Visual"
+      ru: "Визуальный"
+    source:
+      en: "Source"
+      ru: "Исходный текст"
+    split:
+      en: "Split"
+      ru: "Рядом"
+    preview:
+      en: "Preview"
+      ru: "Просмотр"
+  # The state of the book in the header.
+  status:
+    saving:
+      en: "Saving"
+      ru: "Сохранение"
+    unsaved:
+      en: "Unsaved changes"
+      ru: "Изменения не сохранены"
+  # What went wrong in a command.
+  error:
+    open:
+      en: "The book could not be opened: %{detail}."
+      ru: "Не удалось открыть книгу: %{detail}."
+    refused:
+      en: "The book refused the change: %{detail}."
+      ru: "Книга не приняла изменение: %{detail}."
+    save:
+      en: "The book could not be saved: %{detail}."
+      ru: "Не удалось сохранить книгу: %{detail}."
+    contents:
+      en: "The contents were not changed: %{detail}."
+      ru: "Оглавление не изменено: %{detail}."
+    no_such_path:
+      en: "Nothing in the book has the path %{path}."
+      ru: "В книге нет ничего по пути %{path}."
+    ended:
+      en: "The editing session has ended. Go back and open the book again."
+      ru: "Сеанс редактирования завершён. Вернитесь назад и откройте книгу снова."
+    at_place:
+      en: "%{message} It is at line %{line}, column %{column}."
+      ru: "%{message} Место: строка %{line}, столбец %{column}."
+    refused_text:
+      en: "The book was not saved: it refused the text of %{path}. Correct it, then save."
+      ru: "Книга не сохранена: она не приняла текст %{path}. Исправьте его и сохраните снова."
+  # A problem with its place.
+  problem:
+    at_place:
+      en: "%{path}, line %{line}, column %{column}: "
+      ru: "%{path}, строка %{line}, столбец %{column}: "
+    at_byte:
+      en: "%{path}, byte %{offset}: "
+      ru: "%{path}, байт %{offset}: "
+  unsaved_announcement:
+    one:
+      en: "The book has %{count} problem and was not saved"
+      ru: "Книга не сохранена: в ней %{count} проблема"
+    few:
+      ru: "Книга не сохранена: в ней %{count} проблемы"
+    many:
+      ru: "Книга не сохранена: в ней %{count} проблем"
+    other:
+      en: "The book has %{count} problems and was not saved"
+      ru: "Книга не сохранена: в ней %{count} проблемы"
+  # A chapter.
+  untitled_chapter:
+    en: "Untitled chapter"
+    ru: "Глава без названия"
+  chapter_label:
+    en: "Chapter %{number}, %{title}, %{path}"
+    ru: "Глава %{number}, %{title}, %{path}"
+  current_chapter:
+    en: ", current chapter"
+    ru: ", текущая глава"
+  edited_suffix:
+    en: ", edited"
+    ru: ", изменена"
+  edited:
+    en: "edited"
+    ru: "изменена"
+  quoted:
+    en: "“%{text}”"
+    ru: "«%{text}»"
+  # The size of a file.
+  size:
+    bytes:
+      one:
+        en: "%{count} byte"
+        ru: "%{count} байт"
+      few:
+        ru: "%{count} байта"
+      many:
+        ru: "%{count} байт"
+      other:
+        en: "%{count} bytes"
+        ru: "%{count} байта"
+    kib:
+      en: "%{whole}.%{tenth} KiB"
+      ru: "%{whole},%{tenth} КиБ"
+    mib:
+      en: "%{whole}.%{tenth} MiB"
+      ru: "%{whole},%{tenth} МиБ"
+  no_picture_path:
+    en: "Enter a file name, such as img/pond.avif."
+    ru: "Введите имя файла, например img/pond.avif."
+  # The cover and the pictures.
+  cover:
+    of:
+      en: "Cover of %{title}"
+      ru: "Обложка книги «%{title}»"
+    of_this_book:
+      en: "Cover of this book"
+      ru: "Обложка этой книги"
+    failed:
+      en: "The cover could not be shown."
+      ru: "Не удалось показать обложку."
+    loading:
+      en: "Loading the cover"
+      ru: "Загрузка обложки"
+    none:
+      en: "This book has no cover."
+      ru: "У этой книги нет обложки."
+    replace:
+      en: "Replace…"
+      ru: "Заменить…"
+    add:
+      en: "Add a cover…"
+      ru: "Добавить обложку…"
+  encoding:
+    en: "Encoding %{name}…"
+    ru: "Преобразование %{name}…"
+  adding:
+    en: "Adding %{name}…"
+    ru: "Добавление %{name}…"
+  pictures:
+    none:
+      en: "This book has no pictures."
+      ru: "В этой книге нет изображений."
+    add:
+      en: "Add a picture…"
+      ru: "Добавить изображение…"
+  picture:
+    resolution:
+      en: "%{width} × %{height} px"
+      ru: "%{width} × %{height} пикс."
+    card:
+      en: "%{path}, %{resolution}, %{size}"
+      ru: "%{path}, %{resolution}, %{size}"
+    remove:
+      en: "Remove %{path}"
+      ru: "Удалить %{path}"
+    what:
+      en: "%{path}"
+      ru: "изображение %{path}"
+  preview_of:
+    en: "Preview of %{path}"
+    ru: "Просмотр %{path}"
+  # The problems.
+  problems:
+    none:
+      en: "No problems were found. Check the book to look again."
+      ru: "Проблем не найдено. Проверьте книгу, чтобы поискать снова."
+    summary:
+      one:
+        en: "The book has %{count} problem and cannot be saved until they are fixed."
+        ru: "В книге %{count} проблема: пока её не исправить, книгу нельзя сохранить."
+      few:
+        ru: "В книге %{count} проблемы: пока их не исправить, книгу нельзя сохранить."
+      many:
+        ru: "В книге %{count} проблем: пока их не исправить, книгу нельзя сохранить."
+      other:
+        en: "The book has %{count} problems and cannot be saved until they are fixed."
+        ru: "В книге %{count} проблемы: пока их не исправить, книгу нельзя сохранить."
+    check:
+      en: "Check the book"
+      ru: "Проверить книгу"
+    open_contents:
+      en: "Open Contents"
+      ru: "Открыть оглавление"
+  # The contents.
+  contents:
+    automatic_hint:
+      en: "Readers see these contents. They follow the headings of the chapters: change a heading to rename its entry, add a heading to add one."
+      ru: "Это оглавление видят читатели. Оно следует за заголовками глав: измените заголовок, чтобы переименовать его пункт, добавьте заголовок, чтобы добавить пункт."
+    stored_hint:
+      en: "Readers see these contents. The book keeps them as a list of its own, so they do not change when you edit a heading. Change an entry from the menu at its end."
+      ru: "Это оглавление видят читатели. Книга хранит его отдельным списком, поэтому оно не меняется, когда вы правите заголовок. Пункт можно изменить в меню в его конце."
+    no_headings:
+      en: "No chapter has a heading yet. Give a chapter a heading and it appears here."
+      ru: "Ни у одной главы пока нет заголовка. Добавьте главе заголовок, и он появится здесь."
+    follow_headings:
+      en: "Build the contents from the headings"
+      ru: "Собрать оглавление из заголовков"
+    add_entry:
+      en: "Add an entry…"
+      ru: "Добавить пункт…"
+    in_book_order:
+      en: "Put the entries in the order of the book"
+      ru: "Расставить пункты в порядке книги"
+    nest:
+      en: "Nest under the entry above"
+      ru: "Вложить в пункт выше"
+    unnest:
+      en: "Move out one level"
+      ru: "Поднять на уровень выше"
+    last_entry:
+      en: "It is the last entry of the list. Without a list of its own, the book shows the headings of its chapters as its contents."
+      ru: "Это последний пункт списка. Без собственного списка книга показывает в оглавлении заголовки своих глав."
+    nowhere:
+      one:
+        en: "%{count} entry leads nowhere: its heading is gone. Give it another place, or remove it."
+        ru: "%{count} пункт никуда не ведёт: его заголовка больше нет. Укажите для него другое место или удалите его."
+      few:
+        ru: "%{count} пункта никуда не ведут: их заголовков больше нет. Укажите для каждого другое место или удалите его."
+      many:
+        ru: "%{count} пунктов никуда не ведут: их заголовков больше нет. Укажите для каждого другое место или удалите его."
+      other:
+        en: "%{count} entries lead nowhere: their headings are gone. Give each another place, or remove it."
+        ru: "%{count} пункта никуда не ведут: их заголовков больше нет. Укажите для каждого другое место или удалите его."
+    out_of_order:
+      one:
+        en: "%{count} entry is not where its place is in the book."
+        ru: "%{count} пункт стоит не там, где его место в книге."
+      few:
+        ru: "%{count} пункта стоят не там, где их место в книге."
+      many:
+        ru: "%{count} пунктов стоят не там, где их место в книге."
+      other:
+        en: "%{count} entries are not where their places are in the book."
+        ru: "%{count} пункта стоят не там, где их место в книге."
+    remove_title:
+      en: "Remove the entry “%{title}”?"
+      ru: "Удалить пункт оглавления «%{title}»?"
+    remove_detail:
+      en: "The chapter it leads to stays in the book. This cannot be undone."
+      ru: "Глава, на которую он ведёт, останется в книге. Это действие нельзя отменить."
+    replace_title:
+      en: "Replace the contents?"
+      ru: "Заменить оглавление?"
+    replace_detail:
+      en: "The list the book keeps is replaced by the headings of its chapters. This cannot be undone."
+      ru: "Список, который хранит книга, будет заменён заголовками её глав. Это действие нельзя отменить."
+    replace_ok:
+      en: "Replace"
+      ru: "Заменить"
+  entry:
+    in_chapter:
+      en: "in %{chapter}"
+      ru: "в главе %{chapter}"
+    in_chapter_out_of_order:
+      en: "in %{chapter}, not in the order of the book"
+      ru: "в главе %{chapter}, не по порядку книги"
+    leads_nowhere:
+      en: "leads nowhere"
+      ru: "никуда не ведёт"
+    out_of_order:
+      en: "out of order"
+      ru: "не по порядку"
+    name:
+      en: "%{title}, level %{level}, %{leads}"
+      ru: "%{title}, уровень %{level}, %{leads}"
+    actions:
+      en: "Entry actions, %{title}"
+      ru: "Действия с пунктом, %{title}"
+    edit:
+      en: "Edit…"
+      ru: "Изменить…"
+    remove:
+      en: "Remove…"
+      ru: "Удалить…"
+  # The chapter area.
+  chapter:
+    editor_hint:
+      en: "Tab indents. Press Escape, then Tab, to leave the editor."
+      ru: "Tab делает отступ. Чтобы выйти из редактора, нажмите Escape, затем Tab."
+    none_title:
+      en: "This book has no chapters yet"
+      ru: "В этой книге пока нет глав"
+    none_hint:
+      en: "Add the first chapter to start writing."
+      ru: "Добавьте первую главу, чтобы начать писать."
+    none:
+      en: "This book has no chapters yet."
+      ru: "В этой книге пока нет глав."
+    new:
+      en: "New chapter…"
+      ru: "Новая глава…"
+    actions:
+      en: "Chapter actions"
+      ru: "Действия с главой"
+    move_up:
+      en: "Move up"
+      ru: "Переместить выше"
+    move_down:
+      en: "Move down"
+      ru: "Переместить ниже"
+    rename_file:
+      en: "Rename the file…"
+      ru: "Переименовать файл…"
+    remove:
+      en: "Remove the chapter…"
+      ru: "Удалить главу…"
+    source_of:
+      en: "Markdown source of %{path}"
+      ru: "Исходный текст Markdown %{path}"
+    markdown_of:
+      en: "Markdown of %{path}"
+      ru: "Markdown %{path}"
+  # The question before a chapter is removed.
+  remove_chapter:
+    title:
+      en: "Remove %{name}?"
+      ru: "Удалить главу %{name}?"
+    alone:
+      en: "This cannot be undone."
+      ru: "Это действие нельзя отменить."
+    entries:
+      one:
+        en: "Its entry of the contents is removed with it. This cannot be undone."
+        ru: "Вместе с ней будет удалён %{count} пункт оглавления. Это действие нельзя отменить."
+      few:
+        ru: "Вместе с ней будут удалены %{count} пункта оглавления. Это действие нельзя отменить."
+      many:
+        ru: "Вместе с ней будут удалены %{count} пунктов оглавления. Это действие нельзя отменить."
+      other:
+        en: "Its %{count} entries of the contents are removed with it. This cannot be undone."
+        ru: "Вместе с ней будут удалены %{count} пункта оглавления. Это действие нельзя отменить."
+    landmarks:
+      one:
+        en: "The landmark that leads into it is removed with it. This cannot be undone."
+        ru: "Вместе с ней будет удалён %{count} ориентир, который ведёт в неё. Это действие нельзя отменить."
+      few:
+        ru: "Вместе с ней будут удалены %{count} ориентира, которые ведут в неё. Это действие нельзя отменить."
+      many:
+        ru: "Вместе с ней будут удалены %{count} ориентиров, которые ведут в неё. Это действие нельзя отменить."
+      other:
+        en: "The %{count} landmarks that lead into it are removed with it. This cannot be undone."
+        ru: "Вместе с ней будут удалены %{count} ориентира, которые ведут в неё. Это действие нельзя отменить."
+    both:
+      en: "%{entries} and %{landmarks} are removed with it. This cannot be undone."
+      ru: "Вместе с ней будут удалены %{entries} и %{landmarks}. Это действие нельзя отменить."
+    entries_part:
+      one:
+        en: "Its entry of the contents"
+        ru: "%{count} пункт оглавления"
+      few:
+        ru: "%{count} пункта оглавления"
+      many:
+        ru: "%{count} пунктов оглавления"
+      other:
+        en: "Its %{count} entries of the contents"
+        ru: "%{count} пункта оглавления"
+    landmarks_part:
+      one:
+        en: "the landmark that leads into it"
+        ru: "%{count} ориентир, который ведёт в неё"
+      few:
+        ru: "%{count} ориентира, которые ведут в неё"
+      many:
+        ru: "%{count} ориентиров, которые ведут в неё"
+      other:
+        en: "the %{count} landmarks that lead into it"
+        ru: "%{count} ориентира, которые ведут в неё"
+  # The Details form.
+  field:
+    title:
+      en: "Title"
+      ru: "Название"
+    authors:
+      en: "Authors (one per line)"
+      ru: "Авторы (по одному в строке)"
+    language:
+      en: "Language (a code such as en or ru)"
+      ru: "Язык (код, например en или ru)"
+    series:
+      en: "Series"
+      ru: "Серия"
+    series_number:
+      en: "Number in the series"
+      ru: "Номер в серии"
+    publisher:
+      en: "Publisher"
+      ru: "Издательство"
+    date:
+      en: "Date"
+      ru: "Дата"
+    annotation:
+      en: "Annotation"
+      ru: "Аннотация"
+  # Files: pictures, chapters and the save.
+  files:
+    choose_cover:
+      en: "Choose a cover"
+      ru: "Выберите обложку"
+    add_pictures:
+      en: "Add pictures"
+      ru: "Добавить изображения"
+    picture_filter:
+      en: "Pictures"
+      ru: "Изображения"
+    replace_cover:
+      en: "Replace the cover"
+      ru: "Заменить обложку"
+    add_picture_to_chapter:
+      en: "Add a picture to the chapter"
+      ru: "Добавить изображение в главу"
+    add_picture:
+      en: "Add a picture"
+      ru: "Добавить изображение"
+    place_later:
+      en: "The picture was added to the book. Open the chapter and choose Picture to place it."
+      ru: "Изображение добавлено в книгу. Откройте главу и выберите «Изображение», чтобы вставить его."
+    new_chapter:
+      en: "New chapter"
+      ru: "Новая глава"
+    new_chapter_label:
+      en: "Title of the chapter"
+      ru: "Название главы"
+    new_chapter_ok:
+      en: "Add the chapter"
+      ru: "Добавить главу"
+    rename:
+      en: "Rename the file"
+      ru: "Переименовать файл"
+    rename_label:
+      en: "File name of the chapter. Links to it use this name."
+      ru: "Имя файла главы. Ссылки на главу используют это имя."
+    rename_ok:
+      en: "Rename"
+      ru: "Переименовать"
+    rename_required:
+      en: "Enter a file name, such as ch01.md."
+      ru: "Введите имя файла, например ch01.md."
+    saved:
+      en: "Saved"
+      ru: "Сохранено"
+    library_not_updated:
+      en: "The book was saved, but the library could not be updated: %{error}."
+      ru: "Книга сохранена, но не удалось обновить библиотеку: %{error}."
+    saved_unreadable:
+      en: "the saved file could not be read"
+      ru: "не удалось прочитать сохранённый файл"
+    saved_unmeasured:
+      en: "the saved file could not be measured"
+      ru: "не удалось узнать размер сохранённого файла"
+    catalogue_not_updated:
+      en: "the catalogue could not be updated"
+      ru: "не удалось обновить каталог"
+  # Why a picture file was not added.
+  file:
+    not_added:
+      en: "%{name} was not added: %{reason}."
+      ru: "Файл %{name} не добавлен: %{reason}."
+    unreadable:
+      en: "it could not be read (%{source})"
+      ru: "его не удалось прочитать (%{source})"
+    too_large:
+      en: "it is larger than 256 MiB"
+      ru: "он больше 256 МиБ"
+    unsupported:
+      en: "it is not an AVIF, JPEG, PNG, GIF, WebP or BMP picture"
+      ru: "это не изображение AVIF, JPEG, PNG, GIF, WebP или BMP"
+    too_many_pixels:
+      en: "it has more than 100 million pixels"
+      ru: "в нём больше 100 миллионов пикселей"
+    damaged:
+      en: "it is damaged or cannot be decoded"
+      ru: "он повреждён или не может быть декодирован"
+  # Finding in a chapter.
+  search:
+    open_source:
+      en: "Open Source to search this chapter"
+      ru: "Чтобы искать в этой главе, откройте исходный текст"
+    no_matches:
+      en: "No matches"
+      ru: "Совпадений нет"
+    too_long:
+      en: "This search is too long"
+      ru: "Слишком длинный запрос"

@@ -8,6 +8,7 @@ use gpui_kit::{
     Role, SharedString, StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
     div, px,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::session::{Section, chapter_label, chapter_title};
@@ -52,7 +53,7 @@ pub(super) fn list_row(
 
 /// The words over a group of the list. They are not a control: the group
 /// under them carries the same name for assistive technology.
-fn group_heading(label: &'static str, cx: &Context<'_, EditorPage>) -> impl IntoElement {
+fn group_heading(label: impl Into<SharedString>, cx: &Context<'_, EditorPage>) -> impl IntoElement {
     div()
         .px_3()
         .pt_3()
@@ -60,7 +61,7 @@ fn group_heading(label: &'static str, cx: &Context<'_, EditorPage>) -> impl Into
         .text_xs()
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(cx.theme().muted_foreground)
-        .child(label)
+        .child(label.into())
 }
 
 impl EditorPage {
@@ -72,20 +73,21 @@ impl EditorPage {
         let mut book = v_flex()
             .id("book-sections")
             .role(Role::Group)
-            .aria_label("Book")
+            .aria_label(t!("editor.book"))
             .gap_1();
         for section in Section::BOOK {
             let current = self.session.section == section;
+            let words = section.label();
             let (label, mut name) = if section == Section::Problems && problems > 0 {
                 (
-                    format!("{} ({problems})", section.label()),
-                    format!("{}, {problems}", section.label()),
+                    format!("{words} ({problems})"),
+                    format!("{words}, {problems}"),
                 )
             } else {
-                (section.label().to_owned(), section.label().to_owned())
+                (words.clone().into_owned(), words.into_owned())
             };
             if current {
-                name.push_str(", current section");
+                name.push_str(&t!("editor.current_section"));
             }
             book = book.child(
                 list_item(section.id(), label)
@@ -100,10 +102,10 @@ impl EditorPage {
         v_flex()
             .id("sections")
             .role(Role::Navigation)
-            .aria_label("Book and chapters")
+            .aria_label(t!("editor.book_and_chapters"))
             .test_support()
             .p_2()
-            .child(group_heading("Book", cx))
+            .child(group_heading(t!("editor.book"), cx))
             .child(book)
             .child(
                 // The control that adds a chapter stands over the list, so
@@ -111,13 +113,13 @@ impl EditorPage {
                 h_flex()
                     .items_end()
                     .justify_between()
-                    .child(group_heading("Chapters", cx))
+                    .child(group_heading(t!("editor.section.chapters"), cx))
                     .child(
                         Button::new("add-chapter")
                             .ghost()
                             .small()
                             .icon(IconName::Plus)
-                            .label("New chapter…")
+                            .label(t!("editor.chapter.new"))
                             .cursor_pointer()
                             .on_click(
                                 cx.listener(|_, _, window, cx| Self::add_chapter(window, cx)),
@@ -135,7 +137,7 @@ impl EditorPage {
         let mut list = v_flex()
             .id("chapters-list")
             .role(Role::Group)
-            .aria_label("Chapters")
+            .aria_label(t!("editor.section.chapters"))
             .gap_1();
         let current = self.session.open.clone();
         let chapters = self.session.chapters().to_vec();
@@ -151,7 +153,7 @@ impl EditorPage {
                 .min_w_0()
                 .truncate()
                 .text_left()
-                .child(chapter_title(heading).to_owned());
+                .child(chapter_title(heading).into_owned());
             let row = h_flex()
                 .w_full()
                 .gap_2()
@@ -173,7 +175,7 @@ impl EditorPage {
                         .flex_none()
                         .text_xs()
                         .text_color(theme.muted_foreground)
-                        .child("edited")
+                        .child(t!("editor.edited"))
                 }));
             let path = chapter.path.clone();
             list = list.child(
@@ -187,7 +189,7 @@ impl EditorPage {
         }
         if chapters.is_empty() {
             list = list.child(
-                status_line("no-chapters", "This book has no chapters yet.")
+                status_line("no-chapters", t!("editor.chapter.none"))
                     .px_3()
                     .py_1()
                     .text_sm()

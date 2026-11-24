@@ -1,5 +1,6 @@
 //! The block editor and its connection to the chapter's Markdown buffer.
 
+use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 use gpui_kit::assets::IconName;
@@ -17,6 +18,7 @@ use markdown_editor::{
     BlockEditor, BlockEditorEvent, BlockEditorState, BlockEditorStyle, BlockKind, BlockSelection,
     EditorCommand, ImagePolicy,
 };
+use rust_i18n::t;
 
 use super::EditorPage;
 use super::encode::Target;
@@ -120,12 +122,8 @@ impl EditorPage {
         let baseline = self.visual.input.update(cx, |state, cx| {
             state.set_source(&source, cx)?;
             let canonical = state.source_snapshot();
-            let baseline =
-                VisualSource::new(source.clone(), canonical.text().clone()).ok_or_else(|| {
-                    SharedString::from(
-                        "This chapter uses Markdown blocks Visual could not preserve.",
-                    )
-                })?;
+            let baseline = VisualSource::new(source.clone(), canonical.text().clone())
+                .ok_or_else(|| SharedString::from(t!("visual.unpreservable")))?;
             state.set_editor_style(BlockEditorStyle::default().with_foreground(ink), cx);
             state.set_readonly(false, cx);
             Ok::<_, SharedString>(baseline)
@@ -265,10 +263,10 @@ impl EditorPage {
         cx: &mut Context<'_, Self>,
     ) -> AnyElement {
         if self.loaded.is_none() {
-            return status_line("visual-loading", "Opening the chapter").into_any_element();
+            return status_line("visual-loading", t!("visual.opening")).into_any_element();
         }
         if let Some(error) = &self.visual.error {
-            return empty_state("This chapter needs Source", error.clone()).into_any_element();
+            return empty_state(t!("visual.needs_source"), error.clone()).into_any_element();
         }
         let appearance = Appearance::global(cx);
         let appearance = appearance.read(cx);
@@ -308,7 +306,7 @@ impl EditorPage {
                 div()
                     .id("visual-viewport")
                     .role(Role::Group)
-                    .aria_label(format!("Visual editor of {path}"))
+                    .aria_label(t!("visual.editor_of", path = path))
                     .test_support()
                     .w_full()
                     .flex_1()
@@ -355,7 +353,7 @@ impl EditorPage {
                 .mx_1()
                 .bg(cx.theme().border)
         };
-        let labelled = |id: &'static str, icon: IconName, label: &'static str| {
+        let labelled = |id: &'static str, icon: IconName, label: Cow<'static, str>| {
             Button::new(id)
                 .ghost()
                 .icon(icon)
@@ -374,14 +372,14 @@ impl EditorPage {
             .border_b_1()
             .border_color(cx.theme().border)
             .child(
-                icon_button("visual-undo", IconName::Undo2, "Undo")
+                icon_button("visual-undo", IconName::Undo2, t!("visual.undo"))
                     .disabled(!enabled || !undo)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.run_visual_history(false, window, cx);
                     })),
             )
             .child(
-                icon_button("visual-redo", IconName::Redo2, "Redo")
+                icon_button("visual-redo", IconName::Redo2, t!("visual.redo"))
                     .disabled(!enabled || !redo)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.run_visual_history(true, window, cx);
@@ -391,8 +389,8 @@ impl EditorPage {
             .child(formatting(&self.visual.input, cx))
             .child(divider())
             .child(
-                labelled("visual-link", IconName::Link, "Link")
-                    .tooltip("Add or edit a link")
+                labelled("visual-link", IconName::Link, t!("visual.link"))
+                    .tooltip(t!("visual.link_tooltip"))
                     .disabled(!enabled)
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.visual
@@ -401,8 +399,8 @@ impl EditorPage {
                     })),
             )
             .child(
-                labelled("visual-image", IconName::ImagePlus, "Picture")
-                    .tooltip("Insert a picture")
+                labelled("visual-image", IconName::ImagePlus, t!("visual.picture"))
+                    .tooltip(t!("visual.picture_tooltip"))
                     .disabled(!enabled)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.ask_chapter_picture(window, cx);
@@ -410,8 +408,8 @@ impl EditorPage {
             )
             .children(
                 [
-                    ("visual-diagram", "Diagram", FigureKind::Diagram),
-                    ("visual-formula", "Formula", FigureKind::Formula),
+                    ("visual-diagram", t!("visual.diagram"), FigureKind::Diagram),
+                    ("visual-formula", t!("visual.formula"), FigureKind::Formula),
                 ]
                 .into_iter()
                 .map(|(id, label, kind)| {
@@ -429,7 +427,7 @@ impl EditorPage {
                 icon_button(
                     "visual-image-preview",
                     IconName::Images,
-                    "Pictures in this chapter",
+                    t!("visual.chapter_pictures"),
                 )
                 .disabled(!enabled || self.session.pictures().is_empty())
                 .on_click(cx.listener(|this, _, window, cx| {
@@ -452,39 +450,42 @@ impl EditorPage {
 
     fn code_language(&self) -> impl IntoElement {
         let input = self.visual.input.clone();
-        icon_button("visual-code-language", IconName::FileCode, "Code language").dropdown_menu(
-            move |menu, _, _| {
-                [
-                    ("Plain text", None),
-                    ("Bash", Some("bash")),
-                    ("C", Some("c")),
-                    ("C++", Some("cpp")),
-                    ("Go", Some("go")),
-                    ("Java", Some("java")),
-                    ("JavaScript", Some("javascript")),
-                    ("JSON", Some("json")),
-                    ("Python", Some("python")),
-                    ("Rust", Some("rust")),
-                    ("SQL", Some("sql")),
-                    ("TypeScript", Some("typescript")),
-                ]
-                .into_iter()
-                .fold(menu, |menu, (label, lang)| {
-                    let input = input.clone();
-                    menu.item(PopupMenuItem::new(label).on_click(move |_, window, cx| {
-                        input.update(cx, |state, cx| {
-                            let _ = state.run(
-                                EditorCommand::SetCodeBlock {
-                                    lang: lang.map(str::to_owned),
-                                },
-                                cx,
-                            );
-                            state.focus(window, cx);
-                        });
-                    }))
-                })
-            },
+        icon_button(
+            "visual-code-language",
+            IconName::FileCode,
+            t!("visual.code_language"),
         )
+        .dropdown_menu(move |menu, _, _| {
+            [
+                (t!("visual.plain_text"), None),
+                (Cow::Borrowed("Bash"), Some("bash")),
+                (Cow::Borrowed("C"), Some("c")),
+                (Cow::Borrowed("C++"), Some("cpp")),
+                (Cow::Borrowed("Go"), Some("go")),
+                (Cow::Borrowed("Java"), Some("java")),
+                (Cow::Borrowed("JavaScript"), Some("javascript")),
+                (Cow::Borrowed("JSON"), Some("json")),
+                (Cow::Borrowed("Python"), Some("python")),
+                (Cow::Borrowed("Rust"), Some("rust")),
+                (Cow::Borrowed("SQL"), Some("sql")),
+                (Cow::Borrowed("TypeScript"), Some("typescript")),
+            ]
+            .into_iter()
+            .fold(menu, |menu, (label, lang)| {
+                let input = input.clone();
+                menu.item(PopupMenuItem::new(label).on_click(move |_, window, cx| {
+                    input.update(cx, |state, cx| {
+                        let _ = state.run(
+                            EditorCommand::SetCodeBlock {
+                                lang: lang.map(str::to_owned),
+                            },
+                            cx,
+                        );
+                        state.focus(window, cx);
+                    });
+                }))
+            })
+        })
     }
 }
 

@@ -1,6 +1,7 @@
 //! The dialog of a landmark: what the place is, the name a reader is shown
 //! and where it is.
 
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -13,24 +14,37 @@ use gpui_kit::{
     SharedString, Styled as _, Window, div, px,
 };
 use mbook::Landmark;
+use rust_i18n::t;
 
 use super::EditorPage;
-use super::landmark_kinds::{GROUPS, START, kind_effect, kind_name};
+use super::landmark_kinds::{GROUPS, START, kind_effect, kind_name, kind_words};
 use super::place_picker::{ChapterChoice, Place, place_picker, resolve};
 use crate::shared::ui::{status_line, target_size};
 
 /// The words over the control that chooses the kind of a landmark.
-pub(super) const KIND_LABEL: &str = "What the place is";
+pub(super) fn kind_label() -> Cow<'static, str> {
+    t!("prompt.landmark.kind_label")
+}
+
 /// The label of the field that holds the title of a landmark.
-pub(super) const TITLE_LABEL: &str = "Name shown to readers (optional)";
+pub(super) fn title_label() -> Cow<'static, str> {
+    t!("prompt.landmark.title_label")
+}
+
 /// The words over the controls that choose where a landmark leads.
-pub(super) const PLACE_LABEL: &str = "Where it is";
-/// The words of the kind control before a kind is chosen.
-pub(super) const CHOOSE_KIND: &str = "Choose…";
+pub(super) fn place_label() -> Cow<'static, str> {
+    t!("prompt.landmark.place_label")
+}
+
 /// What the dialog says when no kind is chosen.
-pub(super) const NO_KIND: &str = "Choose what the place is.";
+pub(super) fn no_kind() -> Cow<'static, str> {
+    t!("prompt.landmark.no_kind")
+}
+
 /// What the dialog says when the landmark leads to nothing the book has.
-pub(super) const NO_PLACE: &str = "Choose a chapter of the book, and its start or a place in it.";
+pub(super) fn no_place() -> Cow<'static, str> {
+    t!("prompt.landmark.no_place")
+}
 /// The tallest the menu of kinds grows before it scrolls.
 const MENU_HEIGHT: f32 = 360.0;
 
@@ -61,11 +75,11 @@ pub(super) fn landmark_draft(
     title: &str,
     place: &Place,
     choices: &[ChapterChoice],
-) -> Result<Landmark, &'static str> {
-    let kind = kind.filter(|kind| !kind.is_empty()).ok_or(NO_KIND)?;
-    let (chapter, anchor) = resolve(place, choices).ok_or(NO_PLACE)?;
+) -> Result<Landmark, Cow<'static, str>> {
+    let kind = kind.filter(|kind| !kind.is_empty()).ok_or_else(no_kind)?;
+    let (chapter, anchor) = resolve(place, choices).ok_or_else(no_place)?;
     let mut title = title.trim().replace(['\n', '\r', '\t'], " ");
-    if kind_name(kind) == Some(title.as_str()) {
+    if kind_name(kind).as_deref() == Some(title.as_str()) {
         title.clear();
     }
     Ok(Landmark {
@@ -85,13 +99,14 @@ fn kind_picker(
     cx: &gpui_kit::App,
 ) -> impl IntoElement + use<> {
     let current = kind.read(cx).clone();
-    let label = current.as_deref().map_or(CHOOSE_KIND.to_owned(), |id| {
-        kind_name(id).unwrap_or(id).to_owned()
-    });
+    let label = current.as_deref().map_or_else(
+        || t!("prompt.landmark.choose_kind").into_owned(),
+        kind_words,
+    );
     let (kind, title) = (kind.clone(), title.clone());
     Button::new("landmark-kind")
         .label(label.clone())
-        .accessibility_label(format!("{KIND_LABEL}, {label}"))
+        .accessibility_label(format!("{}, {label}", kind_label()))
         .min_h(px(target_size()))
         .self_start()
         .dropdown_caret(true)
@@ -101,12 +116,12 @@ fn kind_picker(
                 if number > 0 {
                     menu = menu.separator();
                 }
-                menu = menu.label(group.heading);
+                menu = menu.label(group.heading());
                 for item in group.kinds {
                     let (kind, title) = (kind.clone(), title.clone());
                     let id = item.id;
                     menu = menu.item(
-                        PopupMenuItem::new(item.name)
+                        PopupMenuItem::new(item.name())
                             .checked(current.as_deref() == Some(id))
                             .on_click(move |_, window, cx| {
                                 kind.update(cx, |kind, cx| {
@@ -114,7 +129,7 @@ fn kind_picker(
                                     cx.notify();
                                 });
                                 title.update(cx, |field, cx| {
-                                    field.set_placeholder(kind_name(id).unwrap_or(id), window, cx);
+                                    field.set_placeholder(kind_words(id), window, cx);
                                 });
                                 window.refresh();
                             }),
@@ -147,7 +162,11 @@ fn landmark_form(
     cx: &gpui_kit::App,
 ) -> impl IntoElement + use<> {
     let theme = cx.theme();
-    let label = |words: &'static str| div().font_weight(FontWeight::MEDIUM).child(words);
+    let label = |words: Cow<'static, str>| {
+        div()
+            .font_weight(FontWeight::MEDIUM)
+            .child(SharedString::from(words))
+    };
     let effect = kind_effect(fields.kind.read(cx).as_deref());
     let form = if is_start {
         v_flex()
@@ -159,7 +178,7 @@ fn landmark_form(
             .child(
                 v_flex()
                     .gap_1()
-                    .child(label(KIND_LABEL))
+                    .child(label(kind_label()))
                     .child(kind_picker(&fields.kind, &fields.title, cx))
                     .child(
                         status_line("landmark-effect", effect)
@@ -170,14 +189,14 @@ fn landmark_form(
             .child(
                 v_flex()
                     .gap_1()
-                    .child(label(TITLE_LABEL))
-                    .child(Input::new(&fields.title).aria_label(TITLE_LABEL)),
+                    .child(label(title_label()))
+                    .child(Input::new(&fields.title).aria_label(title_label())),
             )
     };
     form.child(
         v_flex()
             .gap_1()
-            .child(label(PLACE_LABEL))
+            .child(label(place_label()))
             .child(place_picker("landmark", &fields.place, choices, None, cx)),
     )
     .children(
@@ -205,9 +224,7 @@ pub(super) fn ask_landmark(
     } = request;
     let is_start = kind.as_deref() == Some(START);
     let page = cx.weak_entity();
-    let placeholder = kind
-        .as_deref()
-        .map_or_else(String::new, |id| kind_name(id).unwrap_or(id).to_owned());
+    let placeholder = kind.as_deref().map_or_else(String::new, kind_words);
     let title = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
     // The start keeps the title it came with: its dialog has no field for
     // one, so the field holds it unseen.
@@ -237,19 +254,19 @@ pub(super) fn ask_landmark(
         );
         alert
             .title(match (is_start, editing_now) {
-                (true, false) => "Mark where the text begins",
-                (true, true) => "Change where the text begins",
-                (false, false) => "Add a landmark",
-                (false, true) => "Edit the landmark",
+                (true, false) => t!("prompt.landmark.mark_start_title"),
+                (true, true) => t!("prompt.landmark.change_start_title"),
+                (false, false) => t!("prompt.landmark.add_title"),
+                (false, true) => t!("prompt.landmark.edit_title"),
             })
             .description(form)
             .confirm()
             .ok_text(match (is_start, editing_now) {
-                (true, false) => "Mark",
-                (false, false) => "Add",
-                (_, true) => "Apply",
+                (true, false) => t!("prompt.landmark.mark"),
+                (false, false) => t!("prompt.add"),
+                (_, true) => t!("prompt.apply"),
             })
-            .cancel_text("Cancel")
+            .cancel_text(t!("prompt.cancel"))
             .on_ok(move |_, window, cx| {
                 let draft = landmark_draft(
                     fields.kind.read(cx).as_deref(),
@@ -283,7 +300,7 @@ pub(super) fn ask_landmark(
 mod tests {
     use mbook::Landmark;
 
-    use super::{NO_KIND, NO_PLACE, landmark_draft};
+    use super::{landmark_draft, no_kind, no_place};
     use crate::features::edit_book::outline::{ChapterOutline, PlaceOutline};
     use crate::pages::editor::place_picker::{Place, chapter_choices};
 
@@ -349,7 +366,7 @@ mod tests {
         for kind in [None, Some("")] {
             assert_eq!(
                 landmark_draft(kind, "Words", &at("a.md", None), &choices),
-                Err(NO_KIND)
+                Err(no_kind())
             );
         }
     }
@@ -364,7 +381,7 @@ mod tests {
         ] {
             assert_eq!(
                 landmark_draft(Some("notes"), "", &place, &choices),
-                Err(NO_PLACE)
+                Err(no_place())
             );
         }
     }

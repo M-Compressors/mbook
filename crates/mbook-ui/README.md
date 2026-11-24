@@ -56,7 +56,7 @@ crates/mbook-android/android.sh apk
 | **Library** | Keep books as covers on a shelf, search and sort them, add files with `+`, by dropping them on the window or by opening them with mbook from a file manager, create a new book, export one in any of eight formats, send its file through the share sheet of the system |
 | **Reader** | Read one scrolling column or one page at a time from where the text begins, follow links and footnotes and return, go to the notes, the glossary or the index the book marks, open a picture or a diagram over the whole window and zoom it, search the whole book, choose typeface, size and one of five page tones |
 | **Editor** | Write chapters as blocks, as Markdown source or side by side with a preview; put in pictures, links, diagrams and formulas; edit the details, the cover, the contents and the landmarks; see what `Book::check` reports |
-| **Settings** | Typography, page tone, the size of the interface, motion and updates |
+| **Settings** | Typography, page tone, the language of the interface (English or Russian, by default the one of the system), its size, motion and updates |
 
 The layout follows the width of the window, not the platform: below 600 px
 it is a stack of screens with a bar at the bottom, from 960 px a sidebar
@@ -106,7 +106,8 @@ cargo test -p mbook-ui --features visual --test visual --locked
 ```
 
 The second command renders every screen into `target/visual/` for a person
-to look at; the renderer exists on macOS only.
+to look at; with `MBOOK_VISUAL_LANGUAGE=ru` it renders them in Russian into
+`target/visual/ru/`. The renderer exists on macOS only.
 
 ## Status
 
