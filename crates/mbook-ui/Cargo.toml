@@ -96,6 +96,13 @@ robius-share = "0.3"
 mimalloc3 = "0.1"
 dirs = "7"
 
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+# The NEON assembly of `rav1e`, which halves the time an imported book
+# spends encoding its pictures (mbook-ui docs, "Design"). The feature is
+# named after NASM, but on ARM it assembles with the C compiler alone; on
+# x86 it would need NASM, so it is enabled for ARM only.
+image = { workspace = true, features = ["nasm"] }
+
 [target.'cfg(target_os = "android")'.dependencies]
 # The GPUI platform of Android: window, input, renderer, and the file picker
 # of the Storage Access Framework. Pinned to the commit of

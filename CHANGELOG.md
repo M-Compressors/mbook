@@ -17,6 +17,9 @@
 
 ### Changed
 
+- The application encodes pictures with the NEON assembly of `rav1e` on
+  ARM: Android, and the Mac with Apple silicon. Importing a book with many
+  pictures takes about half as long; on x86 the encoder stays pure Rust.
 - The APK holds only the Java classes of gpui-mobile that mbook uses, and
   building it prints no warnings: javac no longer notes the deprecated APIs
   of gpui-mobile's camera, location and microphone classes, and apksigner

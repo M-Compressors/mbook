@@ -54,7 +54,7 @@ several packages share.
 | `self_update` | 1.3.3, 2026-10-27 | MIT | Updates; Rust 1.88 |
 | `redb` | 5.0.0, 2026-11-18 | MIT OR Apache-2.0 | The catalogue; Rust 1.90 |
 | `avif-decode` | 3.0.0, 2026-09-20 | BSD-3-Clause | Decoding pictures; Rust 1.98 |
-| `image` | The version and features of the workspace; GPUI brings the same crate | MIT OR Apache-2.0 | Decoding and AVIF encoding of pictures added in the editor; scaling |
+| `image` | The version and features of the workspace, with `nasm` on ARM; GPUI brings the same crate | MIT OR Apache-2.0 | Decoding and AVIF encoding of pictures added in the editor; scaling |
 | `futures` | already in the tree of GPUI | MIT OR Apache-2.0 | The channel of the editing task |
 | `tree-sitter-mermaid`, `codebook-tree-sitter-latex` | 0.3.5 and 0.6.1 | MIT | Syntax highlighting in the Mermaid and KaTeX source dialogs |
 | `uuid`, `tempfile`, `thiserror`, `markdown` | The versions of the workspace | | Keys; files of imports; errors; block offsets |
@@ -191,6 +191,7 @@ Ruled out:
 | Typeface of books | Bundled Literata and Noto Sans, plus System and installed choices | Only installed families | Rendering is available offline on a fresh installation. |
 | Building a release | A workflow started by hand for a tag | Building on every tag | Decided by the format author. The workflow publishes the libraries for the tag before building the application. |
 | Drawing diagrams and formulas | Render source with the `figure` module of `mbook-converter` (merman and RaTeX), then give SVG to GPUI | Convert sources to AVIF; render with a web view | SVG lets the reader choose its own page colours and sizes. The source remains editable and rendering stays local. |
+| Assembly of the AVIF encoder | The NEON assembly of `rav1e` on ARM (`aarch64`), through the `nasm` feature of `image`; pure Rust on x86 | Pure Rust everywhere; the assembly on x86 as well | *Proposed*, not yet confirmed by the format author. Importing a 7 MB EPUB with 45 pictures took 10.5 s on four cores of an Apple M-series processor without it and 5.5 s with it; a phone took about a minute. On ARM the feature needs only the C compiler, which the Android build has for its C dependencies already; on x86 it needs NASM, which the release builds install for `rav1d` but a contributor may not have. The price is an assembler step in the ARM builds, beside the "no C toolchain" reason of the AVIF decoder. The library `mbook-converter` stays pure Rust. |
 | Pictures added in the editor | Encoded here, with `image` | A public encoder in `mbook-converter` | Decided by the format author. The API of `mbook-converter` stays as it is; the price is that quality and speed are written in two crates. |
 | Size class under a scaled interface | Width divided by the scale | Width in pixels | At 200% a desktop window has room for the compact layout only; clipping or a horizontal scroll bar fails WCAG 1.4.10. |
 | Reordering chapters | A drag, and "Move up" and "Move down" | A drag alone | WCAG 2.5.7: a drag needs an alternative. |
