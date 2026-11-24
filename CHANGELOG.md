@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [v0.3.5](https://github.com/M-Compressors/mbook/releases/tag/v0.3.5) - 2026-11-24
+
 ### Added
 
 - `mbook-converter`: the opt-in `rayon` feature encodes the pictures of a
