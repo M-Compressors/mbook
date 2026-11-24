@@ -261,6 +261,15 @@ prompt:
     preview_label:
       en: "Figure preview"
       ru: "Предпросмотр иллюстрации"
+    preview_hint:
+      en: "Choose Preview to draw the source."
+      ru: "Нажмите «Предпросмотр», чтобы построить рисунок."
+    actual_size:
+      en: "Actual size"
+      ru: "Реальный размер"
+    fit:
+      en: "Fit"
+      ru: "Вписать"
     diagram:
       new_more:
         en: "New diagram…"

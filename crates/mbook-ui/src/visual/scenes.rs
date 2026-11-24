@@ -155,6 +155,11 @@ fn editor_shots() -> Vec<Shot> {
             stage.click("add-landmark")?;
             stage.click("landmark-kind")
         }),
+        shot("08q-editor-diagram", Library::Books, draw_diagram),
+        shot("08r-editor-diagram-actual-size", Library::Books, |stage| {
+            draw_diagram(stage)?;
+            stage.click("figure-zoom")
+        }),
     ]
 }
 
@@ -413,6 +418,32 @@ fn open_chapter(stage: &mut Stage) -> Result<()> {
         return Ok(());
     }
     open_section(stage, "chapter-ch02.md")
+}
+
+/// A diagram large enough to be shown smaller than it is.
+const LARGE_DIAGRAM: &str = "flowchart TD
+  gate[The gate] --> wall[The stone wall]
+  gate --> path[The path to the trees]
+  path --> russets[Early russets] --> press[The cider press]
+  path --> pippins[Cox's pippins] --> cellar[The cellar]
+  path --> antonovka[Antonovka] --> kitchen[The kitchen]
+  path --> unknown[A crate nobody could name] --> ledger[The ledger]
+  press --> cellar
+  kitchen --> ledger
+  cellar --> ledger
+  ledger --> argument[An argument in private]
+  argument --> morning[The count in the morning]
+  wall --> shadow[A long shadow on the grass]
+  shadow --> morning";
+
+/// Writes a new diagram and draws its preview.
+fn draw_diagram(stage: &mut Stage) -> Result<()> {
+    open_editor(stage)?;
+    open_section(stage, "section-diagrams")?;
+    stage.click("new-figure")?;
+    stage.type_text(LARGE_DIAGRAM)?;
+    stage.click("draw-figure")?;
+    stage.wait(Duration::from_millis(300))
 }
 
 /// Types in a chapter and asks to leave the editor.

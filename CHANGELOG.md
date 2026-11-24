@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- The dialog that makes or edits a diagram or a formula takes most of the
+  window instead of 570 pixels. In a wide window the drawing stands beside
+  the source, and the source field grows with the window instead of staying
+  120 pixels high. The preview fits the drawing into the space it has,
+  instead of 180 pixels of height, and enlarges a small one up to twice its
+  size; **Actual size** shows a large one at its size in the text, scrolling.
+  A diagram or a formula that is edited is drawn as its dialog opens.
+
 ## [v0.3.6](https://github.com/M-Compressors/mbook/releases/tag/v0.3.6) - 2026-11-24
 
 ### Added

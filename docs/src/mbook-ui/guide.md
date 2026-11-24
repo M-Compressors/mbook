@@ -208,9 +208,15 @@ book under *Book*, then the chapters in reading order under *Chapters*.
 - **Pictures in this chapter** previews the pictures the chapter refers to.
 
 **Diagrams and formulas.** The **Diagrams** and **Formulas** sections add,
-edit and remove resources. The source field highlights Mermaid or LaTeX
-syntax as you type. Choose **Preview** to see the result or a renderer error.
-Editing a source keeps its book path and the chapter references that use it.
+edit and remove resources. The dialog takes most of the window. In a wide
+window the drawing stands beside the source; in a narrow one it is under it.
+The source field highlights Mermaid or LaTeX syntax as you type. Choose
+**Preview** to see the result or a renderer error; a resource that is edited
+is drawn as its dialog opens. The drawing is fitted into the preview, a small
+one up to twice its size in the text. When a large one is shown smaller,
+**Actual size** shows it at its size in the text, scrolling, and **Fit** fits
+it again. Editing a source keeps its book path and the chapter references
+that use it.
 In Visual, **Diagram** or **Formula** inserts an existing resource at the
 caret. An empty alternative text field uses the resource kind as the
 description. The chapter's Preview shows the same rendering as the reader.

@@ -3489,6 +3489,8 @@ fn a_diagram_can_be_previewed_edited_and_removed_in_its_section(cx: &mut TestApp
             window.find("figure-source-preview").role(),
             Some(Role::Image)
         );
+        // A small drawing fits as it is.
+        assert!(window.try_find("figure-zoom").is_none());
     });
     click_named(&setup, "Add", cx);
     click(&setup, "edit-figure-dia/diagram.mmd", cx);
@@ -3519,6 +3521,83 @@ fn a_diagram_can_be_previewed_edited_and_removed_in_its_section(cx: &mut TestApp
     click_named(&setup, "Remove", cx);
     click(&setup, "save", cx);
     assert_eq!(Book::open(path).unwrap().diagrams(), []);
+}
+
+#[gpui_kit::test]
+fn an_edited_diagram_is_drawn_as_its_dialog_opens(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-diagrams", cx);
+    click(&setup, "new-figure", cx);
+    frame(&setup, cx, |window, cx| {
+        window.input("flowchart LR\n  A --> B", cx);
+    });
+    click_named(&setup, "Add", cx);
+    click(&setup, "edit-figure-dia/diagram.mmd", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(
+            window.find("figure-source-preview").role(),
+            Some(Role::Image)
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn a_large_diagram_is_fitted_and_can_be_seen_at_its_own_size(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-diagrams", cx);
+    click(&setup, "new-figure", cx);
+    let chain = (0..30)
+        .map(|step| format!("  N{step} --> N{}", step + 1))
+        .collect::<Vec<_>>()
+        .join("\n");
+    frame(&setup, cx, |window, cx| {
+        window.input(&format!("flowchart TD\n{chain}"), cx);
+    });
+    click(&setup, "draw-figure", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("figure-zoom").label(), Some("Actual size"));
+    });
+    click(&setup, "figure-zoom", cx);
+    frame(&setup, cx, |window, _| {
+        assert_eq!(window.find("figure-zoom").label(), Some("Fit"));
+        assert_eq!(
+            window.find("figure-source-preview").role(),
+            Some(Role::Image)
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn a_narrow_window_shows_the_drawing_under_the_source(cx: &mut TestAppContext) {
+    let setup = started(cx, 800.0);
+    act(&setup, cx, |page, _, cx| {
+        page.session.section = Section::Figures(crate::entities::figure::FigureKind::Diagram);
+        cx.notify();
+    });
+    click(&setup, "new-figure", cx);
+    frame(&setup, cx, |window, _| {
+        let controls = window.find("draw-figure").bounds();
+        let drawing = window.find("figure-preview-box").bounds();
+        assert!(
+            drawing.top() > controls.bottom(),
+            "{controls:?} {drawing:?}"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn a_source_the_renderer_refuses_shows_its_error_in_the_preview(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    click(&setup, "section-diagrams", cx);
+    click(&setup, "new-figure", cx);
+    frame(&setup, cx, |window, cx| {
+        window.input("this is not a diagram", cx);
+    });
+    click(&setup, "draw-figure", cx);
+    frame(&setup, cx, |window, _| {
+        assert!(window.try_find("figure-preview-error").is_some());
+        assert!(window.try_find("figure-source-preview").is_none());
+    });
 }
 
 #[gpui_kit::test]

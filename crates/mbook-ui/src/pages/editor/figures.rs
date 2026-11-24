@@ -8,11 +8,13 @@ use std::sync::{Arc, Once};
 use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::highlighter::{GrammarConfig, LanguageRegistry};
 use gpui_kit::component::input::{Editor, EditorState, Input, InputState};
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::{ActiveTheme as _, Selectable as _, WindowExt as _, h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, AppContext as _, Context, Focusable as _, InteractiveElement as _, IntoElement,
-    ParentElement as _, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Task,
-    TestSupportExt as _, Window, div, img, px,
+    AnyElement, AppContext as _, Context, Entity, Focusable as _, InteractiveElement as _,
+    IntoElement, ParentElement as _, Role, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Task, TestSupportExt as _, Window, div, img, px,
 };
 use rust_i18n::t;
 
@@ -26,7 +28,8 @@ use crate::entities::figure::{Figure, FigureError, FigureKind, Palette, Setting,
 use crate::features::appearance::Appearance;
 use crate::features::edit_book::command::Command;
 use crate::shared::compute;
-use crate::shared::ui::{announce, status_line};
+use crate::shared::theme::PageTone;
+use crate::shared::ui::{announce, status_line, target_size};
 
 impl EditorPage {
     pub(super) fn render_figures(
@@ -347,6 +350,114 @@ struct SourcePreview {
     source: String,
     drawing: Option<Result<Arc<Figure>, FigureError>>,
     task: Option<Task<()>>,
+    /// The drawing is shown at its size in the text, and scrolls, instead of
+    /// being fitted to the preview.
+    actual: bool,
+}
+
+/// Where the parts of the dialog that makes or edits a figure go in a
+/// window: the dialog takes most of it, and in a wide one the drawing stands
+/// beside the source, so that a large diagram can be read while it is
+/// written.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SourceLayout {
+    /// The width of the dialog.
+    width: f32,
+    /// The drawing stands beside the source instead of under it.
+    beside: bool,
+    /// The height of the source field.
+    source_height: f32,
+    /// The size of the box the drawing is shown in.
+    preview_width: f32,
+    preview_height: f32,
+}
+
+impl SourceLayout {
+    /// The narrowest and the widest dialog.
+    const MIN_WIDTH: f32 = 240.0;
+    const MAX_WIDTH: f32 = 1280.0;
+    /// The width of the window the dialog leaves free, on both sides
+    /// together, and the height it leaves free above and below.
+    const EDGE: f32 = 48.0;
+    /// The padding of the dialog on both sides together.
+    const INSET: f32 = 32.0;
+    /// From this dialog width on the drawing stands beside the source.
+    const BESIDE_FROM: f32 = 800.0;
+    /// The share of the width the drawing takes beside the source.
+    const PREVIEW_SHARE: f32 = 0.6;
+    /// The space between the source and the drawing.
+    const GAP: f32 = 12.0;
+    /// The height of the title, the label of the source, the footer and the
+    /// paddings and gaps between them, without the controls.
+    const CHROME: f32 = 168.0;
+    /// The height of the label and the field of the book path, without the
+    /// field's control height.
+    const PATH_LABEL: f32 = 32.0;
+    /// The smallest source field and the smallest drawing.
+    const MIN_SOURCE: f32 = 120.0;
+    const MIN_PREVIEW: f32 = 120.0;
+    /// The largest share of the height the source takes over the drawing.
+    const SOURCE_SHARE: f32 = 0.35;
+    /// How much larger than in the text a small drawing is shown.
+    const MAX_ENLARGE: f32 = 2.0;
+    /// The space around the drawing inside its box.
+    const PADDING: f32 = 8.0;
+
+    /// The layout for a window of `width` by `height`, for a dialog that
+    /// asks for the book path when `with_path`, and whose controls are
+    /// `control` high.
+    fn of(width: f32, height: f32, with_path: bool, control: f32) -> Self {
+        let dialog = (width - Self::EDGE).clamp(Self::MIN_WIDTH, Self::MAX_WIDTH);
+        let inner = dialog - Self::INSET;
+        let path = if with_path {
+            Self::PATH_LABEL + control
+        } else {
+            0.0
+        };
+        // The source field and the row of controls under it.
+        let body = (height - Self::EDGE * 2.0 - Self::CHROME - control * 2.0 - path)
+            .max(Self::MIN_SOURCE + Self::MIN_PREVIEW);
+        if dialog >= Self::BESIDE_FROM {
+            let preview_width = ((inner - Self::GAP) * Self::PREVIEW_SHARE).floor();
+            Self {
+                width: dialog,
+                beside: true,
+                source_height: body,
+                preview_width,
+                // Level with the label, the field and the controls.
+                preview_height: body + control + 28.0,
+            }
+        } else {
+            let source_height = (body * Self::SOURCE_SHARE)
+                .max(Self::MIN_SOURCE)
+                .min(body - Self::MIN_PREVIEW);
+            Self {
+                width: dialog,
+                beside: false,
+                source_height,
+                preview_width: inner,
+                preview_height: body - source_height,
+            }
+        }
+    }
+
+    /// The scale at which a drawing of `width` by `height` fills the box of
+    /// the preview: smaller for a large one, up to twice the size for a
+    /// small one.
+    fn fit(&self, width: f32, height: f32) -> f32 {
+        let room_width = self.preview_width - Self::PADDING * 2.0;
+        let room_height = self.preview_height - Self::PADDING * 2.0;
+        (room_width / width)
+            .min(room_height / height)
+            .clamp(0.0, Self::MAX_ENLARGE)
+    }
+
+    /// The fitted scale of a drawing that is shown smaller than it is, the
+    /// one that can be seen at its own size instead.
+    fn zoom(&self, width: f32, height: f32) -> Option<f32> {
+        let fit = self.fit(width, height);
+        (fit < 1.0).then_some(fit)
+    }
 }
 
 const MERMAID: &str = "mermaid";
@@ -415,6 +526,7 @@ fn ask_source(
 ) {
     register_source_grammars();
     let editing = initial.is_some();
+    let initial = initial.map(str::to_owned);
     let (language, source_label, title) = source_words(kind, path, editing);
     let path_input = cx.new(|cx| {
         let mut state = InputState::new(window, cx);
@@ -424,7 +536,7 @@ fn ask_source(
     let source_input = cx.new(|cx| {
         EditorState::new(window, cx)
             .language(language)
-            .default_value(initial.unwrap_or_default().to_owned())
+            .default_value(initial.clone().unwrap_or_default())
             .searchable(false)
             .folding(false)
             .line_number(false)
@@ -435,13 +547,27 @@ fn ask_source(
     let first = Cell::new(true);
     let page = cx.weak_entity();
     window.open_alert_dialog(cx, move |alert, window, cx| {
+        let tone = Appearance::global(cx).read(cx).page_tone(window);
         if first.replace(false) {
             source_input.focus_handle(cx).focus(window, cx);
+            // A figure that is edited is drawn at once: its source is known.
+            if let Some(initial) = initial.as_ref() {
+                preview.update(cx, |preview, cx| {
+                    preview.draw(kind, initial.clone(), tone.into(), window, cx);
+                });
+            }
         }
-        let width = (window.viewport_size().width.as_f32() - 48.0).clamp(240.0, 570.0);
-        let (preview_button, source_button) = (preview.clone(), source_input.clone());
-        let tone = Appearance::global(cx).read(cx).page_tone(window);
+        let viewport = window.viewport_size();
+        let layout = SourceLayout::of(
+            viewport.width.as_f32(),
+            viewport.height.as_f32(),
+            !editing,
+            target_size(),
+        );
         let source = source_input.read(cx).value();
+        let buttons = preview_controls(kind, tone, &layout, &preview, &source_input, cx);
+        let drawing = preview.read(cx).display(&source, &layout, window, cx);
+        let body = source_body(&layout, &source_label, &source_input, buttons, drawing);
         let form = v_flex()
             .gap_2()
             .children((!editing).then(|| {
@@ -450,26 +576,7 @@ fn ask_source(
                     .child(div().child(SharedString::from(t!("prompt.figure.book_path"))))
                     .child(Input::new(&path_input).aria_label(t!("prompt.figure.book_path")))
             }))
-            .child(div().child(source_label.clone()))
-            .child(
-                Editor::new(&source_input)
-                    .h(px(120.0))
-                    .aria_label(source_label.clone()),
-            )
-            .child(
-                h_flex().child(
-                    control("draw-figure", t!("prompt.figure.preview"))
-                        .ghost()
-                        .on_click(move |_, window, cx| {
-                            let source = source_button.read(cx).value().to_string();
-                            preview_button.update(cx, |preview, cx| {
-                                preview.draw(kind, source, tone.into(), window, cx);
-                            });
-                            window.refresh();
-                        }),
-                ),
-            )
-            .children(preview.read(cx).display(&source, width - 56.0, window, cx))
+            .child(body)
             .children(error.read(cx).clone().map(|message| {
                 status_line("figure-draft-error", message).text_color(cx.theme().danger)
             }));
@@ -481,7 +588,7 @@ fn ask_source(
         );
         alert
             .title(title.clone())
-            .width(px(width))
+            .width(px(layout.width))
             .description(form)
             .confirm()
             .ok_text(if editing {
@@ -511,6 +618,95 @@ fn ask_source(
                 true
             })
     });
+}
+
+/// The source field with its controls, and the drawing beside or under it.
+fn source_body(
+    layout: &SourceLayout,
+    label: &SharedString,
+    source_input: &Entity<EditorState>,
+    buttons: gpui_kit::Div,
+    drawing: AnyElement,
+) -> AnyElement {
+    let source_column = v_flex()
+        .gap_2()
+        .min_w_0()
+        .when(layout.beside, gpui_kit::Styled::flex_1)
+        .child(div().child(label.clone()))
+        .child(
+            Editor::new(source_input)
+                .h(px(layout.source_height))
+                .aria_label(label.clone()),
+        )
+        .child(buttons);
+    if layout.beside {
+        h_flex()
+            .gap(px(SourceLayout::GAP))
+            .items_start()
+            .child(source_column)
+            .child(drawing)
+            .into_any_element()
+    } else {
+        v_flex()
+            .gap_2()
+            .child(source_column)
+            .child(drawing)
+            .into_any_element()
+    }
+}
+
+/// The controls under the source: **Preview**, and the one that shows a
+/// large drawing at its own size or fits it again.
+fn preview_controls(
+    kind: FigureKind,
+    tone: PageTone,
+    layout: &SourceLayout,
+    preview: &Entity<SourcePreview>,
+    source_input: &Entity<EditorState>,
+    cx: &gpui_kit::App,
+) -> gpui_kit::Div {
+    let (preview_button, source_button) = (preview.clone(), source_input.clone());
+    let zoom_button = preview.clone();
+    let source = source_input.read(cx).value();
+    let actual = preview.read(cx).actual;
+    let zoom = preview
+        .read(cx)
+        .shown(&source)
+        .and_then(|figure| layout.zoom(figure.width, figure.height))
+        .map(|_| {
+            control(
+                "figure-zoom",
+                if actual {
+                    t!("prompt.figure.fit")
+                } else {
+                    t!("prompt.figure.actual_size")
+                },
+            )
+            .ghost()
+            .selected(actual)
+            .on_click(move |_, window, cx| {
+                zoom_button.update(cx, |preview, cx| {
+                    preview.actual = !preview.actual;
+                    cx.notify();
+                });
+                window.refresh();
+            })
+        });
+    h_flex()
+        .gap_2()
+        .flex_wrap()
+        .child(
+            control("draw-figure", t!("prompt.figure.preview"))
+                .ghost()
+                .on_click(move |_, window, cx| {
+                    let source = source_button.read(cx).value().to_string();
+                    preview_button.update(cx, |preview, cx| {
+                        preview.draw(kind, source, tone.into(), window, cx);
+                    });
+                    window.refresh();
+                }),
+        )
+        .children(zoom)
 }
 
 fn figure_command(
@@ -543,6 +739,7 @@ impl SourcePreview {
     ) {
         self.source.clone_from(&source);
         self.drawing = None;
+        self.actual = false;
         let drawing = cx.background_spawn(compute::spawn(move || {
             render(kind, &source, Setting::Block, palette)
         }));
@@ -557,46 +754,104 @@ impl SourcePreview {
         }));
     }
 
+    /// The drawing of `source`, if that is what was drawn last.
+    fn shown(&self, source: &str) -> Option<&Arc<Figure>> {
+        match &self.drawing {
+            Some(Ok(figure)) if self.source == source => Some(figure),
+            _ => None,
+        }
+    }
+
+    /// The box of the preview: the drawing of `source` once it is drawn, the
+    /// renderer's error, or what to do to see it.
     fn display(
         &self,
         source: &str,
-        max_width: f32,
+        layout: &SourceLayout,
         window: &Window,
         cx: &gpui_kit::App,
-    ) -> Option<AnyElement> {
-        if self.source != source || self.task.is_none() {
-            return None;
-        }
+    ) -> AnyElement {
+        let (paper, _) =
+            crate::shared::ui::page_colors(Appearance::global(cx).read(cx).page_tone(window));
+        let frame = div()
+            .id("figure-preview-box")
+            .test_support()
+            .flex_none()
+            .w(px(layout.preview_width))
+            .h(px(layout.preview_height))
+            .rounded(cx.theme().radius)
+            .border_1()
+            .border_color(cx.theme().border);
+        let current = self.source == source && self.task.is_some();
+        let message = |id: &'static str, words: SharedString| {
+            div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .p(px(SourceLayout::PADDING))
+                .child(status_line(id, words))
+        };
         let content = match &self.drawing {
-            None => status_line("figure-preview-loading", t!("prompt.figure.rendering"))
-                .into_any_element(),
-            Some(Err(error)) => status_line("figure-preview-error", error.to_string())
-                .text_color(cx.theme().danger)
+            _ if !current => message(
+                "figure-preview-hint",
+                t!("prompt.figure.preview_hint").into(),
+            )
+            .into_any_element(),
+            None => message(
+                "figure-preview-loading",
+                t!("prompt.figure.rendering").into(),
+            )
+            .into_any_element(),
+            Some(Err(error)) => div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .p(px(SourceLayout::PADDING))
+                .child(
+                    status_line("figure-preview-error", error.to_string())
+                        .text_color(cx.theme().danger),
+                )
                 .into_any_element(),
             Some(Ok(figure)) => {
-                let scale = (max_width / figure.width)
-                    .min(180.0 / figure.height)
-                    .min(1.0);
-                let (paper, _) = crate::shared::ui::page_colors(
-                    Appearance::global(cx).read(cx).page_tone(window),
-                );
-                h_flex()
+                let actual = self.actual && layout.zoom(figure.width, figure.height).is_some();
+                let scale = if actual {
+                    1.0
+                } else {
+                    layout.fit(figure.width, figure.height)
+                };
+                let drawing = div()
                     .id("figure-source-preview")
                     .role(Role::Image)
                     .aria_label(t!("prompt.figure.preview_label"))
                     .test_support()
-                    .w_full()
-                    .justify_center()
-                    .bg(paper)
+                    .flex_none()
                     .child(
                         img(figure.image(scale * window.scale_factor()))
                             .w(px(figure.width * scale))
                             .h(px(figure.height * scale)),
-                    )
-                    .into_any_element()
+                    );
+                let room = div()
+                    .id("figure-preview-room")
+                    .size_full()
+                    .p(px(SourceLayout::PADDING));
+                if actual {
+                    room.overflow_scrollbar().child(drawing).into_any_element()
+                } else {
+                    room.flex()
+                        .items_center()
+                        .justify_center()
+                        .child(drawing)
+                        .into_any_element()
+                }
             }
         };
-        Some(content)
+        frame
+            .bg(paper)
+            .overflow_hidden()
+            .child(content)
+            .into_any_element()
     }
 }
 
@@ -643,6 +898,73 @@ mod words_tests {
             FigureWords::remove_named(FigureKind::Formula, "math/a.tex"),
             "Remove formula math/a.tex"
         );
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::SourceLayout;
+
+    #[test]
+    fn a_wide_window_puts_the_drawing_beside_the_source_and_takes_most_of_the_window() {
+        let layout = SourceLayout::of(1280.0, 780.0, true, 32.0);
+        assert!(layout.beside);
+        assert_eq!(layout.width, 1232.0);
+        assert!(layout.preview_width > 700.0, "{layout:?}");
+        assert!(layout.source_height > 300.0, "{layout:?}");
+        assert!(layout.preview_height > layout.source_height);
+    }
+
+    #[test]
+    fn the_dialog_stops_growing_in_a_very_wide_window() {
+        let layout = SourceLayout::of(3000.0, 1600.0, false, 32.0);
+        assert_eq!(layout.width, SourceLayout::MAX_WIDTH);
+    }
+
+    #[test]
+    fn a_narrow_window_puts_the_drawing_under_the_source_at_the_full_width() {
+        let layout = SourceLayout::of(390.0, 844.0, true, 44.0);
+        assert!(!layout.beside);
+        assert_eq!(layout.width, 342.0);
+        assert_eq!(layout.preview_width, 310.0);
+        assert!(layout.preview_height > layout.source_height, "{layout:?}");
+        assert!(layout.source_height >= SourceLayout::MIN_SOURCE);
+    }
+
+    #[test]
+    fn a_short_window_keeps_the_smallest_source_and_drawing() {
+        let layout = SourceLayout::of(400.0, 200.0, true, 32.0);
+        assert_eq!(layout.width, 352.0);
+        assert_eq!(layout.source_height, SourceLayout::MIN_SOURCE);
+        assert_eq!(layout.preview_height, SourceLayout::MIN_PREVIEW);
+        let layout = SourceLayout::of(100.0, 200.0, false, 32.0);
+        assert_eq!(layout.width, SourceLayout::MIN_WIDTH);
+    }
+
+    #[test]
+    fn the_book_path_takes_height_from_the_source() {
+        let with_path = SourceLayout::of(1280.0, 780.0, true, 32.0);
+        let without = SourceLayout::of(1280.0, 780.0, false, 32.0);
+        assert_eq!(
+            without.source_height - with_path.source_height,
+            SourceLayout::PATH_LABEL + 32.0
+        );
+    }
+
+    #[test]
+    fn a_large_drawing_is_fitted_into_the_preview_and_can_be_seen_at_its_size() {
+        let layout = SourceLayout::of(1280.0, 780.0, true, 32.0);
+        let room = layout.preview_height - SourceLayout::PADDING * 2.0;
+        let scale = layout.fit(400.0, room * 2.0);
+        assert!((scale - 0.5).abs() < 1e-6, "{scale}");
+        assert_eq!(layout.zoom(400.0, room * 2.0), Some(scale));
+    }
+
+    #[test]
+    fn a_small_drawing_is_enlarged_at_most_twice_and_has_nothing_to_zoom() {
+        let layout = SourceLayout::of(1280.0, 780.0, true, 32.0);
+        assert_eq!(layout.fit(40.0, 10.0), SourceLayout::MAX_ENLARGE);
+        assert_eq!(layout.zoom(40.0, 10.0), None);
     }
 }
 
