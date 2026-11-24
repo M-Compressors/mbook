@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [v0.3.6](https://github.com/M-Compressors/mbook/releases/tag/v0.3.6) - 2026-11-24
+
 ### Added
 
 - The application speaks Russian as well as English. At start it takes the
