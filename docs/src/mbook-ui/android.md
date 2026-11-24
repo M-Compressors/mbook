@@ -64,10 +64,10 @@ of the run as an artifact.
 - Of gpui-mobile's Java, only what mbook uses is compiled:
   `GpuiInputActivity`, which `MbookActivity` extends, and the classes its
   Rust code calls with mbook's features (`GpuiPathPicker`, `GpuiHelper`,
-  `GpuiPlatformView`), with what they refer to. That code is compiled
-  without warnings or notes, since it is not mbook's and some of it uses
-  deprecated APIs of Android; mbook's own Java must pass `-Xlint:all
-  -Werror`.
+  `GpuiPlatformView`, `GpuiClipboard`), with what they refer to. That code
+  is compiled without warnings or notes, since it is not mbook's and some of
+  it uses deprecated APIs of Android; mbook's own Java must pass
+  `-Xlint:all -Werror`.
 - The emoji font is bundled because gpui-mobile draws colour emoji from
   bitmap glyphs only, and the emoji font of Android 13 and later has vector
   glyphs. It adds about 10 MB.
@@ -129,6 +129,7 @@ type an mbook file comes with ([Opening files from the system](architecture.md#o
 | Adding a book, choosing a picture | The document picker of the system. It copies each chosen document into the cache of the application and returns the copies; it has no filter, so a file of another kind is refused after it is chosen. |
 | Export | Has no save dialog: the converted copy goes to the share sheet, whose targets include saving to a folder ([Export](architecture.md#export)). |
 | Share | Through `MbookActivity.share`, which lends the file with `MbookFiles`, a read-only content provider for `<cache>/share`, and starts the chooser on the thread of the activity ([Share](architecture.md#share)). |
+| Clipboard | The clipboard of the system, through `ClipboardManager`: the `clipboard` feature of gpui-mobile calls `GpuiClipboard` for every read and write. **Copy** in the edit menu of a long-press selection, in the reader and in text fields, puts the text where other apps can paste it, and **Paste** takes what they copied. The menu is the one GPUI Kit draws, not the floating toolbar of Android. If the call fails, the text stays inside the process and the failure goes to logcat. |
 | Book menu | Has no **Show the file**: the library is in the private storage of the application, which no file manager shows, and gpui-mobile cannot reveal a path. The file leaves through **Share** and **Export**. |
 | Updates | None in the application: a newer APK signed with the same key installs over the older one and keeps the library. |
 | Header | A plain bar, not the title bar of the Kit: there is no window to move or to minimise. |

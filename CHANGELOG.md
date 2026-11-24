@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- On Android, **Copy** and **Cut** put the text on the clipboard of the
+  system, and **Paste** takes what another app copied. They used to keep the
+  text inside the application, so copying a selection of the reader and
+  pasting it elsewhere pasted nothing. The APK packs the clipboard class of
+  gpui-mobile.
+
 ## [v0.3.5](https://github.com/M-Compressors/mbook/releases/tag/v0.3.5) - 2026-11-24
 
 ### Added

@@ -124,12 +124,12 @@ apk() {
 
   # The classes of gpui-mobile that mbook needs: the activity it extends,
   # and those its Rust code calls with mbook's features (the document
-  # picker, its helper, platform views); javac compiles what they refer to
-  # from the source path. They are not mbook's code, so they are compiled
+  # picker, its helper, platform views, the clipboard); javac compiles what
+  # they refer to from the source path. They are not mbook's code, so they are compiled
   # without its warnings or notes: some use deprecated APIs of Android.
   local needed=()
   local class
-  for class in GpuiInputActivity GpuiPathPicker GpuiHelper GpuiPlatformView; do
+  for class in GpuiInputActivity GpuiPathPicker GpuiHelper GpuiPlatformView GpuiClipboard; do
     needed+=("$java/$class.java")
   done
   javac -nowarn -XDsuppressNotes --release 17 -encoding UTF-8 \
