@@ -4,6 +4,11 @@
 
 ### Added
 
+- `mbook-converter`: the opt-in `rayon` feature encodes the pictures of a
+  source on all cores at once, in runs of at most 32 megapixels, instead of
+  one after another. The book is the same, byte for byte. The application
+  enables it: on eight threads an EPUB of 45 pictures was converted in 2.6 s
+  instead of 3.9 s.
 - `mbook-converter`: an exported EPUB lists the landmarks of the book. They
   go into its `landmarks` navigation, with their anchors, and those with an
   EPUB 2 type into the guide. `about-the-author`, private kinds and
@@ -17,6 +22,13 @@
 
 ### Changed
 
+- The application computes on a pool of `rayon` with half the threads of
+  the system and a stack of 16 MiB per thread: preparing chapters, decoding
+  and encoding pictures, drawing figures, converting, exporting, searching,
+  filtering the library and every change of a book being edited. The
+  background executor of GPUI awaits that work and keeps reading and writing
+  files, the catalogue and the network. An import converts on half the
+  cores.
 - The application encodes pictures with the NEON assembly of `rav1e` on
   ARM: Android, and the Mac with Apple silicon. Importing a book with many
   pictures takes about half as long; on x86 the encoder stays pure Rust.

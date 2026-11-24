@@ -59,6 +59,11 @@ asks:
   opens it, edits it and saves it.
 - The rule of [Threads](architecture.md#threads) is tested: with the background executor
   held back, a view must still draw, showing its loading state.
+- In the unit tests `compute::spawn` does its work when its future is first
+  polled, on the thread that polls it, so the test executor of GPUI orders
+  all work as it did before the pool. The pool itself is tested in
+  `shared::compute`. The visual test runs the real pool, and waits until it
+  has ended the work of a step before it draws.
 - Every layout is drawn at 390, 800 and 1280 px of width. With the Cargo
   feature `visual`, `cargo test -p mbook-ui --features visual --test visual`
   renders every screen without a window, in these widths and in a light

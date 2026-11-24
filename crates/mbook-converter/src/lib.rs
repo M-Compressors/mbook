@@ -43,6 +43,9 @@
 //! A source in a format whose feature is disabled is still recognised and
 //! refused with [`Error::FormatDisabled`].
 //!
+//! The opt-in `rayon` feature encodes the pictures of a source on all cores
+//! at once instead of one after another. The book is the same.
+//!
 //! The opt-in `export` feature enables writing all eight formats, including
 //! their picture codecs, and [`figure`], which draws the diagrams and
 //! formulas of a book. It currently requires Rust 1.98 or later.
@@ -63,6 +66,10 @@
     feature = "export"
 )))]
 compile_error!("mbook-converter needs at least one import format or the export feature");
+
+// Without a format that carries pictures, `rayon` has nothing to encode.
+#[cfg(all(feature = "rayon", not(parallel_pictures)))]
+use rayon as _;
 
 mod assemble;
 mod converter;

@@ -1,6 +1,6 @@
 //! What touches files: choosing and encoding pictures, decoding the cover,
-//! and the library's row after a save. Everything blocking runs on the
-//! background executor.
+//! and the library's row after a save. Encoding and decoding run on the pool
+//! of `compute`; reading and writing files on the background executor.
 
 use std::fs::File;
 use std::path::PathBuf;
@@ -19,6 +19,7 @@ use crate::entities::catalogue::{BookRow, Catalogue, CatalogueError, Store};
 use crate::entities::picture::{PictureError, decode_avif, picture_file_extensions};
 use crate::features::edit_book::command::Command;
 use crate::features::import_book::refresh_thumbnail;
+use crate::shared::compute;
 use crate::shared::file_picker;
 use crate::shared::model::BookKey;
 use crate::shared::roots::Roots;
@@ -90,9 +91,9 @@ impl EditorPage {
         let done = job.clone();
         let task = cx.spawn_in(window, async move |this, cx| {
             let result = cx
-                .background_spawn(async move {
+                .background_spawn(compute::spawn(move || {
                     encode_file(&file, options).map_err(|error| words(&name_of(&file), &error))
-                })
+                }))
                 .await;
             this.update_in(cx, |this, window, cx| {
                 this.encoded(&done, result, window, cx);
@@ -330,7 +331,7 @@ impl EditorPage {
         self.cover.task = Some(cx.spawn(async move |this, cx| {
             let image = match reply.await {
                 Ok(bytes) => cx
-                    .background_spawn(async move { decode_cover(&bytes) })
+                    .background_spawn(compute::spawn(move || decode_cover(&bytes)))
                     .await
                     .ok(),
                 Err(_) => None,
@@ -394,7 +395,7 @@ impl EditorPage {
         self.saving.leave_after = false;
         self.chooser = Some(cx.spawn_in(window, async move |this, cx| {
             let result = cx
-                .background_spawn(async move { record_save(&roots, &catalogue, key) })
+                .background_spawn(async move { record_save(&roots, &catalogue, key).await })
                 .await;
             this.update_in(cx, |this, window, cx| {
                 match result {
@@ -472,7 +473,7 @@ pub(super) enum FollowUpError {
 /// [`FollowUpError`] when the saved file cannot be read or the catalogue
 /// cannot be written. A thumbnail that cannot be made is not an error: the
 /// shelf draws a placeholder.
-pub(super) fn record_save(
+pub(super) async fn record_save(
     roots: &Roots,
     catalogue: &Catalogue,
     key: BookKey,
@@ -489,6 +490,6 @@ pub(super) fn record_save(
     let row = BookRow::from_reader(key, &reader, file_len, added_ms, source_format);
     catalogue.put_book(&row).map_err(FollowUpError::Catalogue)?;
     let cover = reader.read_cover().map_err(FollowUpError::Read)?;
-    refresh_thumbnail(roots, key, cover.as_deref());
+    refresh_thumbnail(roots, key, cover).await;
     Ok(())
 }

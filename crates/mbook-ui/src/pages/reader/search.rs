@@ -8,6 +8,7 @@ use gpui_kit::{AppContext as _, Context, Entity, Window};
 use super::{Phase, ReaderPage, controls};
 use crate::entities::book::error::BookError;
 use crate::features::search_text::{self, RenderedMatch};
+use crate::shared::compute;
 use crate::shared::ui::search_bar::TYPING_PAUSE;
 
 /// A match and the chapter that contains it.
@@ -92,7 +93,7 @@ impl ReaderPage {
                 cx.background_executor().timer(TYPING_PAUSE).await;
             }
             let compiled = cx
-                .background_spawn(async move { search_text::pattern(query.trim()) })
+                .background_spawn(compute::spawn(move || search_text::pattern(query.trim())))
                 .await;
             let Ok(pattern) = compiled else {
                 this.update(cx, |this, cx| {
@@ -113,13 +114,13 @@ impl ReaderPage {
                 let pattern = pattern.clone();
                 let source = source.clone();
                 let result = cx
-                    .background_spawn(async move {
+                    .background_spawn(compute::spawn(move || {
                         let text = source
                             .upgrade()
                             .ok_or(BookError::Unusable)?
                             .read_chapter(chapter)?;
                         Ok(search_text::rendered(&text, &pattern, boundary, backward))
-                    })
+                    }))
                     .await;
                 match result {
                     Ok(Some(found)) => {

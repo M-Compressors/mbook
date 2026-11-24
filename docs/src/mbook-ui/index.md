@@ -22,8 +22,9 @@ Opening a file that is not yet in the library adds it: an mbook file is
 copied, a file in any format that
 [`mbook-converter`](../mbook-converter/api.md#formats-and-features) reads is
 converted first. Everything that
-reads a file, decodes, parses, converts or encodes runs on the background
-executor of GPUI; the main thread only draws and reacts.
+reads a file runs on the background executor of GPUI; what decodes, parses,
+converts or encodes runs on a pool of `rayon` with half the threads of the
+system, which the executor awaits. The main thread only draws and reacts.
 
 The interface is built with GPUI Kit: on the GPUI Fast engine on the
 desktop, and on gpui-pre with the platform of gpui-mobile on Android. Window

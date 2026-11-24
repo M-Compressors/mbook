@@ -23,6 +23,7 @@ use super::session::{Control, Section, edit_error_words};
 use crate::entities::figure::{Figure, FigureError, FigureKind, Palette, Setting, render};
 use crate::features::appearance::Appearance;
 use crate::features::edit_book::command::Command;
+use crate::shared::compute;
 use crate::shared::ui::{announce, status_line};
 
 impl EditorPage {
@@ -443,8 +444,9 @@ impl SourcePreview {
     ) {
         self.source.clone_from(&source);
         self.drawing = None;
-        let drawing =
-            cx.background_spawn(async move { render(kind, &source, Setting::Block, palette) });
+        let drawing = cx.background_spawn(compute::spawn(move || {
+            render(kind, &source, Setting::Block, palette)
+        }));
         self.task = Some(cx.spawn_in(window, async move |this, cx| {
             let drawing = drawing.await;
             this.update_in(cx, |this, window, cx| {

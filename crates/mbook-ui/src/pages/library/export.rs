@@ -17,6 +17,7 @@ use tempfile::NamedTempFile;
 
 use crate::entities::catalogue::Store;
 use crate::features::import_book::error_chain;
+use crate::shared::compute;
 use crate::shared::model::BookKey;
 use crate::shared::ui::announce;
 
@@ -69,7 +70,7 @@ pub(super) fn choose<F>(
             };
             let path = with_extension(selected, format);
             let result = executor
-                .spawn(async move { save(&source, &path, format) })
+                .spawn(compute::spawn(move || save(&source, &path, format)))
                 .await;
             cx.update(|window, cx| {
                 let message = match result {
@@ -84,7 +85,7 @@ pub(super) fn choose<F>(
 }
 
 /// Makes a copy of the book `key`, called `title`, in `format` on the
-/// background executor, and offers it to the share sheet of the platform.
+/// pool of `compute`, and offers it to the share sheet of the platform.
 /// A failure is announced; a shown sheet is not.
 #[cfg(target_os = "android")]
 pub(super) fn share(key: BookKey, title: &str, format: Format, window: &Window, cx: &App) {
@@ -97,7 +98,9 @@ pub(super) fn share(key: BookKey, title: &str, format: Format, window: &Window, 
     window
         .spawn(cx, async move |cx| {
             let staged = executor
-                .spawn(async move { stage(&source, &folder, &name, format) })
+                .spawn(compute::spawn(move || {
+                    stage(&source, &folder, &name, format)
+                }))
                 .await;
             cx.update(|window, cx| {
                 let message = match staged {

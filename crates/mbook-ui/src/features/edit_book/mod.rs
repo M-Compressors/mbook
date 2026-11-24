@@ -2,11 +2,12 @@
 //!
 //! A session ([`actor::session`]) is a future that owns a [`mbook::Book`] and a handle
 //! ([`EditHandle`](actor::EditHandle)) that sends it [`Command`](command::Command)s. The future is spawned on a
-//! background executor; commands are applied in the order they were sent and
+//! background executor and hands opening the book and each command to the
+//! pool of `compute`; commands are applied in the order they were sent and
 //! each answers with an [`Outline`](outline::Outline) of the book, which is all the main thread
 //! knows of it (mbook-ui docs, "Editing").
 //!
-//! The future uses only channels, so it runs on any executor.
+//! The future uses only channels and the pool, so it runs on any executor.
 
 pub(crate) mod actor;
 pub(crate) mod command;

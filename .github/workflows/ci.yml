@@ -41,7 +41,7 @@ jobs:
             echo "::endgroup::"
           done
           # Each import format and the export-only build.
-          for features in epub fb2 pdf cbz docx html md txt export; do
+          for features in epub fb2 pdf cbz docx html md txt export epub,rayon pdf,rayon; do
             echo "::group::mbook-converter, features '$features'"
             cargo clippy -p mbook-converter --all-targets --no-default-features --features "$features" --locked -- -D warnings
             echo "::endgroup::"
@@ -58,7 +58,7 @@ jobs:
           for features in read write; do
             cargo doc -p mbook --no-deps --no-default-features --features "$features" --locked
           done
-          for features in epub fb2 pdf cbz docx html md txt export; do
+          for features in epub fb2 pdf cbz docx html md txt export epub,rayon pdf,rayon; do
             cargo doc -p mbook-converter --no-deps --no-default-features --features "$features" --locked
           done
       - run: cargo package -p mbook --locked
@@ -92,7 +92,7 @@ jobs:
       - name: mbook-converter, each import format and export alone
         shell: bash
         run: |
-          for features in epub fb2 pdf cbz docx html md txt export; do
+          for features in epub fb2 pdf cbz docx html md txt export epub,rayon pdf,rayon; do
             cargo test -p mbook-converter --no-default-features --features "$features" --locked
           done
 

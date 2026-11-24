@@ -93,6 +93,7 @@ use crate::entities::catalogue::{ReadingFlow, Settings};
 use crate::entities::figure::{FigureSources, Figures, Palette};
 use crate::entities::picture::Bitmap;
 use crate::features::appearance::Appearance;
+use crate::shared::compute;
 use crate::shared::ui::{Side, Sideways, page_colors};
 
 pub(crate) use enlarge::{EnlargeHandler, Enlarged};
@@ -773,7 +774,7 @@ impl ChapterView {
             let generation = self.generation;
             self.blocks_task = Some(cx.spawn(async move |this, cx| {
                 let found = cx
-                    .background_spawn(async move { blocks::block_offsets(&text) })
+                    .background_spawn(compute::spawn(move || blocks::block_offsets(&text)))
                     .await;
                 this.update(cx, |this, cx| {
                     if this.generation == generation {
@@ -816,7 +817,7 @@ impl ChapterView {
         self.figure_task = Some(cx.spawn(async move |this, cx| {
             let wanted = Arc::clone(&sources);
             let figures = cx
-                .background_spawn(async move { Figures::draw(&wanted, palette) })
+                .background_spawn(compute::spawn(move || Figures::draw(&wanted, palette)))
                 .await;
             this.update(cx, |this, cx| {
                 // The owner may have named other figures meanwhile.
@@ -876,7 +877,7 @@ impl ChapterView {
         let generation = self.generation;
         self.alt_task = Some(cx.spawn(async move |this, cx| {
             let replaced = cx
-                .background_spawn(async move { alt::with_alt_text(&text, &failed) })
+                .background_spawn(compute::spawn(move || alt::with_alt_text(&text, &failed)))
                 .await;
             this.update(cx, |this, cx| {
                 if this.generation != generation {

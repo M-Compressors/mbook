@@ -340,6 +340,9 @@ pub(crate) fn assemble(
 
     #[cfg(pictures)]
     let mut store = pictures::Pictures::new(&pictures, options);
+    // Encoded on all cores now; stored below, in the order of first use.
+    #[cfg(parallel_pictures)]
+    store.prepare_shown(cover.as_deref(), &scans);
     #[cfg(pictures)]
     if let Some(name) = &cover
         && !store.store_cover(&mut book, name)

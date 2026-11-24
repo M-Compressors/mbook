@@ -18,7 +18,7 @@ open.
 | It opens every format `mbook-converter` converts | Confirmed |
 | A book that is not mbook is converted when it is opened, and the result is kept in the library | Confirmed |
 | A book can be edited | Confirmed |
-| All CPU-bound work runs on the background executor | Confirmed |
+| CPU-bound work runs on a pool of `rayon` with half the threads of the system, which the background executor awaits | Confirmed on 2026-11-24 |
 | The prototype is modelled on Apple Books for the Mac | Confirmed |
 | The layout is responsive, so that desktop and mobile share it | Confirmed |
 | The directories of the application come from the `dirs` crate | Confirmed |
@@ -55,7 +55,8 @@ several packages share.
 | `redb` | 5.0.0, 2026-11-18 | MIT OR Apache-2.0 | The catalogue; Rust 1.90 |
 | `avif-decode` | 3.0.0, 2026-09-20 | BSD-3-Clause | Decoding pictures; Rust 1.98 |
 | `image` | The version and features of the workspace, with `nasm` on ARM; GPUI brings the same crate | MIT OR Apache-2.0 | Decoding and AVIF encoding of pictures added in the editor; scaling |
-| `futures` | already in the tree of GPUI | MIT OR Apache-2.0 | The channel of the editing task |
+| `futures` | already in the tree of GPUI | MIT OR Apache-2.0 | The channel of the editing task; the future of work on the pool |
+| `rayon` | The version of the workspace; already in the tree of `image`, `ravif` and `rav1e` | MIT OR Apache-2.0 | The pool of CPU-bound work |
 | `tree-sitter-mermaid`, `codebook-tree-sitter-latex` | 0.3.5 and 0.6.1 | MIT | Syntax highlighting in the Mermaid and KaTeX source dialogs |
 | `uuid`, `tempfile`, `thiserror`, `markdown` | The versions of the workspace | | Keys; files of imports; errors; block offsets |
 | `gpui-pre-mobile` (gpui-mobile), Android only | Commit `d8945a8` of [longbridge/gpui-mobile#56](https://github.com/longbridge/gpui-mobile/pull/56), opened 2026-11-11; repository pushed 2026-11-03 | GPL-3.0-or-later OR AGPL-3.0-or-later OR Apache-2.0, used under Apache-2.0 | The GPUI platform of Android: window, input, renderer, document picker; its Java activities and emoji font go into the APK |
@@ -155,7 +156,7 @@ Ruled out:
 | Landmarks in the reader | Listed under Go to above the entries in the contents panel, in the order of the book | A control of their own in the header; mixed among the entries | The header already holds five controls; the order of the book is the order RFC 0001 asks an application to list them in, and mixed in they would read as chapters. |
 | Where a new book opens | The `start` landmark, only while no place is stored | Always at `start`; at the first chapter as before | A reader who has turned back to the title page expects to come back to it. |
 | Position of a new landmark | In the order of the book among the others | At the end of the list | RFC 0001 makes the stored order the order an application lists them in. |
-| Where CPU-bound work runs | The background executor of GPUI | A separate thread pool | Decided by the format author. One scheduler, with priorities, whose tasks are cancelled by dropping them. |
+| Where CPU-bound work runs | The global pool of `rayon` with half the threads of the system and a stack of 16 MiB, through `compute::spawn`, whose future the background executor awaits; files, the catalogue and the network stay on the executor | Everything on the background executor of GPUI, the choice until 2026-11-24; a pool with every thread | Decided by the format author on 2026-11-24. The converter and `rav1e` compute on the pool of `rayon` anyway, so the work of the application joins them there instead of competing with them from the threads of the executor; half the threads stay for the executor, drawing and the system, so a long import does not slow the interface. The stack is larger than the 2 MiB of a thread of the standard library because parsing nested Markdown, laying out a diagram and encoding a picture recurse; it is reserved, not used. The price: the pool has no priorities, cancelling reaches work only before it starts, and an import has half the cores (the EPUB of the record below: 4.3 s on four threads, 2.6 s on eight). |
 | What decides a layout | The width of the window | The platform | A narrow desktop window and a phone need the same layout; a platform test gives two code paths that drift apart. |
 | Primary flow | Continuous vertical scrolling per chapter, with saved pagination as an alternative | Paged-only navigation | Scroll uses the native gesture path and leaves ordinary text free of page masks. |
 | Reading | `BookReader`, lazily | `Book` for everything | A `Book` decodes every chapter and picture before the first line is shown. |
@@ -191,6 +192,7 @@ Ruled out:
 | Typeface of books | Bundled Literata and Noto Sans, plus System and installed choices | Only installed families | Rendering is available offline on a fresh installation. |
 | Building a release | A workflow started by hand for a tag | Building on every tag | Decided by the format author. The workflow publishes the libraries for the tag before building the application. |
 | Drawing diagrams and formulas | Render source with the `figure` module of `mbook-converter` (merman and RaTeX), then give SVG to GPUI | Convert sources to AVIF; render with a web view | SVG lets the reader choose its own page colours and sizes. The source remains editable and rendering stays local. |
+| Encoding the pictures of an import | `mbook-converter` with its `rayon` feature | Its default, one picture after another | Decided by the format author. An import of a 7 MB EPUB with 45 pictures took 2.6 s instead of 3.9 s on eight threads of an Apple M-series processor; the converter's own record has the details ([Rationale](../mbook-converter/design.md#rationale-and-alternatives)). |
 | Assembly of the AVIF encoder | The NEON assembly of `rav1e` on ARM (`aarch64`), through the `nasm` feature of `image`; pure Rust on x86 | Pure Rust everywhere; the assembly on x86 as well | *Proposed*, not yet confirmed by the format author. Importing a 7 MB EPUB with 45 pictures took 10.5 s on four cores of an Apple M-series processor without it and 5.5 s with it; a phone took about a minute. On ARM the feature needs only the C compiler, which the Android build has for its C dependencies already; on x86 it needs NASM, which the release builds install for `rav1d` but a contributor may not have. The price is an assembler step in the ARM builds, beside the "no C toolchain" reason of the AVIF decoder. The library `mbook-converter` stays pure Rust. |
 | Pictures added in the editor | Encoded here, with `image` | A public encoder in `mbook-converter` | Decided by the format author. The API of `mbook-converter` stays as it is; the price is that quality and speed are written in two crates. |
 | Size class under a scaled interface | Width divided by the scale | Width in pixels | At 200% a desktop window has room for the compact layout only; clipping or a horizontal scroll bar fails WCAG 1.4.10. |

@@ -494,6 +494,55 @@ mod pictures {
     }
 
     #[test]
+    fn pictures_of_several_chapters_are_numbered_in_the_order_they_are_first_used() {
+        // A chapter resolves its definitions before its images.
+        let mut draft = draft(&[
+            ("a", "![b](b.png)\n\n![cat][c]\n\n[c]: my%20cat.png\n"),
+            ("b", "![a](a.png) ![b again](b.png)\n"),
+        ]);
+        draft.pictures = [
+            ("a.png", 1),
+            ("b.png", 2),
+            ("my cat.png", 3),
+            ("cover.png", 4),
+        ]
+        .iter()
+        .map(|&(name, shade)| SourcePicture {
+            name: name.to_owned(),
+            data: PictureData::Encoded(png(shade)),
+        })
+        .collect();
+        draft.cover = Some("cover.png".to_owned());
+        let (book, warnings) = assembled(draft);
+        let texts: Vec<_> = book.chapters().iter().map(mbook::Chapter::text).collect();
+        assert_eq!(
+            texts,
+            [
+                "![b](img/0002.avif)\n\n![cat][c]\n\n[c]: img/0001.avif\n",
+                "![a](img/0003.avif) ![b again](img/0002.avif)\n",
+            ]
+        );
+        assert_eq!((book.pictures().len(), warnings), (4, vec![]));
+    }
+
+    #[cfg(parallel_pictures)]
+    #[test]
+    fn a_scan_finds_the_pictures_of_images_and_of_their_definitions() {
+        use super::super::rewrite;
+        let text = "![a](a.png) ![b][b] [link](c.png) [d]\n\n[b]: b%20x.png\n[d]: d.png\n";
+        let scan = rewrite::scan(&rewrite::parse(text).unwrap());
+        assert_eq!(scan.pictures, ["a.png", "b%20x.png"]);
+    }
+
+    #[cfg(parallel_pictures)]
+    #[test]
+    fn a_chapter_without_pictures_scans_none() {
+        use super::super::rewrite;
+        let scan = rewrite::scan(&rewrite::parse("Text and [a link](a.png).\n").unwrap());
+        assert_eq!(scan.pictures, Vec::<String>::new());
+    }
+
+    #[test]
     fn a_picture_nobody_shows_is_not_stored() {
         let (book, _) = assembled(with_pictures("Text.\n", &[("a.png", png(10))]));
         assert_eq!(book.pictures().len(), 0);

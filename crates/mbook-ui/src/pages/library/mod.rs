@@ -10,8 +10,9 @@
 //!   Search; the imports are a row above it.
 //!
 //! The shelf is a grid of covers, virtualised by rows. Which books it shows is
-//! decided on the background executor ([`crate::features::search_library`]),
-//! whether a book has a thumbnail likewise; the page draws what it was told
+//! decided on the pool of `compute` ([`crate::features::search_library`]),
+//! whether a book has a thumbnail on the background executor; the page draws
+//! what it was told
 //! and never touches a file.
 
 mod cover;
@@ -39,6 +40,7 @@ use self::sidebar::LibrarySidebar;
 use crate::entities::catalogue::{Library, ShelfBook, Store};
 use crate::features::import_book::{ImportEvent, ImportQueue};
 use crate::features::search_library::{Counts, Section, Sort, counts, select};
+use crate::shared::compute;
 use crate::shared::layout::SizeClass;
 use crate::shared::model::BookKey;
 use crate::shared::ui::announce;
@@ -327,7 +329,7 @@ impl LibraryPage {
         cx.notify();
     }
 
-    /// Chooses the books to show, on the background executor. A newer request
+    /// Chooses the books to show, on the pool of `compute`. A newer request
     /// makes the answer to an older one useless.
     fn refilter(&mut self, cx: &mut Context<'_, Self>) {
         self.generation += 1;
@@ -336,7 +338,9 @@ impl LibraryPage {
         let (query, section, sort) = (self.query.clone(), self.section, self.sort);
         self.filtering = Some(cx.spawn(async move |this, cx| {
             let keys = cx
-                .background_spawn(async move { select(&books, &query, section, sort) })
+                .background_spawn(compute::spawn(move || {
+                    select(&books, &query, section, sort)
+                }))
                 .await;
             this.update(cx, |this, cx| this.filtered(generation, keys, cx))
                 .ok();

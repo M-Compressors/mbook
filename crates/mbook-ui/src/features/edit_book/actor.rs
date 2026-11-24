@@ -6,6 +6,7 @@ use super::error::{ContentsError, EditError, OpenFailure};
 use super::outline::{Outline, ProblemOutline};
 use crate::entities::book::chapter::{image_path, shown};
 use crate::entities::figure::{FigureKind, FigureSource, FigureSources};
+use crate::shared::compute;
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use mbook::{Book, Meta, Toc};
@@ -26,10 +27,17 @@ pub(crate) fn session(path: PathBuf) -> (EditHandle, impl Future<Output = ()> + 
 }
 
 /// Opens the book and answers requests until every handle is gone.
+///
+/// Opening and each answer are computation (parsing, checking, compressing),
+/// so they run on the pool of `compute`; the state moves there and back.
 async fn serve(path: PathBuf, mut incoming: mpsc::UnboundedReceiver<Request>) {
-    let mut state = State::open(path);
+    let mut state = compute::spawn(move || State::open(path)).await;
     while let Some(request) = incoming.next().await {
-        state.answer(request);
+        state = compute::spawn(move || {
+            state.answer(request);
+            state
+        })
+        .await;
     }
 }
 

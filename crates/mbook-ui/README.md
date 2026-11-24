@@ -73,9 +73,10 @@ beside the content.
 
 ## How it is built
 
-- **The interface never waits for a book.** Everything that reads a file,
-  decodes, parses, converts or encodes runs on the background executor of
-  GPUI; the main thread only draws and reacts.
+- **The interface never waits for a book.** Everything that reads a file
+  runs on the background executor of GPUI; what decodes, parses, converts or
+  encodes runs on a pool of `rayon` with half the threads of the system,
+  which the executor awaits. The main thread only draws and reacts.
 - **Reading is lazy.** The reader holds a `BookReader` and decodes the
   chapter and the pictures that are on screen. The editor holds a whole
   `Book`, owned by one background task that applies commands in order.

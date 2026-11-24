@@ -49,7 +49,8 @@ visual = ["gpui-kit/test-support"]
 
 [dependencies]
 mbook = { workspace = true, features = ["read", "write"] }
-mbook-converter = { path = "../mbook-converter", features = ["export"] }
+# `rayon`: an import encodes the pictures of a book on all cores at once.
+mbook-converter = { path = "../mbook-converter", features = ["export", "rayon"] }
 image.workspace = true
 markdown.workspace = true
 percent-encoding.workspace = true
@@ -76,6 +77,8 @@ redb = "5"
 avif-decode.workspace = true
 # The channel between the editor and the task that owns the book.
 futures = "0.3"
+# The thread pool of CPU-bound work (mbook-ui docs, "Threads").
+rayon.workspace = true
 # Updates from the releases of the repository. The blocking `ureq` transport
 # runs inside a background task, so no second runtime is needed; `signatures`
 # verifies an archive against a key built into the application.

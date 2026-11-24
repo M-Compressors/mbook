@@ -207,6 +207,10 @@ document in memory before writing it to the sink.
 | `txt` | Plain text | none | Confirmed |
 
 - `default` enables every feature of the table.
+- The opt-in `rayon` feature encodes the pictures of a source on all cores
+  at once instead of one after another ([Pictures](conversion.md#pictures)).
+  The book is the same, byte for byte. Without a format that carries pictures
+  it does nothing.
 - A build must enable an import format or `export`; otherwise compilation fails
   with a message, as in `mbook`.
 - A feature enables only the dependencies its format needs. Shared mechanisms

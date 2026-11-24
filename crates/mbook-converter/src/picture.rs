@@ -38,6 +38,27 @@ pub(crate) fn to_avif(
     encode(&picture, options)
 }
 
+/// The pixels a picture holds once it is decoded, read from its header.
+///
+/// An AVIF file is stored as it is and holds none; nor do bytes this crate
+/// cannot read as a picture, which fail before their pixels are decoded.
+#[cfg(parallel_pictures)]
+pub(crate) fn pixels(data: &PictureData) -> u64 {
+    match data {
+        PictureData::Encoded(bytes) if is_avif(bytes) => 0,
+        PictureData::Encoded(bytes) => ImageReader::new(Cursor::new(bytes))
+            .with_guessed_format()
+            .ok()
+            .and_then(|reader| reader.into_decoder().ok())
+            .map_or(0, |decoder| {
+                let (width, height) = decoder.dimensions();
+                u64::from(width) * u64::from(height)
+            }),
+        #[cfg(feature = "pdf")]
+        PictureData::Rgba { width, height, .. } => u64::from(*width) * u64::from(*height),
+    }
+}
+
 /// Tells whether a file declares itself as AVIF: an image or a sequence.
 fn is_avif(bytes: &[u8]) -> bool {
     bytes.get(4..8) == Some(b"ftyp") && matches!(bytes.get(8..12), Some(b"avif" | b"avis"))
@@ -174,6 +195,37 @@ mod tests {
         };
         let data = PictureData::Encoded(file(8, 8, ImageFormat::Png));
         assert!(to_avif(&data, options, &ConvertLimits::default()).is_some());
+    }
+
+    #[cfg(parallel_pictures)]
+    #[test]
+    fn the_pixels_of_a_picture_are_read_from_its_header() {
+        use super::pixels;
+        let png = PictureData::Encoded(file(24, 16, ImageFormat::Png));
+        assert_eq!(pixels(&png), 24 * 16);
+        let jpeg = PictureData::Encoded(file(7, 5, ImageFormat::Jpeg));
+        assert_eq!(pixels(&jpeg), 7 * 5);
+    }
+
+    #[cfg(parallel_pictures)]
+    #[test]
+    fn an_avif_file_and_bytes_that_are_not_a_picture_hold_no_pixels() {
+        use super::pixels;
+        let avif = converted(&PictureData::Encoded(file(8, 8, ImageFormat::Png))).unwrap();
+        assert_eq!(pixels(&PictureData::Encoded(avif)), 0);
+        assert_eq!(pixels(&PictureData::Encoded(b"<svg/>".to_vec())), 0);
+        assert_eq!(pixels(&PictureData::Encoded(Vec::new())), 0);
+    }
+
+    #[cfg(all(parallel_pictures, feature = "pdf"))]
+    #[test]
+    fn rendered_pixels_are_counted_from_their_size() {
+        let data = PictureData::Rgba {
+            width: 4,
+            height: 3,
+            pixels: Vec::new(),
+        };
+        assert_eq!(super::pixels(&data), 12);
     }
 
     #[cfg(feature = "pdf")]

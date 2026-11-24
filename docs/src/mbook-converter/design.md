@@ -25,6 +25,7 @@ open.
 | A comic archive has one chapter per folder | Confirmed |
 | Two kinds of source, `Read` and a slice; no entry point for `Read + Seek` | Confirmed |
 | Pictures are encoded with quality 80 and speed 6 unless the options say otherwise | Confirmed |
+| Encoding the pictures in parallel is behind the opt-in `rayon` feature | Confirmed on 2026-11-24 |
 | A contents entry of the source that does not lead to a heading leads to the nearest heading above its target | Confirmed |
 | The landmarks of a source become landmarks of the book ([ADR-0010](../rfcs/adr/0010-landmarks.md)) | Confirmed |
 | Streaming means a `Read` as the source and a `Write` as the sink; the book is held in memory while it is converted ([Sources and memory](conversion.md#sources-and-memory)) | Confirmed |
@@ -46,6 +47,7 @@ shows how alive the crate is.
 | ZIP archives | `zip` 9 | MIT | 2026-11 | |
 | Dialect parsing with byte offsets | `markdown` 1.0.0 | MIT | 2025-04 | Already used by `mbook`. |
 | Picture decoding and AVIF encoding | `image` 0.25 with `avif`, which encodes through `ravif` 0.13 and `rav1e` 0.8 | MIT OR Apache-2.0; BSD-3-Clause; BSD-2-Clause | 2026-03 | |
+| Encoding pictures in parallel (`rayon`) | `rayon` 1.10 | MIT OR Apache-2.0 | 2026-11 | Already in the tree: `image`, `ravif` and `rav1e` encode a picture on its pool. |
 | Base64 (pictures of FictionBook and of `data:` addresses) | `base64` 0.23 | MIT OR Apache-2.0 | 2026-08 | |
 | Names of headings by GitHub's rule (Markdown) | `github-slugger` 0.1 | MIT | 2023-06 | One release; a port of a frozen algorithm. Already used by `mbook`. |
 | The order of the pages of a comic | `alphanumeric-sort` 1.5 | MIT | 2026-07 | |
@@ -141,7 +143,9 @@ Crates that were looked at and ruled out:
   exists before the first byte is written, and for most formats the source
   is held as well.
 - **AVIF encoding dominates the time.** The pure-Rust encoder needs seconds
-  for a large page; a comic of several hundred pages takes minutes.
+  for a large page; a comic of several hundred pages takes minutes. The
+  `rayon` feature spreads the pictures over the cores; a small picture alone
+  keeps only a few of them busy.
 - **The dependency tree is large with default features**: an AV1 encoder,
   an HTML parser, two versions of `quick-xml`, a PDF parser.
 - **The quality of a conversion is the quality of the front-end crate.** A
@@ -180,6 +184,7 @@ Crates that were looked at and ruled out:
 | Lists in an exported Word document | Word numbering: one abstract numbering for each list of the book, with its start in the level of the list, and every paragraph of an item a paragraph of its own | Paragraphs with the marker as text; one numbering for all lists, restarted with an override of the level | With the marker as text an item had no indent, a tight nested list ran into the paragraph of its parent, and a document read back had text where the lists were. Word continues counting across the numberings of one abstract numbering unless it is overridden, and `undoc` does not read the override, so a list that starts at 3 would come back from 1. One numbering for each list costs a few hundred bytes of `numbering.xml` per list. |
 | Landmarks in an EPUB | The writer replaces the `landmarks` navigation and adds to the guide in the archive `epub-builder` generated, rewriting those two documents with `zip` and copying every other entry as it is | The `reftype` of `epub-builder`; writing the EPUB package without `epub-builder` | A `reftype` belongs to a whole document of the spine and takes one of 17 fixed types, so the anchor of a landmark, a second landmark of one chapter and six kinds would be lost, and `epub-builder` does not make its archive trait public to change the files it writes. Writing the package by hand would replace the library for one table. The cost is a second pass over the archive in memory and a dependence on the paths and the `<guide>` that `epub-builder` 0.8 writes, which the tests of the writer check. |
 | CBZ pages | Rasterize the paginated edition with `unpdf` | Export only embedded pictures | A text-only book also produces readable pages. |
+| Encoding pictures in parallel | Behind the opt-in `rayon` feature: the pictures the chapters show are found first, encoded on the `rayon` pool in runs of at most 32,000,000 declared pixels, and stored in the order of first use | Always in parallel; encoding as each chapter shows a picture, as without the feature; `std::thread::scope` | Decided by the format author to put it behind a feature. Measured on a 7 MB EPUB with 45 pictures (25.5 megapixels in all, the largest 1.9) on an Apple M-series processor with the NEON assembly of `rav1e`: 3.9 s before, 2.6 s with it on eight threads, 5.6 s and 4.3 s on four; the bytes are the same. `rav1e` already works on the pool of `rayon`, so one pool shares the cores between pictures and within one; threads of their own would compete with it. The budget keeps the memory of a run near that of one picture at the limit of `max_picture_pixels`; it is a constant, not an option, and was chosen without a measurement of memory. The price is a second walk over each chapter to find its pictures. |
 | Export feature | One opt-in feature for all writers | An export switch for each format or writing enabled by default | One dependency setting enables every output while the import-only build keeps its dependency set and minimum Rust version. |
 | Export picture decoding | `avif-decode` 3 on rav1d | `image` with `avif-native` or `avif-decode` 1 with libaom | The feature shares the decoder with the application. `avif-native` links to system dav1d, and the older decoder builds libaom with CMake. |
 | Diagrams and formulas in an export | Drawn as SVG and written as PNG pictures | Their alternative text, the earlier behaviour; SVG pictures; Mermaid fences and `$…$` in Markdown | Decided by the format author on 2026-11-22: figures go out as pictures. FictionBook and many Word and EPUB readers show no SVG, and an SVG diagram depends on the fonts of the reader for its labels; PNG looks the same everywhere. |

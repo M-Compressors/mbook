@@ -3,7 +3,9 @@
 //! The page opens the file of the book on the background and keeps the
 //! [`BookSnapshot`] and the [`BookSource`]; it asks the source for one chapter
 //! at a time and for the pictures that are drawn, and never loads a book as a
-//! whole. Every call of the source runs on the background executor; a result
+//! whole. Every call of the source runs off the main thread: preparing a
+//! chapter, loading a picture and searching on the pool of `compute`, the
+//! rest on the background executor; a result
 //! that comes back for a chapter the reader has left is dropped.
 //!
 //! * the text is the [`ChapterView`], the place is kept by
@@ -56,6 +58,7 @@ use crate::entities::book::source::{self, BookSource};
 use crate::entities::catalogue::{Library, Store};
 use crate::features::appearance::Appearance;
 use crate::features::reading_position::{PositionKeeper, now_ms, reading_state};
+use crate::shared::compute;
 use crate::shared::layout::SizeClass;
 use crate::shared::model::{BookKey, Place};
 use crate::shared::ui::search_bar::SearchBar;
@@ -487,14 +490,14 @@ impl ReaderPage {
         let generation = self.chapter_generation;
         self.chapter_task = Some(cx.spawn(async move |this, cx| {
             let prepared = cx
-                .background_spawn(async move {
+                .background_spawn(compute::spawn(move || {
                     // The page holds the only lasting reference, so closing
                     // the book closes the file.
                     source
                         .upgrade()
                         .ok_or(BookError::Unusable)
                         .and_then(|source| source.prepare_chapter(index))
-                })
+                }))
                 .await;
             this.update(cx, |this, cx| {
                 this.chapter_ready(generation, arrival, prepared, cx);
@@ -573,12 +576,10 @@ impl ReaderPage {
             let key = task_key(&job);
             let task = cx.spawn(async move |this, cx| {
                 let loaded = cx
-                    .background_spawn(async move {
-                        match source.upgrade() {
-                            Some(source) => pictures::load(&source, work.picture, work.size),
-                            None => Err(pictures::LoadError::Read(BookError::Unusable)),
-                        }
-                    })
+                    .background_spawn(compute::spawn(move || match source.upgrade() {
+                        Some(source) => pictures::load(&source, work.picture, work.size),
+                        None => Err(pictures::LoadError::Read(BookError::Unusable)),
+                    }))
                     .await;
                 this.update(cx, |this, cx| {
                     this.picture_done(generation, &job, loaded, cx);
@@ -641,12 +642,10 @@ impl ReaderPage {
             cx.spawn(async move |_, cx| {
                 let pixels = (picture.width, picture.height);
                 let loaded = cx
-                    .background_spawn(async move {
-                        match source.upgrade() {
-                            Some(source) => pictures::load(&source, picture, decoded_size(pixels)),
-                            None => Err(pictures::LoadError::Read(BookError::Unusable)),
-                        }
-                    })
+                    .background_spawn(compute::spawn(move || match source.upgrade() {
+                        Some(source) => pictures::load(&source, picture, decoded_size(pixels)),
+                        None => Err(pictures::LoadError::Read(BookError::Unusable)),
+                    }))
                     .await;
                 let content = match loaded {
                     Ok((image, _)) => ViewerContent::Picture { image, pixels },

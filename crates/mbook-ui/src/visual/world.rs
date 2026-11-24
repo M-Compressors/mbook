@@ -331,7 +331,8 @@ fn write_one(roots: &Roots, catalogue: &Catalogue, spec: &Spec, at: usize) -> Re
     catalogue
         .put_book(&row)
         .map_err(|error| Error::Render(error.to_string()))?;
-    refresh_thumbnail(roots, key, cover.as_deref());
+    // The world is set up before any window; nothing else waits meanwhile.
+    futures::executor::block_on(refresh_thumbnail(roots, key, cover));
     let opened = Some(added + 3_600_000);
     let state = match spec.progress {
         Progress::Unopened => ReadingState::default(),

@@ -1,7 +1,8 @@
 //! One import, from a file to a row of the catalogue.
 //!
-//! Everything here reads files, converts and encodes: it runs on the
-//! background executor (mbook-ui docs, "Threads").
+//! Reading and writing files runs on the background executor; converting
+//! a file and making the thumbnail of a cover run on the pool of `compute`,
+//! which the executor awaits (mbook-ui docs, "Threads").
 
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read as _, Write as _};
@@ -14,6 +15,7 @@ use tempfile::NamedTempFile;
 
 use crate::entities::catalogue::{BookRow, Catalogue, CatalogueError};
 use crate::entities::picture;
+use crate::shared::compute;
 use crate::shared::model::BookKey;
 use crate::shared::roots::Roots;
 
@@ -89,12 +91,12 @@ pub(crate) enum ImportError {
 /// When the file cannot be read, is in no format that can be converted, or
 /// the library cannot be written. A failed import leaves no file in the
 /// library and no row in the catalogue.
-pub(crate) fn import(
+pub(crate) async fn import(
     roots: &Roots,
     catalogue: &Catalogue,
     source: &Path,
     added_ms: u64,
-    on_step: &dyn Fn(Step),
+    on_step: &(dyn Fn(Step) + Sync),
 ) -> Result<Imported, ImportError> {
     on_step(Step::Probing);
     let mut file = File::open(source)?;
@@ -110,13 +112,23 @@ pub(crate) fn import(
         (None, Vec::new())
     } else {
         on_step(Step::Converting);
-        let report = convert(source, file, incoming.as_file_mut())?;
+        let path = source.to_owned();
+        let (report, converted) = compute::spawn(move || {
+            let report = convert(&path, file, incoming.as_file_mut());
+            (report, incoming)
+        })
+        .await;
+        incoming = converted;
+        let report = report?;
         let warnings = report.warnings.iter().map(ToString::to_string).collect();
         (Some(report.format.to_string()), warnings)
     };
 
     on_step(Step::Indexing);
-    let (key, added) = shelve(roots, catalogue, incoming, added_ms, format)?;
+    let (key, added, cover) = shelve(roots, catalogue, incoming, added_ms, format)?;
+    if let Some(avif) = cover {
+        write_thumbnail(roots, key, avif).await;
+    }
     Ok(Imported {
         key,
         added,
@@ -143,22 +155,24 @@ pub(crate) fn create_book(
     book.write(incoming.as_file_mut())
         .map_err(ImportError::Create)?;
     incoming.as_file().sync_all()?;
-    let (key, _) = shelve(roots, catalogue, incoming, added_ms, None)?;
+    // A new book has no cover, so there is no thumbnail to make.
+    let (key, _, _) = shelve(roots, catalogue, incoming, added_ms, None)?;
     Ok(key)
 }
 
-/// Installs a staged mbook file and returns its key and whether it was added.
+/// Installs a staged mbook file and returns its key, whether it was added,
+/// and the cover of a book that was added, for its thumbnail.
 fn shelve(
     roots: &Roots,
     catalogue: &Catalogue,
     incoming: NamedTempFile,
     added_ms: u64,
     format: Option<String>,
-) -> Result<(BookKey, bool), ImportError> {
+) -> Result<(BookKey, bool, Option<Vec<u8>>), ImportError> {
     let file_len = incoming.as_file().metadata()?.len();
     let mut reader = BookReader::open(incoming.path())?;
     if let Some(key) = catalogue.find_by_id(reader.meta().id())? {
-        return Ok((key, false));
+        return Ok((key, false, None));
     }
 
     let key = BookKey::generate();
@@ -174,18 +188,15 @@ fn shelve(
         let _ = fs::remove_file(&book);
         return Err(error.into());
     }
-    if let Some(avif) = cover {
-        write_thumbnail(roots, key, &avif);
-    }
-    Ok((key, true))
+    Ok((key, true, cover))
 }
 
 /// Makes the thumbnail of a cover again, after a book was saved.
 ///
 /// A book without a cover loses the thumbnail it had.
-pub(crate) fn refresh_thumbnail(roots: &Roots, key: BookKey, cover: Option<&[u8]>) {
+pub(crate) async fn refresh_thumbnail(roots: &Roots, key: BookKey, cover: Option<Vec<u8>>) {
     match cover {
-        Some(avif) => write_thumbnail(roots, key, avif),
+        Some(avif) => write_thumbnail(roots, key, avif).await,
         None => {
             let _ = fs::remove_file(roots.cover(key));
         }
@@ -237,9 +248,13 @@ fn named_format(path: &Path) -> Option<Format> {
 
 /// Writes the thumbnail of a cover. A cover that cannot be decoded, or a
 /// cache that cannot be written, costs the thumbnail and nothing else: the
-/// shelf draws a cover from the title instead.
-fn write_thumbnail(roots: &Roots, key: BookKey, avif: &[u8]) {
-    let Ok(jpeg) = picture::cover_thumbnail(avif, THUMBNAIL_WIDTH, MAX_COVER_PIXELS) else {
+/// shelf draws a cover from the title instead. Decoding and scaling run on
+/// the pool of `compute`.
+async fn write_thumbnail(roots: &Roots, key: BookKey, avif: Vec<u8>) {
+    let made =
+        compute::spawn(move || picture::cover_thumbnail(&avif, THUMBNAIL_WIDTH, MAX_COVER_PIXELS))
+            .await;
+    let Ok(jpeg) = made else {
         return;
     };
     if fs::create_dir_all(roots.covers()).is_ok() {
@@ -250,9 +265,11 @@ fn write_thumbnail(roots: &Roots, key: BookKey, avif: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
     use std::error::Error as _;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+
+    use futures::executor::block_on;
 
     use mbook::Book;
     use tempfile::TempDir;
@@ -299,7 +316,13 @@ mod tests {
     }
 
     fn import_file(library: &Library, source: &Path) -> Result<Imported, ImportError> {
-        import(&library.roots, &library.catalogue, source, 1_000, &|_| {})
+        block_on(import(
+            &library.roots,
+            &library.catalogue,
+            source,
+            1_000,
+            &|_| {},
+        ))
     }
 
     fn files_in(dir: &Path) -> Vec<String> {
@@ -492,15 +515,19 @@ mod tests {
     fn the_steps_of_a_copy_are_told_in_order() {
         let library = library();
         let source = mbook_file(&library, "a.mbook", "The Example", false);
-        let steps = RefCell::new(Vec::new());
+        let steps = Mutex::new(Vec::new());
 
-        import(&library.roots, &library.catalogue, &source, 0, &|step| {
-            steps.borrow_mut().push(step);
-        })
+        block_on(import(
+            &library.roots,
+            &library.catalogue,
+            &source,
+            0,
+            &|step| steps.lock().unwrap().push(step),
+        ))
         .unwrap();
 
         assert_eq!(
-            steps.into_inner(),
+            steps.into_inner().unwrap(),
             [Step::Probing, Step::Copying, Step::Indexing]
         );
     }
@@ -510,15 +537,19 @@ mod tests {
         let library = library();
         let source = library.sources.join("notes.md");
         fs::write(&source, "# Notes\n").unwrap();
-        let steps = RefCell::new(Vec::new());
+        let steps = Mutex::new(Vec::new());
 
-        import(&library.roots, &library.catalogue, &source, 0, &|step| {
-            steps.borrow_mut().push(step);
-        })
+        block_on(import(
+            &library.roots,
+            &library.catalogue,
+            &source,
+            0,
+            &|step| steps.lock().unwrap().push(step),
+        ))
         .unwrap();
 
         assert_eq!(
-            steps.into_inner(),
+            steps.into_inner().unwrap(),
             [Step::Probing, Step::Converting, Step::Indexing]
         );
     }
@@ -605,7 +636,7 @@ mod tests {
         ))
         .unwrap();
 
-        refresh_thumbnail(&library.roots, key, Some(&avif));
+        block_on(refresh_thumbnail(&library.roots, key, Some(avif)));
 
         assert!(library.roots.cover(key).is_file());
     }
@@ -616,7 +647,7 @@ mod tests {
         let key = BookKey::generate();
         fs::write(library.roots.cover(key), b"old").unwrap();
 
-        refresh_thumbnail(&library.roots, key, None);
+        block_on(refresh_thumbnail(&library.roots, key, None));
 
         assert!(!library.roots.cover(key).exists());
     }
@@ -626,7 +657,11 @@ mod tests {
         let library = library();
         let key = BookKey::generate();
 
-        refresh_thumbnail(&library.roots, key, Some(b"not a picture"));
+        block_on(refresh_thumbnail(
+            &library.roots,
+            key,
+            Some(b"not a picture".to_vec()),
+        ));
 
         assert!(!library.roots.cover(key).exists());
     }

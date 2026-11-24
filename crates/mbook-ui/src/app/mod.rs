@@ -20,6 +20,7 @@ pub(crate) use root::{Root, show_about};
 pub(crate) use shell::Shell;
 
 use crate::shared::assets::{self, Assets};
+use crate::shared::compute;
 use crate::shared::roots::Roots;
 
 /// Runs the application until its last window closes.
@@ -32,6 +33,8 @@ use crate::shared::roots::Roots;
 /// and the files the platform hands over later are added to it, as dropped
 /// files are.
 pub fn run(application: Application, roots: Roots, files: Vec<PathBuf>) {
+    // Before anything uses the pool. A pool built before is used as it is.
+    compute::init().ok();
     let (sender, urls) = futures::channel::mpsc::unbounded();
     application.on_open_urls(move |batch| {
         // The receiver lives as long as the application.

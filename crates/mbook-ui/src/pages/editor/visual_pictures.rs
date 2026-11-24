@@ -24,6 +24,7 @@ use crate::entities::book::chapter::{image_path, picture_destinations};
 use crate::entities::picture::{PictureCache, decode_avif};
 use crate::features::edit_book::actor::EditHandle;
 use crate::features::edit_book::outline::PictureOutline;
+use crate::shared::compute;
 use crate::shared::ui::announce;
 use crate::shared::ui::{status_line, target_size};
 use crate::widgets::chapter_view::picture_size;
@@ -362,12 +363,12 @@ fn resolve(
         let encoded = handle.picture(&key.0).await;
         let decoded = if let Ok(encoded) = encoded {
             let (width, height) = key.1;
-            cx.background_spawn(async move {
+            cx.background_spawn(compute::spawn(move || {
                 let bitmap = decode_avif(&encoded, MAX_DECODE_PIXELS)
                     .ok()?
                     .resize(width, height);
                 Some((bitmap.byte_len(), bitmap.into_render_image()))
-            })
+            }))
             .await
         } else {
             None

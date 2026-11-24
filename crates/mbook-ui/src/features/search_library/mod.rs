@@ -1,7 +1,7 @@
 //! Which books the shelf shows, and the words that name them.
 //!
 //! Pure functions over the books of the library. The page runs [`select`] on
-//! the background executor with a generation counter (mbook-ui docs,
+//! the pool of `compute` with a generation counter (mbook-ui docs,
 //! "Threads"): a library has thousands of books, and a filter is no work for
 //! the main thread.
 

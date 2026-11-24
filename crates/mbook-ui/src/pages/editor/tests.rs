@@ -5,6 +5,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use futures::executor::block_on;
+
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
 use gpui_kit::{
@@ -71,7 +73,7 @@ fn write_book(roots: &Roots, chapters: &[(&str, &str)]) -> BookKey {
 fn start_with(cx: &mut TestAppContext, width: f32, chapters: &[(&str, &str)]) -> Setup {
     let fixture = Fixture::new();
     let key = write_book(&fixture.roots, chapters);
-    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
     open(cx, fixture, key, width)
 }
 
@@ -370,7 +372,7 @@ fn editor_with_landmarks(cx: &mut TestAppContext, landmarks: Vec<Landmark>) -> S
     let mut book = Book::open(&path).unwrap();
     book.set_landmarks(landmarks).unwrap();
     book.save(&path).unwrap();
-    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
     let setup = open(cx, fixture, key, 1280.0);
     cx.run_until_parked();
     setup
@@ -1093,7 +1095,7 @@ fn visual_inserts_and_previews_a_picture_relative_to_the_chapter(cx: &mut TestAp
     book.add_chapter("part/ch01.md", "").unwrap();
     book.add_picture("img/sand.avif", avif_of(8, 6)).unwrap();
     book.save(fixture.roots.book(key)).unwrap();
-    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
     let setup = open(cx, fixture, key, 1280.0);
     cx.run_until_parked();
     click(&setup, "mode-visual", cx);
@@ -1141,7 +1143,7 @@ fn the_chapter_picture_preview_can_switch_images(cx: &mut TestAppContext) {
     book.add_picture("first.avif", avif_of(8, 6)).unwrap();
     book.add_picture("second.avif", avif_of(6, 8)).unwrap();
     book.save(fixture.roots.book(key)).unwrap();
-    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
     let setup = open(cx, fixture, key, 1280.0);
     cx.run_until_parked();
     click(&setup, "visual-image-preview", cx);
@@ -2202,7 +2204,7 @@ fn the_picture_gallery_shows_a_thumbnail_and_a_remove_control(cx: &mut TestAppCo
     let avif = avif_of(280, 280);
     book.set_cover("img/p.avif", avif).unwrap();
     book.save(fixture.roots.book(key)).unwrap();
-    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
     let setup = open(cx, fixture, key, 1280.0);
     cx.run_until_parked();
     click(&setup, "section-pictures", cx);
@@ -2477,7 +2479,12 @@ fn record_save_keeps_the_day_and_the_format_of_the_row(cx: &mut TestAppContext) 
         .unwrap();
     book.meta_mut().set_title("Changed").unwrap();
     book.save(setup.fixture.roots.book(setup.key)).unwrap();
-    record_save(&setup.fixture.roots, &setup.fixture.catalogue, setup.key).unwrap();
+    block_on(record_save(
+        &setup.fixture.roots,
+        &setup.fixture.catalogue,
+        setup.key,
+    ))
+    .unwrap();
     let after = setup.fixture.catalogue.book(setup.key).unwrap().unwrap();
     assert_eq!(after.title, "Changed");
     assert_eq!(after.added_ms, 42);
@@ -2496,7 +2503,12 @@ fn record_save_makes_the_thumbnail_of_the_cover_and_removes_it_without_one(
         .unwrap();
     book.set_cover("c.avif", avif_of(16, 16)).unwrap();
     book.save(setup.fixture.roots.book(setup.key)).unwrap();
-    record_save(&setup.fixture.roots, &setup.fixture.catalogue, setup.key).unwrap();
+    block_on(record_save(
+        &setup.fixture.roots,
+        &setup.fixture.catalogue,
+        setup.key,
+    ))
+    .unwrap();
     assert!(thumbnail.is_file());
     let row = setup.fixture.catalogue.book(setup.key).unwrap().unwrap();
     assert_eq!(row.cover, Some((16, 16)));
@@ -2506,7 +2518,12 @@ fn record_save_makes_the_thumbnail_of_the_cover_and_removes_it_without_one(
 fn record_save_reports_a_file_that_is_gone(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
     std::fs::remove_file(setup.fixture.roots.book(setup.key)).unwrap();
-    let error = record_save(&setup.fixture.roots, &setup.fixture.catalogue, setup.key).unwrap_err();
+    let error = block_on(record_save(
+        &setup.fixture.roots,
+        &setup.fixture.catalogue,
+        setup.key,
+    ))
+    .unwrap_err();
     assert_eq!(error.to_string(), "the saved file could not be measured");
 }
 
@@ -2518,7 +2535,7 @@ fn editor_with_a_picture(cx: &mut TestAppContext, text: &str) -> Setup {
     book.add_chapter("part/ch01.md", text).unwrap();
     book.add_picture("img/sand.avif", avif_of(8, 6)).unwrap();
     book.save(fixture.roots.book(key)).unwrap();
-    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
     let setup = open(cx, fixture, key, 1280.0);
     cx.run_until_parked();
     setup
@@ -2815,7 +2832,7 @@ fn stored_contents_are_shown_and_can_be_made_to_follow_the_headings(cx: &mut Tes
         1, "Opening", "ch01.md",
     )]));
     book.save(fixture.roots.book(key)).unwrap();
-    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
     let setup = open(cx, fixture, key, 1280.0);
     cx.run_until_parked();
     click(&setup, "section-contents", cx);
@@ -2911,7 +2928,7 @@ fn editor_with_contents(
     }
     book.set_toc(mbook::Toc::Explicit(items));
     book.save(fixture.roots.book(key)).unwrap();
-    record_save(&fixture.roots, &fixture.catalogue, key).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
     let setup = open(cx, fixture, key, 1280.0);
     cx.run_until_parked();
     click(&setup, "section-contents", cx);

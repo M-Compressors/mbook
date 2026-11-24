@@ -165,6 +165,9 @@ Each import format has a Cargo feature enabled by default. The optional
 | `md` | One Markdown document | `markdown` | One document with AVIF data URLs |
 | `txt` | Plain text | | UTF-8 text in reading order |
 
+The opt-in `rayon` feature encodes the pictures of a source on all cores at
+once; the book is the same, and it is written sooner.
+
 Every output but plain text shows the Mermaid diagrams and KaTeX formulas
 of a book as PNG pictures, drawn by the `figure` module, which the `export`
 feature enables as well; plain text keeps their alternative text.

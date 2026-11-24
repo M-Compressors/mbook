@@ -11,6 +11,7 @@ use unicode_segmentation::UnicodeSegmentation as _;
 use super::EditorPage;
 use super::session::{Section, ViewMode};
 use crate::features::search_text::{self, Cursor, RenderedMatch};
+use crate::shared::compute;
 use crate::shared::ui::search_bar::TYPING_PAUSE;
 
 enum Draft {
@@ -104,14 +105,14 @@ impl EditorPage {
                 return;
             };
             let result = cx
-                .background_spawn(async move {
+                .background_spawn(compute::spawn(move || {
                     let pattern = search_text::pattern(query.trim())?;
                     Ok::<_, regex::Error>(
                         draft
                             .find(&pattern, from, backward)
                             .or_else(|| from.and_then(|_| draft.find(&pattern, None, backward))),
                     )
-                })
+                }))
                 .await;
             this.update(cx, |this, cx| this.search_finished(result, reveal, cx))
                 .ok();

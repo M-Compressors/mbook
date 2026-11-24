@@ -59,17 +59,19 @@ methods. A view holds no `BookReader`, no `Book` and no path.
 | Drawing; changing entities; reading snapshots | Main thread | |
 | Opening the catalogue; its reads and writes | Background | Medium |
 | `BookReader::open`; building the snapshot of a book | Background | High |
-| `read_chapter`; resolving its links and pictures | Background | High |
+| `read_chapter`; resolving its links and pictures | Pool | High |
+| Following a link | Background | High |
 | Parsing Markdown for display | Background, by the text view of GPUI Kit | |
-| `read_picture`; decoding AVIF; scaling | Background | Medium |
-| Reading diagram and formula sources and drawing SVG | Background | High for the current chapter |
-| Detecting a format; copying a file | Background | Medium |
-| `Converter::convert` | Background, one conversion at a time | Low |
-| Making the thumbnail of a cover | Background | Low |
-| `Book::open`, every change of a `Book`, `check`, `save` | Background, by the task that owns the book | Medium |
-| Decoding a picture added in the editor and encoding it as AVIF | Background, one at a time | Low |
-| Filtering the library | Background | High |
-| Matching text in the reader and chapter editor | Background | |
+| `read_picture`; decoding AVIF; scaling | Pool | Medium |
+| Reading diagram and formula sources and drawing SVG | Pool | High for the current chapter |
+| Detecting a format; copying a file; recording a book in the catalogue | Background | Medium |
+| `Converter::convert` | Pool, one conversion at a time | Low |
+| Making the thumbnail of a cover | Pool; the file is written on the background | Low |
+| `Book::open`, every change of a `Book`, `check`, `save` | Pool, for the task that owns the book | Medium |
+| Decoding a picture added in the editor and encoding it as AVIF | Pool, one at a time | Low |
+| Writing a book in another format | Pool | Low |
+| Filtering the library | Pool | High |
+| Matching text in the reader and chapter editor | Pool | |
 | Checking for an update; downloading it | Background | Low |
 
 - Code on the main thread must not call a `read_` method of
@@ -78,13 +80,29 @@ methods. A view holds no `BookReader`, no `Book` and no path.
 - Background work is started with the background executor of GPUI and
   returns a `Task`. The entity that asked keeps the `Task`; dropping the
   entity cancels it.
-- Cancelling takes effect between steps. A conversion or a decode that has
+- *Pool* is the global thread pool of `rayon`, which `shared::compute`
+  builds when the application starts: half the threads the system offers,
+  one at least, each with a stack of 16 MiB and named `mbook-compute-N`.
+  The converter and the AV1 encoder compute on the same pool. A task of the
+  background executor hands its computation over with `compute::spawn` and
+  awaits the future it gets, doing nothing else meanwhile; the executor
+  keeps reading and writing files, the catalogue and the network.
+- A step that both reads and computes runs where most of its time goes:
+  preparing a chapter reads and decompresses it and then parses it, on the
+  pool; an import probes, copies and records the book on the background, and
+  converts it and makes its thumbnail on the pool.
+- The pool has no priorities: work runs in the order it is handed over. A
+  panic of the work is resumed in the task that awaits it.
+- Cancelling takes effect between steps. Work the pool has not started does
+  not run once its task is dropped. A conversion or a decode that has
   started runs to its end, and its result is discarded: the converter has no
   cancellation ([`mbook-converter`, Future possibilities](../mbook-converter/design.md#future-possibilities)).
 - A result that arrives for a state the user has left must be dropped:
   every request carries the generation of the view that made it.
-- Conversions run one at a time. The AVIF encoder already uses every core,
-  and each conversion holds its source and its book in memory
+- Conversions run one at a time. The converter is built with its `rayon`
+  feature and encodes the pictures of a book on every thread of the pool,
+  and each
+  conversion holds its source and its book in memory
   ([`mbook-converter`, Sources and memory](../mbook-converter/conversion.md#sources-and-memory)).
 
 ## Storage

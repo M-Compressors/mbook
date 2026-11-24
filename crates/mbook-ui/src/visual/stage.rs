@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt};
@@ -17,9 +18,14 @@ use crate::app::{Root, Shell, bind_keys};
 use crate::entities::catalogue::{Catalogue, Settings};
 use crate::error::{Error, Result};
 use crate::shared::assets::{Assets, register_fonts};
+use crate::shared::compute;
 use crate::shared::model::BookKey;
 use crate::shared::roots::Roots;
 use crate::shared::theme::PageTone;
+
+/// How long a step may keep the pool of `compute` busy before the scene
+/// fails: far longer than any work of the sample books takes.
+const POOL_PATIENCE: Duration = Duration::from_secs(60);
 
 /// How a screen is looked at: its size and whether the interface is dark.
 #[derive(Debug, Clone, Copy)]
@@ -170,11 +176,30 @@ impl Stage {
     /// Lets the background run and draws a few frames.
     pub(super) fn settle(&mut self) -> Result<()> {
         for _ in 0..6 {
-            self.cx.run_until_parked();
+            self.await_pool()?;
             self.cx.advance_clock(Duration::from_millis(30));
             self.with_window(TestWindowExt::render_frame)?;
         }
         Ok(())
+    }
+
+    /// Runs the background until the pool of `compute` has ended every work
+    /// handed to it: its results arrive from threads the executor of the
+    /// test does not drive.
+    fn await_pool(&mut self) -> Result<()> {
+        let deadline = Instant::now() + POOL_PATIENCE;
+        loop {
+            self.cx.run_until_parked();
+            if compute::visual::pending() == 0 {
+                // The task the last result woke runs now.
+                self.cx.run_until_parked();
+                return Ok(());
+            }
+            if Instant::now() > deadline {
+                return Err(Error::Render("the thread pool did not finish".to_owned()));
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// Lets `time` pass on the clock of the application, as a user would wait.

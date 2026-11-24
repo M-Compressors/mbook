@@ -157,6 +157,14 @@ to the line.
 - Before decoding, the pixel count declared by the picture must be
   compared with `ConvertLimits::max_picture_pixels`.
 - Encoding uses `PictureOptions::quality` and `PictureOptions::speed`.
+- Without the `rayon` feature, a picture is encoded when a chapter first
+  shows it. With it, the cover and every picture a chapter shows are encoded
+  before the chapters are rewritten, on all cores of the `rayon` pool that
+  `rav1e` encodes on as well; the chapters then take the finished files. The
+  pictures go in runs whose declared pixels add up to at most 32,000,000, so
+  that memory stays close to that of one large picture; a picture with more
+  is encoded alone. Paths are given in the order of first use either way,
+  and the files are the same.
 
 ### Metadata
 

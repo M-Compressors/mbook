@@ -32,6 +32,10 @@ pub(crate) struct Scan {
     pub(crate) heading: Option<String>,
     /// The identifiers of the definitions that pictures refer to.
     image_definitions: HashSet<String>,
+    /// The destinations of the pictures, as written: those of images and of
+    /// the definitions that pictures refer to.
+    #[cfg(parallel_pictures)]
+    pub(crate) pictures: Vec<String>,
 }
 
 /// The name a link reference definition gives to its line, when it is a
@@ -82,10 +86,25 @@ pub(crate) fn scan(tree: &Node) -> Scan {
             references(child, marks, links);
         }
     }
+    #[cfg(parallel_pictures)]
+    fn pictures(node: &Node, definitions: &HashSet<String>, found: &mut Vec<String>) {
+        match node {
+            Node::Image(image) => found.push(image.url.clone()),
+            Node::Definition(definition) if definitions.contains(&definition.identifier) => {
+                found.push(definition.url.clone());
+            }
+            _ => {}
+        }
+        for child in node.children().map(Vec::as_slice).unwrap_or_default() {
+            pictures(child, definitions, found);
+        }
+    }
     let mut scan = Scan::default();
     let mut mark_identifiers = Vec::new();
     visit(tree, &mut scan, &mut mark_identifiers);
     references(tree, &mark_identifiers, &mut scan.links);
+    #[cfg(parallel_pictures)]
+    pictures(tree, &scan.image_definitions, &mut scan.pictures);
     scan
 }
 
