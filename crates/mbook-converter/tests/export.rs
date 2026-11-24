@@ -231,6 +231,133 @@ fn a_text_document_reads_in_chapter_order_with_alternative_text() -> Outcome {
     Ok(())
 }
 
+/// A book with a nested bulleted list and a numbered list that starts at
+/// 3 and holds another, both tight.
+fn listed() -> Result<Book, Box<dyn std::error::Error>> {
+    let mut book = Book::new("Lists", "en")?;
+    book.add_chapter(
+        "lists.md",
+        "# Fruit\n\n- Pear\n  - Green pear\n- Plum\n\n3. Three\n4. Four\n   1. Four-a\n\nAfter.\n",
+    )?;
+    Ok(book)
+}
+
+#[test]
+fn a_word_document_numbers_the_items_of_its_lists_with_word_numbering() -> Outcome {
+    let bytes = export(&listed()?, Format::Docx)?;
+    let document = zip_text(&bytes, "word/document.xml")?;
+    assert_eq!(document.matches("<w:numPr>").count(), 6, "{document}");
+    assert_eq!(document.matches("<w:ilvl w:val=\"1\" />").count(), 2);
+    assert!(!document.contains('•') && !document.contains("3. "));
+    let numbering = zip_text(&bytes, "word/numbering.xml")?;
+    assert!(
+        numbering.contains("<w:numFmt w:val=\"bullet\" />"),
+        "{numbering}"
+    );
+    assert!(numbering.contains("<w:start w:val=\"3\" />"), "{numbering}");
+    Ok(())
+}
+
+#[test]
+fn a_later_paragraph_of_an_item_of_a_word_document_is_indented_without_a_number() -> Outcome {
+    let mut book = Book::new("Lists", "en")?;
+    book.add_chapter("lists.md", "- First\n\n  More of the first.\n")?;
+    let document = zip_text(&export(&book, Format::Docx)?, "word/document.xml")?;
+    assert_eq!(document.matches("<w:numPr>").count(), 1, "{document}");
+    let more = document
+        .find("More of the first.")
+        .and_then(|end| {
+            document[..end]
+                .rfind("<w:p ")
+                .map(|start| &document[start..end])
+        })
+        .unwrap_or_default();
+    assert!(more.contains("<w:ind w:left=\"720\""), "{more}");
+    Ok(())
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn the_lists_of_a_word_document_are_those_of_the_book_when_it_is_imported_again() -> Outcome {
+    let bytes = export(&listed()?, Format::Docx)?;
+    let back = Converter::new().load_slice(&bytes)?.book;
+    let text: String = back
+        .chapters()
+        .iter()
+        .map(mbook_converter::mbook::Chapter::text)
+        .collect();
+    let start = text.find("- Pear").unwrap_or_default();
+    let original = listed()?;
+    let source = original.chapters()[0].text();
+    assert_eq!(
+        outline(&text[start..])?,
+        outline(&source[source.find("- Pear").unwrap_or_default()..])?,
+        "{text}"
+    );
+    Ok(())
+}
+
+/// The lists of Markdown: a list is its start number, or `-` for bullets,
+/// and its items in brackets; a paragraph is its text.
+#[cfg(feature = "docx")]
+fn outline(markdown: &str) -> Result<String, Box<dyn std::error::Error>> {
+    use markdown::mdast::Node;
+
+    fn visit(node: &Node, out: &mut Vec<String>) {
+        match node {
+            Node::List(list) => {
+                let mut items = Vec::new();
+                for child in node.children().map(Vec::as_slice).unwrap_or_default() {
+                    visit(child, &mut items);
+                }
+                let marker = list.start.map_or("-".to_owned(), |start| start.to_string());
+                out.push(format!("{marker}[{}]", items.join(" ")));
+            }
+            Node::Text(text) => out.push(text.value.clone()),
+            _ => {
+                for child in node.children().map(Vec::as_slice).unwrap_or_default() {
+                    visit(child, out);
+                }
+            }
+        }
+    }
+    let tree = markdown::to_mdast(markdown, &markdown::ParseOptions::gfm())
+        .map_err(|message| message.to_string())?;
+    let mut out = Vec::new();
+    visit(&tree, &mut out);
+    Ok(out.join(" "))
+}
+
+#[test]
+fn a_fictionbook_document_gives_each_item_a_paragraph_with_its_marker() -> Outcome {
+    let data = export(&listed()?, Format::Fb2)?;
+    let fb2 = std::str::from_utf8(&data)?;
+    for item in [
+        "• Pear",
+        "• Green pear",
+        "• Plum",
+        "3. Three",
+        "4. Four",
+        "1. Four-a",
+    ] {
+        assert!(fb2.contains(&format!("<p>{item}</p>")), "{item}: {fb2}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_text_document_indents_a_nested_item_under_its_parent() -> Outcome {
+    let data = export(&listed()?, Format::Text)?;
+    let text = std::str::from_utf8(&data)?;
+    assert!(
+        text.contains(
+            "\n• Pear\n\n  • Green pear\n\n• Plum\n\n3. Three\n\n4. Four\n\n  1. Four-a\n"
+        ),
+        "{text}"
+    );
+    Ok(())
+}
+
 #[test]
 fn a_picture_that_cannot_be_decoded_keeps_the_codec_error() -> Outcome {
     use std::error::Error as _;

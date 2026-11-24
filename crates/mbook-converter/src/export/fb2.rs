@@ -167,6 +167,10 @@ fn person(xml: &mut XmlWriter, role: &str, name: &str) {
 
 fn paragraph<'a>(xml: &mut XmlWriter, block: Block<'a>, binaries: &mut Binaries<'a>) -> Result<()> {
     xml.start_element("p");
+    // FictionBook has no lists: an item opens with its marker as text.
+    if let Some(marker) = block.item.and_then(|item| item.marker) {
+        xml.write_text(&marker.text());
+    }
     for inline in block.content {
         let (text, style) = match inline {
             Inline::Text(text, style) => (text, style),

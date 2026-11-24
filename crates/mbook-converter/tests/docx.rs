@@ -33,12 +33,26 @@ const STYLES: &str = "<w:styles xmlns:w=\"http://schemas.openxmlformats.org/word
     <w:style w:type=\"character\" w:styleId=\"VerbatimChar\"><w:name w:val=\"Verbatim Char\"/></w:style>\
     </w:styles>";
 
-/// A bullet list (`numId` 1) and a decimal one (`numId` 2).
+/// A bullet list (`numId` 1), a decimal one with three levels (`numId` 2)
+/// and a decimal one that starts at 9 (`numId` 3). The others have two
+/// levels.
 const NUMBERING: &str = "<w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\
-    <w:abstractNum w:abstractNumId=\"0\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"-\"/></w:lvl></w:abstractNum>\
-    <w:abstractNum w:abstractNumId=\"1\"><w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/></w:lvl></w:abstractNum>\
+    <w:abstractNum w:abstractNumId=\"0\">\
+    <w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"-\"/></w:lvl>\
+    <w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"bullet\"/><w:lvlText w:val=\"o\"/></w:lvl>\
+    </w:abstractNum>\
+    <w:abstractNum w:abstractNumId=\"1\">\
+    <w:lvl w:ilvl=\"0\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/></w:lvl>\
+    <w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/></w:lvl>\
+    <w:lvl w:ilvl=\"2\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%3.\"/></w:lvl>\
+    </w:abstractNum>\
+    <w:abstractNum w:abstractNumId=\"2\">\
+    <w:lvl w:ilvl=\"0\"><w:start w:val=\"9\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%1.\"/></w:lvl>\
+    <w:lvl w:ilvl=\"1\"><w:start w:val=\"1\"/><w:numFmt w:val=\"decimal\"/><w:lvlText w:val=\"%2.\"/></w:lvl>\
+    </w:abstractNum>\
     <w:num w:numId=\"1\"><w:abstractNumId w:val=\"0\"/></w:num>\
     <w:num w:numId=\"2\"><w:abstractNumId w:val=\"1\"/></w:num>\
+    <w:num w:numId=\"3\"><w:abstractNumId w:val=\"2\"/></w:num>\
     </w:numbering>";
 
 /// A Word document being built: the XML of its body, the relationships the
@@ -155,10 +169,16 @@ fn heading(level: u8, text: &str) -> String {
     )
 }
 
-/// A paragraph of a list: `numbering` is 1 for bullets and 2 for numbers.
+/// A paragraph of a list: `numbering` is 1 for bullets, 2 for numbers and 3
+/// for numbers from 9.
 fn item(numbering: u8, text: &str) -> String {
+    nested_item(numbering, 0, text)
+}
+
+/// A paragraph of a list at this level of Word, counted from 0.
+fn nested_item(numbering: u8, level: u8, text: &str) -> String {
     format!(
-        "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"0\"/><w:numId w:val=\"{numbering}\"/></w:numPr></w:pPr>\
+        "<w:p><w:pPr><w:numPr><w:ilvl w:val=\"{level}\"/><w:numId w:val=\"{numbering}\"/></w:numPr></w:pPr>\
          <w:r><w:t>{}</w:t></w:r></w:p>",
         xml(text)
     )
@@ -379,6 +399,114 @@ fn bulleted_and_numbered_items_are_lists() -> Outcome {
         texts(&converted.book),
         ["- Apples\n- Pears\n\nBetween.\n\n1. First\n2. Second\n"]
     );
+    Ok(())
+}
+
+/// The lists of Markdown as a reader of it sees them: a list is its start
+/// number, or `-` for bullets, and its items in brackets; a paragraph is its
+/// text.
+fn outline(markdown: &str) -> Result<String, Box<dyn StdError>> {
+    fn visit(node: &Node, out: &mut Vec<String>) {
+        match node {
+            Node::List(list) => {
+                let mut items = Vec::new();
+                for child in node.children().map(Vec::as_slice).unwrap_or_default() {
+                    visit(child, &mut items);
+                }
+                let marker = list.start.map_or("-".to_owned(), |start| start.to_string());
+                out.push(format!("{marker}[{}]", items.join(" ")));
+            }
+            Node::Text(text) => out.push(text.value.clone()),
+            _ => {
+                for child in node.children().map(Vec::as_slice).unwrap_or_default() {
+                    visit(child, out);
+                }
+            }
+        }
+    }
+    let tree = to_mdast(markdown, &ParseOptions::gfm()).map_err(|message| message.to_string())?;
+    let mut out = Vec::new();
+    visit(&tree, &mut out);
+    Ok(out.join(" "))
+}
+
+/// The outline of the only chapter of a converted document.
+fn outline_of(body: &[String]) -> Result<String, Box<dyn StdError>> {
+    let converted = convert(&Package::new(&body.concat()))?;
+    outline(&texts(&converted.book).concat())
+}
+
+#[test]
+fn a_bulleted_item_inside_a_bulleted_item_is_a_nested_list() -> Outcome {
+    let body = [
+        item(1, "A"),
+        nested_item(1, 1, "A1"),
+        nested_item(1, 1, "A2"),
+        item(1, "B"),
+    ];
+    assert_eq!(outline_of(&body)?, "-[A -[A1 A2] B]");
+    Ok(())
+}
+
+#[test]
+fn a_numbered_item_inside_a_numbered_item_is_a_nested_list() -> Outcome {
+    let body = [
+        item(2, "One"),
+        nested_item(2, 1, "One-a"),
+        nested_item(2, 1, "One-b"),
+        item(2, "Two"),
+    ];
+    assert_eq!(outline_of(&body)?, "1[One 1[One-a One-b] Two]");
+    Ok(())
+}
+
+#[test]
+fn a_bulleted_item_inside_a_numbered_item_is_a_nested_list() -> Outcome {
+    let body = [item(2, "One"), nested_item(1, 1, "Dot"), item(2, "Two")];
+    assert_eq!(outline_of(&body)?, "1[One -[Dot] Two]");
+    Ok(())
+}
+
+#[test]
+fn an_item_inside_an_item_numbered_with_two_digits_is_a_nested_list() -> Outcome {
+    let body = [
+        item(3, "Nine"),
+        item(3, "Ten"),
+        nested_item(3, 1, "Ten-a"),
+        item(3, "Eleven"),
+    ];
+    assert_eq!(outline_of(&body)?, "9[Nine Ten 1[Ten-a] Eleven]");
+    Ok(())
+}
+
+#[test]
+fn an_item_two_levels_deeper_than_its_parent_is_nested_one_level() -> Outcome {
+    let body = [item(2, "One"), nested_item(2, 2, "Deep"), item(2, "Two")];
+    assert_eq!(outline_of(&body)?, "1[One 1[Deep] Two]");
+    Ok(())
+}
+
+#[test]
+fn an_empty_paragraph_between_nested_items_keeps_them_in_one_list() -> Outcome {
+    let body = [
+        item(2, "One"),
+        nested_item(2, 1, "One-a"),
+        para(""),
+        nested_item(2, 1, "One-b"),
+    ];
+    assert_eq!(outline_of(&body)?, "1[One 1[One-a One-b]]");
+    Ok(())
+}
+
+#[test]
+fn a_paragraph_of_text_between_items_ends_their_list() -> Outcome {
+    let body = [
+        item(2, "One"),
+        nested_item(2, 1, "One-a"),
+        para("Between."),
+        nested_item(2, 1, "One-b"),
+    ];
+    assert_eq!(outline_of(&body)?, "1[One 1[One-a]] Between. 2[One-b]");
     Ok(())
 }
 

@@ -26,6 +26,16 @@
 //!   collects every definition at the end of the document. Each definition
 //!   is moved to the section that refers to it, and copied when several
 //!   sections do. A note is plain text: its formatting is lost in `undoc`.
+//! - **Lists.** `undoc` reads the numbering of Word and indents an item by
+//!   two spaces for each of its levels. Markdown reads an item inside
+//!   another only when it is indented as far as the text of that item,
+//!   past its marker: two spaces past `- `, three past `1. `, four past
+//!   `10. `. So the level of every item is set first to the one whose two
+//!   spaces reach the text of its parent, and an item under a number is
+//!   not read as an item of the list of its parent. An item that is more
+//!   than one level deeper than its parent is nested one level, as
+//!   Markdown reads it. A paragraph with text that is not an item, or any
+//!   other block, ends the lists before it; an empty paragraph does not.
 //! - **Links.** External links stay as `undoc` writes them. A link to a
 //!   bookmark is plain text in `undoc`, which does not report where a
 //!   bookmark is, so there are no links into the book and no marks.
@@ -54,7 +64,7 @@ use std::collections::HashSet;
 use std::io::{Cursor, Read};
 use undoc::docx::DocxParser;
 use undoc::render::{self, RenderOptions, TableFallback};
-use undoc::{Block, Document, Metadata, Paragraph, ResourceRole, Table};
+use undoc::{Block, Document, ListInfo, ListType, Metadata, Paragraph, ResourceRole, Table};
 use zip::ZipArchive;
 
 /// The first bytes of an OLE container: an encrypted document, or a
@@ -80,6 +90,7 @@ pub(crate) fn read(source: &[u8], options: &ConvertOptions) -> Result<Draft> {
         .map_err(|error| Error::source(Format::Docx, error))?;
     let names = name_pictures(&mut document);
     protect_tildes(&mut document);
+    nest_lists(&mut document);
     let text = render::to_markdown(&document, &render_options())
         .map_err(|error| Error::source(Format::Docx, error))?
         .replace(TILDE, "\\~");
@@ -259,6 +270,48 @@ fn protect_tildes(document: &mut Document) {
     }
 }
 
+/// Sets the level of every item of a list to the one `undoc` indents it by
+/// as far as Markdown needs to read it inside its parent item.
+fn nest_lists(document: &mut Document) {
+    for section in &mut document.sections {
+        // The items an item can be inside: the level of Word of each and the
+        // level its children are given.
+        let mut parents: Vec<(u8, u8)> = Vec::new();
+        for block in &mut section.content {
+            let Block::Paragraph(paragraph) = block else {
+                parents.clear();
+                continue;
+            };
+            let Some(item) = &mut paragraph.list_info else {
+                if !paragraph.images.is_empty() || !paragraph.plain_text().trim().is_empty() {
+                    parents.clear();
+                }
+                continue;
+            };
+            while parents.last().is_some_and(|&(level, _)| level >= item.level) {
+                parents.pop();
+            }
+            let level = parents.last().map_or(0, |&(_, children)| children);
+            let children = level.saturating_add(marker_width(item).div_ceil(2));
+            parents.push((item.level, children));
+            item.level = level;
+        }
+    }
+}
+
+/// The width of the marker `undoc` writes in front of an item, with the
+/// space after it.
+fn marker_width(item: &ListInfo) -> u8 {
+    match item.list_type {
+        ListType::Bullet => 2,
+        ListType::Numbered => {
+            let digits = item.number.unwrap_or(1).checked_ilog10().unwrap_or(0) + 1;
+            u8::try_from(digits).unwrap_or(u8::MAX).saturating_add(2)
+        }
+        ListType::None => 0,
+    }
+}
+
 /// Collects the names of the pictures the text shows, from their
 /// destinations.
 fn pictures_shown(node: &Node, shown: &mut HashSet<String>) {
@@ -339,9 +392,9 @@ fn notes_referred<'a>(node: &'a Node, notes: &mut HashSet<&'a str>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{cut, language_in, meta_of};
+    use super::{cut, language_in, marker_width, meta_of};
     use markdown::{ParseOptions, to_mdast};
-    use undoc::Metadata;
+    use undoc::{ListInfo, ListType, Metadata};
 
     /// The names and the texts of the sections of Markdown.
     fn sections(text: &str) -> Vec<(String, String)> {
@@ -420,6 +473,23 @@ mod tests {
             found[1].1,
             "# Two\n\nB[^2] and C[^1].\n\n[^1]: First.\n\n[^2]: Second.\n"
         );
+    }
+
+    #[test]
+    fn a_marker_is_as_wide_as_undoc_writes_it_with_its_space() {
+        let width = |list_type, number| {
+            marker_width(&ListInfo {
+                list_type,
+                number,
+                ..ListInfo::default()
+            })
+        };
+        assert_eq!(width(ListType::Bullet, None), 2);
+        assert_eq!(width(ListType::Numbered, None), 3);
+        assert_eq!(width(ListType::Numbered, Some(9)), 3);
+        assert_eq!(width(ListType::Numbered, Some(10)), 4);
+        assert_eq!(width(ListType::Numbered, Some(0)), 3);
+        assert_eq!(width(ListType::None, None), 0);
     }
 
     #[test]

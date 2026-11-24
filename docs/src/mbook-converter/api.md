@@ -91,19 +91,35 @@ independently of the Rust 1.89 minimum for the default import build.
 | Format | Output |
 | --- | --- |
 | EPUB | EPUB 3 with XHTML chapters in reading order, contents, [landmarks](#landmarks-in-an-epub), links, footnotes, metadata, a PNG cover and illustrations, and diagrams and formulas as PNG resources. |
-| DOCX | Editable Word paragraphs and headings, basic inline styles, PNG pictures, diagrams and formulas, and core metadata. Tables and lists are flattened into paragraphs. |
-| FB2 | FictionBook 2 XML with chapter sections, basic inline styles, metadata and Base64-encoded PNG pictures, diagrams and formulas. |
+| DOCX | Editable Word paragraphs and headings, [lists numbered by Word](#lists), basic inline styles, PNG pictures, diagrams and formulas, and core metadata. Tables are flattened into paragraphs. |
+| FB2 | FictionBook 2 XML with chapter sections, basic inline styles, metadata and Base64-encoded PNG pictures, diagrams and formulas. An item of a list is a paragraph that opens with its marker. |
 | PDF | A paginated document with selectable text, PNG illustrations, diagrams and formulas, and embedded Noto Sans. Glyph coverage is limited to the bundled font. A formula inside a line is drawn on a line of its own. |
 | CBZ | The paginated edition rasterized as numbered PNG pages, with a `ComicInfo.xml` metadata entry. |
 | HTML | One self-contained document with contents, local links and PNG data URLs. |
 | Markdown | One document with namespaced anchors and footnotes, AVIF data URLs for pictures, and `img` elements with PNG data URLs for diagrams and formulas. Support for inline HTML and data URLs varies across Markdown viewers. |
-| Plain text | UTF-8 text in reading order with the alternative text of pictures, diagrams and formulas. |
+| Plain text | UTF-8 text in reading order with the alternative text of pictures, diagrams and formulas. An item of a list opens with its marker and is indented by two spaces for each list it is nested in. |
 
 Chapter links and anchors are retained in EPUB, HTML and Markdown. Other
 writers flatten links to their visible text. When an output needs PNG, the
 decoder uses the coded AVIF pixels. AVIF container crop, rotation and mirror properties are
 not applied by these writers. Markdown embeds the original AVIF. Export does
 not fetch network resources.
+
+### Lists
+
+EPUB, HTML and Markdown keep the lists of a book as lists. DOCX, FB2 and
+plain text write every paragraph of an item as a paragraph of its own, so
+that an item and the list nested in it are apart:
+
+- In DOCX the items are numbered by Word. Every list has a numbering of its
+  own: bullets `•`, `◦` and `▪` by level, or decimal numbers that start at
+  the number of its first item. A level is indented by half an inch, and
+  Word has nine; a list nested deeper takes the ninth. A later paragraph of
+  an item is indented as far as its text, without a marker.
+- FB2 and plain text have no lists: the first paragraph of an item opens
+  with `• ` or its number, such as `3. `.
+
+A Word document exported this way is read back with the same lists.
 
 ### Landmarks in an EPUB
 

@@ -9,6 +9,11 @@
   EPUB 2 type into the guide. `about-the-author`, private kinds and
   landmarks that lead nowhere are left out, and a landmark without a title
   is given the name of its kind.
+- `mbook-converter`: an exported Word document numbers the items of its
+  lists with the numbering of Word, indented by level, and starts a
+  numbered list at the number of its first item, so that the document is
+  read back with the same lists. The items used to be paragraphs with the
+  marker as text.
 
 ### Changed
 
@@ -20,6 +25,14 @@
 
 ### Fixed
 
+- `mbook-converter`: a Word item nested under a numbered item is imported
+  inside it. It used to join the list of its parent, and a bulleted item
+  under a number split that list in three: `undoc` indents a level by two
+  spaces, which CommonMark reads as nested under a bullet only.
+- `mbook-converter`: an item of a list and the list nested in it are
+  exported to DOCX, FictionBook and plain text as separate paragraphs. A
+  tight nested list used to run into the paragraph of its parent item, as
+  in `• Pear• Green pear`. Plain text indents a nested item by two spaces.
 - An EPUB exported from a book without a cover no longer has an empty
   `landmarks` navigation, which EPUB does not allow.
 - Scrolled to the end of a chapter, the last lines of a scrolling text no
