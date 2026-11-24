@@ -4,6 +4,8 @@
 
 ### Changed
 
+## [v0.3.7](https://github.com/M-Compressors/mbook/releases/tag/v0.3.7) - 2026-11-24
+
 - The dialog that makes or edits a diagram or a formula takes most of the
   window instead of 570 pixels. In a wide window the drawing stands beside
   the source, and the source field grows with the window instead of staying
