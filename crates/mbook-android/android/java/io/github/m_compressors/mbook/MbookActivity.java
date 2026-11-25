@@ -6,6 +6,8 @@ import android.content.ClipData;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ProviderInfo;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -150,6 +152,10 @@ public class MbookActivity extends GpuiInputActivity {
         File cache = new File(context.getCacheDir(), "opened");
         List<Document> documents = new ArrayList<>();
         for (Uri uri : uris) {
+            if (!foreign(context, uri)) {
+                Log.w(TAG, "not a document of another app: " + uri);
+                continue;
+            }
             try {
                 InputStream input = resolver.openInputStream(uri);
                 if (input == null) {
@@ -172,6 +178,63 @@ public class MbookActivity extends GpuiInputActivity {
                 }
             }
         }, "mbook-open").start();
+    }
+
+    /**
+     * Whether {@code uri} names a document of another app, which mbook may
+     * read for the app that handed it over: a {@code content:} URI of a
+     * provider of another package, or a {@code file:} URI outside the
+     * private storage of mbook. Any other app can start
+     * {@link OpenActivity}, and mbook reads what it is given with its own
+     * permissions, so a URI of its own provider or of its own files would
+     * let that app have mbook copy and open what the app itself cannot read.
+     */
+    static boolean foreign(Context context, Uri uri) {
+        String scheme = uri.getScheme();
+        if (ContentResolver.SCHEME_CONTENT.equals(scheme)) {
+            String authority = uri.getAuthority();
+            if (authority == null) {
+                return false;
+            }
+            ProviderInfo provider = provider(context.getPackageManager(), authority);
+            // A provider that does not resolve, or that mbook cannot see,
+            // belongs to another package.
+            return provider == null || !context.getPackageName().equals(provider.packageName);
+        }
+        if (ContentResolver.SCHEME_FILE.equals(scheme)) {
+            String path = uri.getPath();
+            if (path == null) {
+                return false;
+            }
+            try {
+                // Canonical paths: symbolic links such as /data/data/<package>,
+                // /sdcard or /proc/self/fd/<n> lead to where the file is.
+                String file = new File(path).getCanonicalPath();
+                File[] privateRoots = {
+                    context.getDataDir(),
+                    context.createDeviceProtectedStorageContext().getDataDir(),
+                };
+                for (File root : privateRoots) {
+                    String folder = root.getCanonicalPath();
+                    if (file.equals(folder) || file.startsWith(folder + File.separator)) {
+                        return false;
+                    }
+                }
+                return true;
+            } catch (IOException e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static ProviderInfo provider(PackageManager manager, String authority) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            return manager.resolveContentProvider(
+                    authority, PackageManager.ComponentInfoFlags.of(0));
+        }
+        return manager.resolveContentProvider(authority, 0);
     }
 
     /** The documents an intent to view or to send hands over. */

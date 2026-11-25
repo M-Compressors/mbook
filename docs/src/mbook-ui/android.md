@@ -102,7 +102,8 @@ The manifest offers mbook for viewing and for sharing documents of the
 types of the formats it converts, and of `application/octet-stream`, the
 type an mbook file comes with ([Opening files from the system](architecture.md#opening-files-from-the-system)).
 
-- A document comes as a `content:` URI that only the activity may read.
+- A document comes as a `content:` URI that only the activity may read,
+  or as a `file:` URI from an app that still sends one.
   It is received by `OpenActivity`, an activity without a window or native
   code, in whatever task the other app starts it, and for a result if it
   asks for one, as Telegram does. It opens the stream of each document at
@@ -110,6 +111,12 @@ type an mbook file comes with ([Opening files from the system](architecture.md#o
   starts `MbookActivity` in its own task, where the running interface comes
   to the front, and finishes. A second `MbookActivity` in the task of the
   other app could not run the interface, which runs in the first.
+- A document must belong to another app: a `content:` URI of a provider of
+  another package, or a `file:` URI whose canonical path is outside the
+  private storage of mbook (its data folder and its device-protected data
+  folder). Any app can start `OpenActivity`, and mbook reads what it is
+  given with its own permissions, so a URI of mbook itself is refused and
+  logged instead of being copied.
 - The documents are copied into `<cache>/opened/<n>/` under the name the
   provider shows, on a thread of their own, and the paths are queued. A name
   without an extension gets the one of the document's MIME type, from which

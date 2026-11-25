@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Security
+
+- On Android, mbook no longer opens a document that another app hands over
+  as a URI of mbook itself: a `content:` URI of its own provider, or a
+  `file:` URI inside its private storage. Any app may start the activity
+  that receives documents, and mbook read such a URI with its own
+  permissions, so an app could have it copy and open a file of mbook that
+  the app cannot read. The URI is refused and logged.
+
 ## [v0.3.7](https://github.com/M-Compressors/mbook/releases/tag/v0.3.7) - 2026-11-24
 
 ### Changed
