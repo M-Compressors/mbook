@@ -129,8 +129,11 @@ impl Render for Blank {
 /// track, the stack notifications appear in, the backdrop of a sheet. GPUI
 /// tells assistive technology only about elements with a role, so these
 /// reach nobody; the controls they belong to have their roles and names.
-/// The Kit's window buttons also lack roles in the headless tree. On
-/// Windows, GPUI handles them as part of the non-client area of the window.
+/// The Kit's window buttons also lack roles in the headless tree, and so do
+/// the two groups that hold them on Linux, at the start and the end of the
+/// title bar; the one at the start is empty unless the window manager puts
+/// buttons there. On Windows, GPUI handles them as part of the non-client
+/// area of the window.
 pub(crate) fn is_kit_decoration(path: &str) -> bool {
     const PARTS: [&str; 8] = [
         "gpui_component::input",
@@ -148,6 +151,7 @@ pub(crate) fn is_kit_decoration(path: &str) -> bool {
                 "Name(\"title-bar\")]",
                 "Name(\"bar\")]",
                 "Name(\"window-controls\")]",
+                "Name(\"window-controls-start\")]",
             ]
             .iter()
             .any(|part| path.ends_with(part)))
@@ -172,6 +176,22 @@ fn kit_window_controls_are_outside_the_page_accessibility_checks() {
         );
         assert!(is_kit_decoration(&path), "{path}");
     }
+}
+
+#[test]
+fn both_groups_of_kit_window_controls_are_outside_the_page_accessibility_checks() {
+    for group in ["window-controls-start", "window-controls"] {
+        let path = format!(
+            r#"[Name("gpui_component::window_border::WindowBorder"), Name("window-backdrop"), Name("root"), Name("library-page"), Name("mbook_ui::shared::ui::page_header::PageHeader"), Name("gpui_component::title_bar::TitleBar"), Name("title-bar"), Name("gpui_component::title_bar::WindowControls"), Name("{group}")]"#
+        );
+        assert!(is_kit_decoration(&path), "{path}");
+    }
+}
+
+#[test]
+fn a_page_element_named_like_a_window_control_group_stays_in_the_checks() {
+    let path = r#"[Name("library-page"), Name("window-controls-start")]"#;
+    assert!(!is_kit_decoration(path), "{path}");
 }
 
 #[test]
