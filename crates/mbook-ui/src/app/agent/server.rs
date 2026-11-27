@@ -110,7 +110,8 @@ pub(crate) struct RenderFigure {
 /// What `get_guide` gives.
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 pub(crate) struct Guide {
-    /// `overview`, `dialect`, `figures`, `pictures`, `structure` or `errors`.
+    /// `overview`, `format`, `dialect`, `figures`, `pictures`, `structure`
+    /// or `errors`.
     pub(crate) topic: String,
 }
 
@@ -387,7 +388,7 @@ impl Server {
     }
 
     #[tool(
-        description = "One topic of the guide to writing books here: overview, dialect, figures, pictures, structure or errors.",
+        description = "One topic of the guide to writing books here: overview, format (the mbook format in short, with a link to its specification), dialect, figures, pictures, structure or errors.",
         annotations(read_only_hint = true),
         output_schema = schema_for_output::<GuideText>()
     )]

@@ -33,11 +33,16 @@ impl File {
 }
 
 /// Every file of the skill; `SKILL.md` first.
-pub(crate) const FILES: [File; 6] = [
+pub(crate) const FILES: [File; 7] = [
     File {
         path: "SKILL.md",
         topic: "overview",
         text: include_str!("../../../assets/mcp/mbook-authoring/SKILL.md"),
+    },
+    File {
+        path: "references/format.md",
+        topic: "format",
+        text: include_str!("../../../assets/mcp/mbook-authoring/references/format.md"),
     },
     File {
         path: "references/dialect.md",
@@ -176,6 +181,7 @@ mod tests {
             topics().collect::<Vec<_>>(),
             [
                 "overview",
+                "format",
                 "dialect",
                 "figures",
                 "pictures",
@@ -186,6 +192,11 @@ mod tests {
         let overview = guide("overview").unwrap();
         assert!(overview.starts_with("# Writing books in mbook"));
         assert!(guide("dialect").unwrap().starts_with("# What a chapter"));
+        let format = guide("format").unwrap();
+        assert!(format.starts_with("# The mbook format"));
+        assert!(
+            format.contains("https://m-compressors.github.io/mbook/rfcs/0001-mbook-format.html")
+        );
         assert_eq!(guide("nothing"), None);
     }
 

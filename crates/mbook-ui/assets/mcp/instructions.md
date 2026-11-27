@@ -4,4 +4,4 @@ Work in this order: `list_books` or `create_book`; `get_book` for the structure 
 
 Rules: chapters are GitHub Flavored Markdown without raw HTML. Write diagrams as a `mermaid` fence that starts with `%% alt: …` and formulas as `$…$` or `$$…$$`; they become resources of the book and are drawn first. Every picture, diagram and formula needs an alternative text in words. Paths in links are relative to the chapter. On `user_typing`, wait and retry; on `conflict`, read again. Removals and files of the computer (import, export, a picture from a file) are confirmed by the person in a dialog; `declined` means no.
 
-Before writing, call `get_guide` with `overview`, `dialect`, `figures`, `pictures`, `structure` or `errors`, or read the skill `mbook-authoring`.
+Before writing, call `get_guide` with `overview`, `format`, `dialect`, `figures`, `pictures`, `structure` or `errors`, or read the skill `mbook-authoring`.

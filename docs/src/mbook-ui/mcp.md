@@ -165,6 +165,7 @@ The files are part of the binary, so every way gives the same text.
 | Topic | File | Says |
 | --- | --- | --- |
 | `overview` | `SKILL.md` | What a book is; `book` keys, paths and `href`; the order of work |
+| `format` | `references/format.md` | RFC 0001 in short: the frames of a file, the kinds of resource, paths, metadata, the dialect, links and anchors, contents and landmarks, diagrams and formulas, what a reader relies on; with links to the published RFC and its decision records |
 | `dialect` | `references/dialect.md` | GitHub Flavored Markdown without raw HTML, anchors, figures and captions, footnotes, paths |
 | `figures` | `references/figures.md` | Diagrams and formulas written in a chapter, alternative text, previews |
 | `pictures` | `references/pictures.md` | The three sources of a picture, its quality and size, the cover |

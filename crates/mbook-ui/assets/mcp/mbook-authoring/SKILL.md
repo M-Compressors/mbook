@@ -6,7 +6,10 @@ description: Write and edit books in the mbook application through its MCP tools
 # Writing books in mbook
 
 mbook is a format for books: chapters in Markdown, pictures in AVIF,
-diagrams in Mermaid and formulas in KaTeX, packed in one file. The mbook
+diagrams in Mermaid and formulas in KaTeX, packed in one file. Its
+specification is RFC 0001:
+<https://m-compressors.github.io/mbook/rfcs/0001-mbook-format.html>; the
+topic `format` sums it up. The mbook
 application keeps a library of such books, and its MCP server lets you read
 and change them. Everything you need to know about a book comes back as
 text, so you never need to see the screen.
@@ -73,6 +76,7 @@ one:
 
 | Topic | File | Says |
 | --- | --- | --- |
+| `format` | `references/format.md` | The mbook format in short, from its specification, with links to it |
 | `dialect` | `references/dialect.md` | What a chapter may contain, anchors, footnotes, paths |
 | `figures` | `references/figures.md` | Diagrams and formulas: how to write them, alternative text, previews |
 | `pictures` | `references/pictures.md` | Adding pictures from a file, base64 or SVG; the cover; looking at a picture |
