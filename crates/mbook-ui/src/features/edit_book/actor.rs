@@ -1,11 +1,14 @@
 //! The task that owns the book, and the handle that talks to it.
 
+#[cfg(not(target_os = "android"))]
 use super::agent::error::AgentError;
-use super::agent::{self, Answer, Held, Op, Revisions};
+#[cfg(not(target_os = "android"))]
+use super::agent::{self, Answer, Op};
 use super::command::{Change, Command, ContentsChange, MetaChange, Reply, Request};
 use super::contents::{self, Places};
 use super::error::{ContentsError, EditError, OpenFailure};
 use super::outline::{Outline, ProblemOutline};
+use super::revisions::{Held, Revisions};
 use crate::entities::book::chapter::{image_path, shown};
 use crate::entities::figure::{FigureKind, FigureSource, FigureSources};
 use crate::shared::compute;
@@ -134,6 +137,7 @@ impl EditHandle {
     }
 
     /// Runs a call of an agent.
+    #[cfg(not(target_os = "android"))]
     ///
     /// # Errors
     ///
@@ -281,6 +285,7 @@ impl State {
                 };
                 drop(reply.send(outcome));
             }
+            #[cfg(not(target_os = "android"))]
             Request::Agent(op, reply) => {
                 let outcome = match self {
                     Self::Open(session) => {

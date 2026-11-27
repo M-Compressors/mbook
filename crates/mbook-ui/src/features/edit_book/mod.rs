@@ -10,11 +10,13 @@
 //! The future uses only channels and the pool, so it runs on any executor.
 
 pub(crate) mod actor;
+#[cfg(not(target_os = "android"))]
 pub(crate) mod agent;
 pub(crate) mod command;
 mod contents;
 pub(crate) mod error;
 pub(crate) mod outline;
+pub(crate) mod revisions;
 pub(crate) mod sessions;
 #[cfg(test)]
 mod tests;

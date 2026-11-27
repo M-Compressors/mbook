@@ -32,6 +32,7 @@ struct Entry {
     /// Ends the session when it is idle.
     idle: Option<Task<()>>,
     /// An agent's last call left changes that are not saved.
+    #[cfg(not(target_os = "android"))]
     unsaved: bool,
 }
 
@@ -59,6 +60,7 @@ impl Sessions {
                     editors: 0,
                     agent: None,
                     idle: None,
+                    #[cfg(not(target_os = "android"))]
                     unsaved: false,
                 }
             })
@@ -108,6 +110,7 @@ impl Sessions {
 
     /// The session an agent uses for `key`, opened when there is none. The
     /// session stays for [`IDLE`] after the last call.
+    #[cfg(not(target_os = "android"))]
     pub(crate) fn agent(key: BookKey, cx: &mut App) -> EditHandle {
         // The clock of the executor, which its timers follow.
         let now = cx.background_executor().now();
@@ -119,6 +122,7 @@ impl Sessions {
     }
 
     /// Records whether the last call of an agent left the book unsaved.
+    #[cfg(not(target_os = "android"))]
     pub(crate) fn note(key: BookKey, unsaved: bool, cx: &mut App) {
         if let Some(entry) = cx.default_global::<Self>().open.get_mut(&key) {
             entry.unsaved = unsaved;
@@ -126,6 +130,7 @@ impl Sessions {
     }
 
     /// The books that only agents edit and that have changes not saved.
+    #[cfg(not(target_os = "android"))]
     pub(crate) fn unsaved_of_agents(cx: &App) -> Vec<(BookKey, EditHandle)> {
         cx.try_global::<Self>().map_or_else(Vec::new, |sessions| {
             sessions
@@ -138,6 +143,7 @@ impl Sessions {
     }
 
     /// Whether an editor shows the book.
+    #[cfg(not(target_os = "android"))]
     pub(crate) fn in_editor(key: BookKey, cx: &App) -> bool {
         cx.try_global::<Self>()
             .and_then(|sessions| sessions.open.get(&key))
@@ -145,6 +151,7 @@ impl Sessions {
     }
 
     /// Ends the session of a book: its file is about to go.
+    #[cfg(not(target_os = "android"))]
     pub(crate) fn forget(key: BookKey, cx: &mut App) {
         cx.default_global::<Self>().open.remove(&key);
     }

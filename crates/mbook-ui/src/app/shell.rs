@@ -94,6 +94,7 @@ impl Shell {
     }
 
     /// Whether the library is open and the first page is built.
+    #[cfg(any(test, feature = "visual", not(target_os = "android")))]
     pub(crate) fn root(&self) -> Option<&Entity<Root>> {
         match &self.state {
             State::Ready(root) => Some(root),

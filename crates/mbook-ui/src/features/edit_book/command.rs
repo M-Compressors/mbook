@@ -1,6 +1,8 @@
 //! The commands of an editing session and the requests that carry them.
 
+#[cfg(not(target_os = "android"))]
 use super::agent::error::AgentError;
+#[cfg(not(target_os = "android"))]
 use super::agent::{Answer, Op};
 use super::error::EditError;
 use super::outline::Outline;
@@ -193,6 +195,7 @@ pub(crate) enum Request {
     /// The text of a chapter and the last change an agent made to it.
     EditorText(String, Reply<(String, u64)>),
     /// A call of an agent.
+    #[cfg(not(target_os = "android"))]
     Agent(Op, oneshot::Sender<Result<Answer, AgentError>>),
     /// Reads the book again from its file.
     Discard(Reply<()>),

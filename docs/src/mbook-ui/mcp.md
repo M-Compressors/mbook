@@ -449,6 +449,7 @@ The settings have a section **Agents (MCP)**:
 | What the settings show, the configurations | `features/agents` |
 | The calls on a book | `features/edit_book/agent` |
 | The registry of editing sessions | `features/edit_book/sessions.rs` |
+| The revisions of chapters and the chapter the editor holds | `features/edit_book/revisions.rs` |
 | What the editor does on a change of an agent | `pages/editor/changes.rs` |
 | The section of the settings | `pages/settings/agents.rs` |
 | Moving figures out of Markdown; drawing a figure as PNG | `mbook-converter`: `inline`, `figure::Figure::png` |

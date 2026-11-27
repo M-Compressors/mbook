@@ -29,6 +29,7 @@ mod encode;
 mod entry_prompt;
 mod figures;
 mod files;
+#[cfg(not(target_os = "android"))]
 pub(crate) use files::record_save;
 mod keys;
 mod landmark_kinds;
@@ -284,11 +285,13 @@ impl EditorPage {
     }
 
     /// The book the page edits.
+    #[cfg(not(target_os = "android"))]
     pub(crate) const fn key(&self) -> BookKey {
         self.key
     }
 
     /// Opens a chapter, as choosing it in the list does.
+    #[cfg(not(target_os = "android"))]
     pub(crate) fn show_chapter(
         &mut self,
         path: &str,

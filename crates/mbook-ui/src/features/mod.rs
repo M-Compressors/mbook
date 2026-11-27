@@ -1,5 +1,6 @@
 //! What a user does: importing, editing.
 
+#[cfg(not(target_os = "android"))]
 pub(crate) mod agents;
 pub(crate) mod appearance;
 #[cfg(feature = "self-update")]

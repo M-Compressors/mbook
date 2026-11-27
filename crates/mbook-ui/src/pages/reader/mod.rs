@@ -379,6 +379,7 @@ impl ReaderPage {
     }
 
     /// The book the page shows.
+    #[cfg(not(target_os = "android"))]
     pub(crate) const fn key(&self) -> BookKey {
         self.key
     }

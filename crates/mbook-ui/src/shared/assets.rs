@@ -41,8 +41,7 @@ icon_assets!(
         ZoomIn,
         ZoomOut,
         Scan,
-        Copy,
-        KeyRound
+        Copy
     ]
 );
 

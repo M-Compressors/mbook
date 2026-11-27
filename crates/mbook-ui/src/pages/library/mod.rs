@@ -18,6 +18,7 @@
 mod cover;
 mod create;
 mod export;
+#[cfg(not(target_os = "android"))]
 pub(crate) use export::save as export_to;
 mod imports;
 mod menu;
