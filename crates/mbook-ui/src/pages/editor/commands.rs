@@ -210,6 +210,9 @@ impl EditorPage {
         if !applied.taken {
             return;
         }
+        if let Ok(mut pictures) = self.visual.pictures.lock() {
+            pictures.set_sizes(self.session.pictures());
+        }
         if applied.first {
             self.fill_fields(window, cx);
         }

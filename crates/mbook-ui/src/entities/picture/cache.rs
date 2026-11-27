@@ -60,6 +60,12 @@ impl<K: Eq + Hash + Clone, V> PictureCache<K, V> {
         self.entries.insert(key, Entry { value, bytes, used });
     }
 
+    /// The keys of the values kept, in no order.
+    #[cfg(test)]
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &K> {
+        self.entries.keys()
+    }
+
     /// How many values are kept.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {

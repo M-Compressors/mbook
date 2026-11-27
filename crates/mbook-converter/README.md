@@ -160,7 +160,7 @@ Each import format has a Cargo feature enabled by default. The optional
 | `fb2` | FictionBook 2, plain or inside a ZIP | `quick-xml` | FictionBook 2 with Base64 PNG pictures |
 | `pdf` | PDF; a scan becomes one picture per page | `unpdf` | Pages with selectable text and embedded Noto Sans |
 | `cbz` | Comic book archive | `zip`, `alphanumeric-sort` | The paginated edition as numbered PNG pages |
-| `docx` | Word documents | `undoc` | Editable paragraphs and headings, lists numbered by Word; tables flattened |
+| `docx` | Word documents | `undoc` | Editable paragraphs and headings, lists numbered by Word, code blocks from the styles of code; tables flattened |
 | `html` | One HTML document | `htmd` | One self-contained document |
 | `md` | One Markdown document | `markdown` | One document with AVIF data URLs |
 | `txt` | Plain text | | UTF-8 text in reading order |

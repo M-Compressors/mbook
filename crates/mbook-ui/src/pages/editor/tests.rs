@@ -30,6 +30,7 @@ use super::link_prompt::{address_label, text_label};
 use super::panels::open_contents;
 use super::picture_prompt::description_label;
 use super::session::{Control, Phase, Section, ViewMode};
+use super::visual_figures::Shown;
 use super::visual_pictures::{choose_first, insert, no_pictures};
 use super::{EditorEvent, EditorPage};
 use crate::entities::catalogue::{Library, Store};
@@ -39,6 +40,7 @@ use crate::features::edit_book::error::EditError;
 use crate::shared::model::BookKey;
 use crate::shared::roots::Roots;
 use crate::testing::{self, Fixture};
+use crate::widgets::chapter_view::picture_size;
 
 /// An editor over a book of the library.
 struct Setup {
@@ -1127,6 +1129,184 @@ fn visual_inserts_and_previews_a_picture_relative_to_the_chapter(cx: &mut TestAp
         saved_titles_and_texts(&setup).1,
         ["![Sand & [dunes]](../img/sand.avif)"],
         "the editor writes the description back in its own spelling"
+    );
+}
+
+/// Opens Visual on the only chapter of a book, `ch01.md`, with `text` and
+/// the pictures `pictures`, and waits until its pictures are decoded.
+fn visual_with_pictures(
+    cx: &mut TestAppContext,
+    text: &str,
+    pictures: &[(&str, (u32, u32))],
+) -> Setup {
+    let setup = book_with_pictures(cx, text, pictures);
+    show_visual(&setup, cx);
+    setup
+}
+
+/// Opens a book whose only chapter, `ch01.md`, has `text`, with the pictures
+/// `pictures`.
+fn book_with_pictures(
+    cx: &mut TestAppContext,
+    text: &str,
+    pictures: &[(&str, (u32, u32))],
+) -> Setup {
+    let fixture = Fixture::new();
+    let key = BookKey::generate();
+    let mut book = Book::new("Pictures", "en").unwrap();
+    book.add_chapter("ch01.md", text).unwrap();
+    for (path, (width, height)) in pictures {
+        book.add_picture(*path, avif_of(*width, *height)).unwrap();
+    }
+    book.save(fixture.roots.book(key)).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
+    let setup = open(cx, fixture, key, 1280.0);
+    cx.run_until_parked();
+    setup
+}
+
+/// Switches to Visual and waits until its pictures are decoded.
+fn show_visual(setup: &Setup, cx: &mut TestAppContext) {
+    click(setup, "mode-visual", cx);
+    // The first layout tells the width of the text; the pictures are asked
+    // for again once it is known.
+    cx.executor().advance_clock(Duration::from_millis(250));
+    frame(setup, cx, |_, _| ());
+    cx.run_until_parked();
+    frame(setup, cx, |_, _| ());
+}
+
+#[gpui_kit::test]
+fn visual_draws_a_picture_of_the_book_at_its_own_size(cx: &mut TestAppContext) {
+    let setup = visual_with_pictures(
+        cx,
+        "Before\n\n![Sand](img/sand.avif)\n\nAfter",
+        &[("img/sand.avif", (8, 6))],
+    );
+    let sizes = state(&setup, cx, |page| {
+        page.visual
+            .pictures
+            .lock()
+            .unwrap()
+            .cached_sizes("img/sand.avif")
+    });
+    assert_eq!(sizes, [(8, 6)]);
+}
+
+#[gpui_kit::test]
+fn visual_decodes_a_wide_picture_once_at_the_width_of_its_text(cx: &mut TestAppContext) {
+    let setup = visual_with_pictures(cx, "![Dunes](dunes.avif)", &[("dunes.avif", (2400, 8))]);
+    let viewport = frame(&setup, cx, |window, _| {
+        window.find("visual-viewport").bounds().size.width.as_f32()
+    });
+    let sizes = state(&setup, cx, |page| {
+        page.visual
+            .pictures
+            .lock()
+            .unwrap()
+            .cached_sizes("dunes.avif")
+    });
+    let expected = picture_size((2400, 8), viewport - 32.0, None).unwrap();
+    assert!(expected.0 < 1280, "{expected:?}");
+    assert_eq!(sizes, [expected]);
+}
+
+#[gpui_kit::test]
+fn visual_fetches_nothing_that_is_not_a_picture_of_the_book(cx: &mut TestAppContext) {
+    let setup = book_with_pictures(cx, "", &[("kept.avif", (8, 6))]);
+    click(&setup, "mode-source", cx);
+    act(&setup, cx, |page, window, cx| {
+        page.text.update(cx, |editor, cx| {
+            editor.replace_all(
+                "![Far](https://example.com/far.avif)\n\n![Gone](gone.avif)\n\n\
+                 ![Up](../up.avif)\n\n![Kept](kept.avif)",
+                window,
+                cx,
+            );
+        });
+    });
+    show_visual(&setup, cx);
+    let requested = state(&setup, cx, |page| {
+        let pictures = page.visual.pictures.lock().unwrap();
+        [
+            "https://example.com/far.avif",
+            "gone.avif",
+            "up.avif",
+            "../up.avif",
+            "kept.avif",
+        ]
+        .into_iter()
+        .filter(|path| pictures.was_requested(path))
+        .collect::<Vec<_>>()
+    });
+    assert_eq!(requested, ["kept.avif"]);
+}
+
+/// Opens a book whose only chapter, `ch01.md`, has `text`, with the
+/// diagram `dia/flow.mmd` and the formulas of `formulas`.
+fn book_with_figures(cx: &mut TestAppContext, text: &str, formulas: &[(&str, &str)]) -> Setup {
+    let fixture = Fixture::new();
+    let key = BookKey::generate();
+    let mut book = Book::new("Figures", "en").unwrap();
+    book.add_diagram("dia/flow.mmd", "flowchart LR\n  A --> B")
+        .unwrap();
+    for (path, source) in formulas {
+        book.add_formula(*path, *source).unwrap();
+    }
+    book.add_chapter("ch01.md", text).unwrap();
+    book.save(fixture.roots.book(key)).unwrap();
+    block_on(record_save(&fixture.roots, &fixture.catalogue, key)).unwrap();
+    let setup = open(cx, fixture, key, 1280.0);
+    cx.run_until_parked();
+    setup
+}
+
+/// Which of `destinations` Visual shows as a drawn figure.
+fn drawn_figures<const N: usize>(
+    setup: &Setup,
+    cx: &TestAppContext,
+    destinations: [&str; N],
+) -> [bool; N] {
+    state(setup, cx, |page| {
+        let figures = page.visual.figures.lock().unwrap();
+        destinations.map(|destination| {
+            matches!(
+                figures.shown(destination, 16.0, 600.0),
+                Shown::Figure(gpui_kit::ImageSource::Image(_))
+            )
+        })
+    })
+}
+
+#[gpui_kit::test]
+fn visual_draws_the_diagrams_and_formulas_of_the_chapter(cx: &mut TestAppContext) {
+    let setup = book_with_figures(
+        cx,
+        "![From A to B](dia/flow.mmd)\n\nEnergy is ![E](math/e.tex) here.\n",
+        &[("math/e.tex", "E = mc^2")],
+    );
+    show_visual(&setup, cx);
+    cx.run_until_parked();
+    frame(&setup, cx, |_, _| ());
+    assert_eq!(
+        drawn_figures(&setup, cx, ["dia/flow.mmd", "math/e.tex", "pond.avif"]),
+        [true, true, false]
+    );
+}
+
+#[gpui_kit::test]
+fn a_formula_that_cannot_be_drawn_leaves_the_others_drawn(cx: &mut TestAppContext) {
+    let setup = book_with_figures(
+        cx,
+        "![Broken](math/bad.tex)\n\n![From A to B](dia/flow.mmd)\n",
+        &[("math/bad.tex", r"\frac{")],
+    );
+    show_visual(&setup, cx);
+    cx.run_until_parked();
+    frame(&setup, cx, |_, _| ());
+    assert_eq!(
+        drawn_figures(&setup, cx, ["math/bad.tex", "dia/flow.mmd"]),
+        [false, true]
     );
 }
 

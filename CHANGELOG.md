@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## [v0.3.8](https://github.com/M-Compressors/mbook/releases/tag/v0.3.8) - 2026-11-27
+
+### Added
+
+- Visual draws the pictures of the chapter in the text instead of a
+  placeholder, decoded at the width of the text and no larger than they
+  are. While one is decoded its place is kept at its size, so the text does
+  not move when it appears. Only pictures of the book are shown.
+- Visual draws the diagrams and formulas of the chapter as Preview does, at
+  the size of the text and in the colours of the page; a formula alone in
+  its paragraph is a display formula.
+- A Word document's paragraphs in a style of code (`Source Code`, or
+  `HTML Preformatted` or `Code` in a monospaced face) are imported as one
+  fenced code block with their text as written, instead of one escaped
+  paragraph per line; in a table cell each is a code span. This comes with
+  `undoc` 0.29, which also no longer panics on a part that begins with more
+  than one byte-order mark.
+
+### Changed
+
+- The interface is built with GPUI Kit 0.11 (GPUI Fast 0.1.19 on the
+  desktop, gpui-pre 0.3.14 on Android) and its Markdown editor 0.4.1. On
+  Android, gpui-mobile is pinned to a commit of the fork Mnwa/gpui-mobile
+  that moves it to gpui-pre 0.3.14, instead of a commit of
+  longbridge/gpui-mobile#56.
+- On Windows, the book formats are registered with `windows-registry`
+  0.100 instead of 0.6. GPUI still brings 0.6, so both are built.
+
 ### Security
 
 - On Android, mbook no longer opens a document that another app hands over

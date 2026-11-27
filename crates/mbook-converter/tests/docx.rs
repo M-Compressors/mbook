@@ -26,11 +26,14 @@ const WORD: &str = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml
 const RELATIONSHIPS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
 /// The styles a heading needs: `undoc` takes a paragraph for a heading when
-/// its style has an outline level.
+/// its style has an outline level. `SourceCode` is the style of code, whose
+/// face is monospaced.
 const STYLES: &str = "<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\
     <w:style w:type=\"paragraph\" w:styleId=\"Heading1\"><w:name w:val=\"heading 1\"/><w:pPr><w:outlineLvl w:val=\"0\"/></w:pPr></w:style>\
     <w:style w:type=\"paragraph\" w:styleId=\"Heading2\"><w:name w:val=\"heading 2\"/><w:pPr><w:outlineLvl w:val=\"1\"/></w:pPr></w:style>\
     <w:style w:type=\"character\" w:styleId=\"VerbatimChar\"><w:name w:val=\"Verbatim Char\"/></w:style>\
+    <w:style w:type=\"paragraph\" w:styleId=\"SourceCode\"><w:name w:val=\"Source Code\"/>\
+    <w:rPr><w:rFonts w:ascii=\"Courier New\" w:hAnsi=\"Courier New\"/></w:rPr></w:style>\
     </w:styles>";
 
 /// A bullet list (`numId` 1), a decimal one with three levels (`numId` 2)
@@ -921,6 +924,44 @@ fn a_literal_tilde_is_escaped_everywhere_in_the_text() -> Outcome {
     assert!(chapter[0].contains("[^2]: \\~note\\~"));
     assert!(chapter[0].contains("| \\~cell\\~ |"));
     assert!(chapter[0].contains("\\~in\\~ nested"));
+    Ok(())
+}
+
+/// A paragraph of one run in the style of code.
+fn code_line(text: &str) -> String {
+    format!(
+        "<w:p><w:pPr><w:pStyle w:val=\"SourceCode\"/></w:pPr>\
+         <w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",
+        xml(text)
+    )
+}
+
+#[test]
+fn paragraphs_in_the_style_of_code_are_one_block_with_their_text_as_written() -> Outcome {
+    let body = [
+        para("Before ~it."),
+        code_line("let a = b ~ c;"),
+        code_line("    *keep* `ticks`"),
+        para("After."),
+    ]
+    .concat();
+    let converted = convert(&Package::new(&body))?;
+    let chapter = texts(&converted.book);
+    assert_eq!(chapter.len(), 1);
+    assert!(
+        chapter[0].contains("```\nlet a = b ~ c;\n    *keep* `ticks`\n```\n"),
+        "{}",
+        chapter[0]
+    );
+    assert!(chapter[0].contains("Before \\~it."), "{}", chapter[0]);
+    Ok(())
+}
+
+#[test]
+fn a_paragraph_in_the_style_of_code_in_a_table_cell_is_a_code_span_as_written() -> Outcome {
+    let converted = convert(&Package::new(&table(&[&code_line("a ~ b")])))?;
+    let chapter = texts(&converted.book);
+    assert!(chapter[0].contains("| `a ~ b` |"), "{}", chapter[0]);
     Ok(())
 }
 

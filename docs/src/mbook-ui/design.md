@@ -46,7 +46,7 @@ several packages share.
 
 | Crate | Version, last release | License | Used for |
 | --- | --- | --- | --- |
-| `gpui-kit`, feature `gpui-fast` | 0.10.0, 2026-11-16 | Apache-2.0 | The interface; brings GPUI Fast 0.1 |
+| `gpui-kit`, feature `gpui-fast` | 0.11.0, 2026-11-23 | Apache-2.0 | The interface; brings GPUI Fast 0.1 |
 | `rfd` | 0.17.2 | MIT | Native book and picture pickers with extension filters |
 | `robius-share`, desktop only | 0.3.0, 2026-07-18; Project Robius, repository pushed 2026-11-13 | MIT | The share sheet of the platform; Rust 1.77. On Windows it brings `windows` 0.56 beside the versions GPUI uses |
 | `mimalloc3` | 0.1.61, 2026-11-17 | MIT | The allocator of the binary |
@@ -62,15 +62,19 @@ several packages share.
 | `sys-locale` | 0.3.2, 2024-11-01; 1Password | MIT OR Apache-2.0 | The languages of the system in order of preference, on every platform including Android |
 | `icu_plurals`, `icu_locale_core` | 2.4.0, 2026-10-22; ICU4X of Unicode; `icu_locale_core` already in the tree | Unicode-3.0 | The plural category of a count |
 | `uuid`, `tempfile`, `thiserror`, `markdown` | The versions of the workspace | | Keys; files of imports; errors; block offsets |
-| `gpui-pre-mobile` (gpui-mobile), Android only | Commit `d8945a8` of [longbridge/gpui-mobile#56](https://github.com/longbridge/gpui-mobile/pull/56), opened 2026-11-11; repository pushed 2026-11-03 | GPL-3.0-or-later OR AGPL-3.0-or-later OR Apache-2.0, used under Apache-2.0 | The GPUI platform of Android: window, input, renderer, document picker and, with its `clipboard` feature, the clipboard of the system; its Java activities and emoji font go into the APK |
+| `gpui-pre-mobile` (gpui-mobile), Android only | Commit `d3eddb8` of the fork [Mnwa/gpui-mobile](https://github.com/Mnwa/gpui-mobile), branch `gpui-pre-0.3.14`, 2026-11-27; upstream [longbridge/gpui-mobile](https://github.com/longbridge/gpui-mobile) pushed 2026-11-03 | GPL-3.0-or-later OR AGPL-3.0-or-later OR Apache-2.0, used under Apache-2.0 | The GPUI platform of Android: window, input, renderer, document picker and, with its `clipboard` feature, the clipboard of the system; its Java activities and emoji font go into the APK |
 | `android-activity`, `android_logger`, `log` (in `mbook-android`) | 0.6, 0.15, 0.4 | MIT OR Apache-2.0 | `NativeActivity` glue that calls `android_main`; logcat |
 | `jni`, `log`, Android only | 0.22, the version gpui-mobile uses; 0.4 | MIT OR Apache-2.0 | Asking the activity for the documents it received; logging a Java exception |
-| `windows-registry`, Windows only | 0.6.1, of windows-rs; already in the tree of GPUI | MIT OR Apache-2.0 | Registering the book formats for the current user; a safe API, so the crate keeps `unsafe_code` forbidden |
+| `windows-registry`, Windows only | 0.100.0, of windows-rs; Rust 1.95. GPUI keeps 0.6.1, so the tree holds both | MIT OR Apache-2.0 | Registering the book formats for the current user; a safe API, so the crate keeps `unsafe_code` forbidden |
 
-gpui-mobile is taken from its repository, pinned to a commit: its only
-release on crates.io, 0.1.0, is built for gpui-pre 0.3.5, and GPUI Kit 0.10
-pins gpui-pre 0.3.12. The pull request moves it to 0.3.12 without changes to
-its code. Its default features bring about thirty platform modules (camera,
+gpui-mobile is taken from a fork, pinned to a commit: its only release on
+crates.io, 0.1.0, is built for gpui-pre 0.3.5, its `main` is on 0.3.10, and
+GPUI Kit 0.11 pins gpui-pre 0.3.14. Cargo keeps one gpui-pre 0.3 in a build,
+so the platform must be on the same one as the Kit. The fork starts from the
+commit of [longbridge/gpui-mobile#56](https://github.com/longbridge/gpui-mobile/pull/56),
+which moved it to 0.3.12, and moves it to 0.3.14: the pins, and the
+`gpui-pre-wgpu` it vendors for its `offscreen` feature, which mbook does not
+enable. Its default features bring about thirty platform modules (camera,
 contacts, location, notifications…); they are off. Its README calls it an
 experimental platform release: composition through the keyboard of the
 system and the lifecycle of an activity are incomplete.
@@ -138,6 +142,7 @@ Ruled out:
 | --- | --- | --- | --- |
 | Toolkit | GPUI Kit on GPUI Fast | | Decided by the format author. |
 | Engine on Android | gpui-pre, with the platform of gpui-mobile | GPUI Fast with a platform of this repository | GPUI Fast has no Android platform; for iOS its platform crate takes the iOS crate of gpui-pre. gpui-mobile is the only Android platform for GPUI and is written for gpui-pre; writing one is most of gpui-mobile again. The application compiles and its tests pass on gpui-pre unchanged. |
+| Source of gpui-mobile | A commit of the fork Mnwa/gpui-mobile on the gpui-pre of GPUI Kit 0.11 | The commit of longbridge/gpui-mobile#56 with GPUI Kit 0.10; waiting for upstream to reach gpui-pre 0.3.14 | The Kit and the platform must share one gpui-pre, and upstream has no commit on 0.3.14. The move needed no change to the code of gpui-mobile, only to the renderer it vendors for a feature mbook leaves off, so the fork is a small difference to give back upstream. |
 | The Android entry point | A crate of its own, `mbook-android`, with the lints of the workspace but `unsafe_code` denied, and one `#[expect]` on `android_main` | `android_main` in `mbook-ui`; the host-driven entry point of gpui-mobile | `#[unsafe(no_mangle)]` is unsafe code, which `mbook-ui` forbids, and a forbidden lint cannot be expected. The host-driven entry point survives a recreated activity but needs JNI functions of this crate and an activity of its own. |
 | Packing the APK | `android.sh`: `javac`, `d8`, `aapt2`, `zipalign` and `apksigner` of the SDK | Gradle; `cargo-apk`; `xbuild` | See Ruled out under [Dependencies](#dependencies). |
 | System bars on Android | Opt out of the edge-to-edge layout of API 35, and pad views by the bars gpui-mobile measures | `targetSdkVersion` 34; JNI code of this crate that reads `WindowInsets` | gpui-mobile reads the bars from the content view, which edge-to-edge makes the whole screen. API 34 leaves the current target of Google Play behind; JNI code needs a second Java activity. |
@@ -159,7 +164,7 @@ Ruled out:
 | The language at start | The first language of the system the interface has, else English | The first language of the system, else English; English always | A Russian speaker whose system lists German first still gets Russian; a language without a translation would be all fallback. |
 | The language setting | System language, then every language named in itself; stored by its code, no row while it follows the system | The names in the current language | A person who cannot read the current language finds theirs. No row keeps a change of the system's language working, as for the page tone. |
 | The language in tests | Never set: the tests run in English and a test checks the language `Appearance` chooses, not the text | Setting it per test | The language of `rust-i18n` belongs to the process, and the tests of a crate run on several threads at once. |
-| File picker filters | Native dialogs through `rfd` | GPUI file prompts | GPUI Kit 0.10 cannot pass extension filters to its platform picker. |
+| File picker filters | Native dialogs through `rfd` | GPUI file prompts | GPUI Kit 0.11 cannot pass extension filters to its platform picker. |
 | Sending a book to other people | The share sheet of the platform through `robius-share`, with the mbook file | Share links of social networks; code of this crate on AppKit and WinRT | A share link carries text and a web address, and a library book has no address. Calling the platform directly needs `unsafe`, which the workspace forbids; `robius-share` keeps it in a maintained crate. |
 | Export destination | Native save dialog and temporary file in the destination directory | Convert directly into the chosen file | The completed file is published in one operation and an existing file cannot be overwritten. |
 | Landmarks section | The start in a block of its own, then the other landmarks as a list | One row for every kind, filled or empty; one list with the start among the rest | The start is the one landmark a reader meets without asking and a book has one. Twenty-two rows would bury the few places a book has. |
@@ -209,7 +214,9 @@ Ruled out:
 | Size class under a scaled interface | Width divided by the scale | Width in pixels | At 200% a desktop window has room for the compact layout only; clipping or a horizontal scroll bar fails WCAG 1.4.10. |
 | Reordering chapters | A drag, and "Move up" and "Move down" | A drag alone | WCAG 2.5.7: a drag needs an alternative. |
 | Thumbnails | JPEG files in the cache | Decoding every cover at start | The shelf then needs no AVIF decoder to appear. |
-| Making a picture of the text open larger | A block plugin of the chapter view that draws a picture alone in its paragraph as the Kit does, and answers a click | Wrapping each picture in a link of the text; a hit test over the whole text | GPUI Kit 0.10 lets no click reach an image of its Markdown view. A link would change the text that offsets, search and copying use; a hit test would need the bounds of the images, which the Kit does not give. The price is that a picture in a line of text does not open. |
+| Making a picture of the text open larger | A block plugin of the chapter view that draws a picture alone in its paragraph as the Kit does, and answers a click | Wrapping each picture in a link of the text; a hit test over the whole text | GPUI Kit 0.11 lets no click reach an image of its Markdown view. A link would change the text that offsets, search and copying use; a hit test would need the bounds of the images, which the Kit does not give. The price is that a picture in a line of text does not open. |
+| Pictures in Visual | The block editor loads images through a resolver of the page, which finds pictures of the book only and decodes each at the width of the text as last laid out, with a transparent stand-in of that size | The placeholders of the block editor; its built-in loader; decoding at the width of the window | Placeholders showed no picture while the text around it was edited. The built-in loader takes a destination as an address or a file to fetch, while a book's are relative to the chapter. The width of the window is known on the first frame but wider than the text, and a second decode would follow once the text is laid out; waiting for that layout costs one 200 ms delay the first time Visual opens. Without the stand-in the editor holds a small square until the picture arrives, and the text below it moves. |
+| Diagrams and formulas in Visual | The same resolver answers with the drawing of the figure, from the sources Preview asks for, as an SVG image declared at its size on the screen | A plugin of the block editor; a raster of this crate at the density of the screen; resolving the figures a second time for Visual | The block editor has no plugin for an image: it asks for an image source and sizes the image by it. GPUI draws an SVG image at twice the size it declares, so declaring the size on the screen is enough for a sharp drawing, where a raster would have to follow the density of each screen. Preview already asks for the figures of every draft; Visual takes the same answer. The cost is that a formula in a line is centred on the line instead of set on its baseline, and that the editor tells a display formula from the paragraph it is alone in, as the reader does. |
 | The preview in the dialog of a diagram or a formula | The drawing beside the source in a wide window, fitted into the room left by the source and enlarged up to twice, with **Actual size** to see a large one at its size in the text and scroll it | A fixed dialog of 570 pixels with the drawing under the source, at most 180 pixels high; the full-window viewer of the reader | A large diagram fitted into 180 pixels could not be read, and the source scrolled in a field of six lines. Beside the source, the drawing gets the height of the window while both stay in sight. A dialog cannot open the viewer of the reader over itself. |
 | What the viewer shows of a picture | The picture decoded again at its own size, up to 16,000,000 pixels | The bitmap fitted to the column, scaled up | The point of the viewer is to see more than the column shows. |
 | Where the viewer lives | In the reader page | In `widgets` | Only the reader opens it; a part of a screen moves to `widgets` when a second page needs it. |

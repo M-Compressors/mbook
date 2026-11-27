@@ -21,12 +21,12 @@ crate-type = ["cdylib"]
 [target.'cfg(target_os = "android")'.dependencies]
 # Without its updater: an APK is replaced by installing a newer one.
 mbook-ui = { path = "../mbook-ui", default-features = false }
-gpui-kit = { version = "0.10", features = ["tree-sitter-markdown"] }
+gpui-kit = { version = "0.11", features = ["tree-sitter-markdown"] }
 # The same commit as in mbook-ui; see the comment there. `clipboard` makes
 # Copy, Cut and Paste use the clipboard of the system, through
 # `GpuiClipboard`, which `android.sh` packs; without it they keep the text
 # inside the process (mbook-ui docs, "Android").
-gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/longbridge/gpui-mobile", rev = "d8945a826e4012b43a46b53d7e72b6beae24cc80", default-features = false, features = ["clipboard"] }
+gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/Mnwa/gpui-mobile", rev = "d3eddb8985b02821e8215ae5f3916e18f5799766", default-features = false, features = ["clipboard"] }
 # The glue of `NativeActivity`, which calls `android_main`.
 android-activity = { version = "0.6", features = ["native-activity"] }
 # `log` records reach logcat under the tag `mbook`.

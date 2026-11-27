@@ -6,8 +6,8 @@
 //! the settings, so that the preview and the reader are the same view with the
 //! same style (mbook-ui docs, "Editing").
 //!
-//! Diagrams and formulas come from the editing session. Pictures show their
-//! alternative text. Links do nothing.
+//! Diagrams and formulas come from the editing session; Visual is given the
+//! same ones. Pictures show their alternative text. Links do nothing.
 
 use std::time::Duration;
 
@@ -49,8 +49,12 @@ impl EditorPage {
             }
             view.set_text(text, cx);
         });
+        if chapter.is_none() {
+            self.set_visual_figures(FigureSources::default(), text, cx);
+        }
         if let Some(chapter) = chapter {
             let handle = self.handle.clone();
+            let draft = text.to_owned();
             let text = text.to_owned();
             self.preview_figures = Some(cx.spawn_in(window, async move |this, cx| {
                 cx.background_executor()
@@ -61,6 +65,7 @@ impl EditorPage {
                     .await
                     .unwrap_or_default();
                 this.update(cx, |this, cx| {
+                    this.set_visual_figures(sources.clone(), &draft, cx);
                     this.preview
                         .update(cx, |view, cx| view.set_figures(sources, cx));
                 })

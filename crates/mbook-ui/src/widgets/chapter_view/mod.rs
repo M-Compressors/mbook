@@ -97,6 +97,7 @@ use crate::shared::compute;
 use crate::shared::ui::{Side, Sideways, page_colors};
 
 pub(crate) use enlarge::{EnlargeHandler, Enlarged};
+pub(crate) use figures::fitted;
 pub(crate) use layout::picture_size;
 
 /// How far a page slides while it is turned, in pixels.
@@ -1286,7 +1287,7 @@ fn picture_image(
 }
 
 /// A transparent image of `size` pixels, to hold the place of a picture.
-fn placeholder_image(size: (u32, u32)) -> Arc<RenderImage> {
+pub(crate) fn placeholder_image(size: (u32, u32)) -> Arc<RenderImage> {
     let pixels = vec![0; size.0 as usize * size.1 as usize * 4];
     Bitmap::from_rgba(size.0, size.1, pixels).map_or_else(
         || Arc::new(RenderImage::new(Vec::new())),

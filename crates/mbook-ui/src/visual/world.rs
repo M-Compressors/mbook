@@ -314,6 +314,12 @@ fn write_one(roots: &Roots, catalogue: &Catalogue, spec: &Spec, at: usize) -> Re
         book.add_chapter("ch01.md", READING_SAMPLE)?;
     } else if at == 0 {
         book.add_picture("img/orchard.avif", avif(320, 200, 195.0)?)?;
+        // Shown by the Visual screen, which writes them into its chapter.
+        book.add_diagram(
+            "dia/press.mmd",
+            "flowchart LR\n  crates[Crates] --> press[Cider press] --> cellar[Cellar]",
+        )?;
+        book.add_formula("math/yield.tex", r"\frac{27 + 12}{3} = 13")?;
         book.add_chapter("ch01.md", CHAPTER_ONE)?;
         book.add_chapter("ch02.md", CHAPTER_TWO)?;
         book.add_chapter("ch03.md", CHAPTER_THREE)?;

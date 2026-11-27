@@ -473,8 +473,30 @@ sequenceDiagram
   with `similar`. Unchanged blocks keep their original Markdown whenever
   they can be put back without changing the block structure. If the
   initial import changes the top-level block structure, the chapter is
-  available in Source. The Visual picture preview and the gallery use the
-  same bounded cache and load pictures by book path through the editing task.
+  available in Source.
+- Visual draws the pictures of the chapter: the block editor loads images,
+  and their source is a resolver of the page. A destination is found as in
+  the reader, relative to the chapter and percent-decoded, among the
+  pictures of the last outline; nothing else is fetched. A picture is
+  decoded at the width of the text of Visual as it was last laid out, no
+  wider than its own, and a transparent image of that size holds its place
+  until it arrives. Before the first layout the width is unknown and the
+  picture is not asked for; the image asks again 200 ms later. The
+  stand-ins are kept by size in a cache of their own, bounded at 16 MiB.
+- The resolver answers a destination that names a diagram or a formula
+  with its drawing. The figures are those Preview asks the editing task for
+  after a typing pause; Visual takes the same answer and draws it on the
+  background in the colours of its page, again when the page tone changes.
+  A drawing is an SVG image declared at its size on the screen, the size of
+  the figure scaled to the text and fitted to the column: GPUI draws such an
+  image at twice that size, so it stays sharp. The parser of `markdown`
+  tells which images are alone in their paragraph; a formula among them is
+  drawn as a display formula. A drawing that arrives after the draft shows
+  other figures is dropped.
+- Visual, the picture preview and the gallery use the same bounded cache,
+  32 MiB, keyed by path and size, and load pictures by book path through
+  the editing task, two at a time. Adding, removing or making a cover of a
+  picture empties it.
 - The source text is
   sent to the task as `Chapter::set_text` when typing pauses for 400 ms,
   when another chapter is opened, and before a check or a save.

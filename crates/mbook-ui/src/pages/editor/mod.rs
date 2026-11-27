@@ -46,6 +46,7 @@ mod session;
 mod tests;
 mod view;
 mod visual;
+mod visual_figures;
 mod visual_formatting;
 mod visual_pictures;
 mod visual_source;

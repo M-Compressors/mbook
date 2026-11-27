@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 use std::cell::Cell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -13,7 +13,7 @@ use gpui_kit::component::{ActiveTheme as _, Selectable as _, WindowExt as _, h_f
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Context, Focusable as _, FontWeight, ImageCacheError,
     ImageSource, InteractiveElement as _, ObjectFit, ParentElement as _, RenderImage, Role,
-    SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
+    SharedString, SharedUri, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
     TestSupportExt as _, Window, div, img, px,
 };
 use rust_i18n::t;
@@ -22,6 +22,7 @@ use super::EditorPage;
 use super::encode::Target;
 use super::markup::picture_markdown;
 use super::picture_prompt::{description_hint, description_label};
+use super::visual_figures::Shown;
 use crate::entities::book::chapter::{image_path, picture_destinations};
 use crate::entities::picture::{PictureCache, decode_avif};
 use crate::features::edit_book::actor::EditHandle;
@@ -29,16 +30,24 @@ use crate::features::edit_book::outline::PictureOutline;
 use crate::shared::compute;
 use crate::shared::ui::announce;
 use crate::shared::ui::{status_line, target_size};
-use crate::widgets::chapter_view::picture_size;
+use crate::widgets::chapter_view::{picture_size, placeholder_image};
 
 const MAX_DECODE_PIXELS: u64 = 40_000_000;
 const CACHE_BYTES: usize = 32 * 1024 * 1024;
+/// The bytes the stand-ins of pictures being decoded may hold together.
+const PLACEHOLDER_BYTES: usize = 16 * 1024 * 1024;
 type PictureKey = (String, (u32, u32));
 
 pub(super) struct VisualPictures {
     ready: PictureCache<PictureKey, RenderImage>,
     loading: HashSet<PictureKey>,
     failed: HashSet<String>,
+    /// The width and height of each picture of the book, by path, from the
+    /// last outline.
+    sizes: HashMap<String, (u32, u32)>,
+    /// Transparent images that hold the place of a picture Visual is still
+    /// decoding, by their size, so the text does not move when it arrives.
+    placeholders: PictureCache<(u32, u32), RenderImage>,
 }
 
 impl Default for VisualPictures {
@@ -47,7 +56,30 @@ impl Default for VisualPictures {
             ready: PictureCache::new(CACHE_BYTES),
             loading: HashSet::new(),
             failed: HashSet::new(),
+            sizes: HashMap::new(),
+            placeholders: PictureCache::new(PLACEHOLDER_BYTES),
         }
+    }
+}
+
+impl VisualPictures {
+    /// Takes the sizes of the pictures of the book from its outline.
+    pub(super) fn set_sizes(&mut self, pictures: &[PictureOutline]) {
+        self.sizes = pictures
+            .iter()
+            .map(|picture| (picture.path.clone(), (picture.width, picture.height)))
+            .collect();
+    }
+
+    /// A transparent image of `size` pixels, made once for each size.
+    fn placeholder(&mut self, size: (u32, u32)) -> Arc<RenderImage> {
+        if let Some(image) = self.placeholders.get(&size) {
+            return image;
+        }
+        let image = placeholder_image(size);
+        let bytes = size.0 as usize * size.1 as usize * 4;
+        self.placeholders.insert(size, Arc::clone(&image), bytes);
+        image
     }
 }
 
@@ -269,6 +301,43 @@ impl EditorPage {
         });
     }
 
+    /// The source of the images Visual draws in `chapter`, whose text is
+    /// `column` logical pixels wide and `text_size` pixels high. A
+    /// destination that names a diagram or a formula shows its drawing.
+    /// Otherwise it is a path relative to the chapter, as in the reader; a
+    /// picture of the book is decoded at the width it is shown at, no wider
+    /// than its own, and anything else is never fetched.
+    pub(super) fn visual_image_source(
+        &self,
+        chapter: &str,
+        column: f32,
+        text_size: f32,
+    ) -> impl Fn(&SharedUri) -> ImageSource + Send + Sync + 'static + use<> {
+        let chapter: Arc<str> = Arc::from(chapter);
+        let state = Arc::clone(&self.visual.pictures);
+        let figures = Arc::clone(&self.visual.figures);
+        let handle = self.handle.clone();
+        move |uri| {
+            if let Ok(figures) = figures.lock()
+                && let Shown::Figure(image) = figures.shown(uri, text_size, column)
+            {
+                return image;
+            }
+            let path = image_path(&chapter, uri);
+            let (state, handle) = (Arc::clone(&state), handle.clone());
+            ImageSource::Custom(Arc::new(move |window, cx| {
+                visual_picture(
+                    path.as_deref(),
+                    column,
+                    &state,
+                    &handle,
+                    window.window_handle(),
+                    cx,
+                )
+            }))
+        }
+    }
+
     pub(super) fn picture_thumbnail(&self, picture: &PictureOutline) -> ImageSource {
         let key = picture_size((picture.width, picture.height), 280.0, Some(192.0))
             .map(|size| (picture.path.clone(), size));
@@ -333,6 +402,37 @@ fn picture_choice(index: usize, path: &str, chosen: bool, image: ImageSource, cx
                 )
                 .child(div().w_full().truncate().text_sm().child(name)),
         )
+}
+
+/// What Visual draws for the picture of the book at `path`: the picture once
+/// it is decoded, a transparent image of its size until then, and an error
+/// for a destination that is no picture of the book or one that cannot be
+/// decoded, which the editor draws as a small empty square. Nothing yet while
+/// the width of the column is unknown: the image asks again shortly.
+fn visual_picture(
+    path: Option<&str>,
+    column: f32,
+    state: &Arc<Mutex<VisualPictures>>,
+    handle: &EditHandle,
+    window: AnyWindowHandle,
+    cx: &mut App,
+) -> Option<Result<Arc<RenderImage>, ImageCacheError>> {
+    if column < 1.0 {
+        return None;
+    }
+    let known = path.and_then(|path| Some((path, *state.lock().ok()?.sizes.get(path)?)));
+    let Some((path, size)) =
+        known.and_then(|(path, known)| Some((path, picture_size(known, column, None)?)))
+    else {
+        return Some(Err(ImageCacheError::Asset(
+            "the picture is not part of the book".into(),
+        )));
+    };
+    let key = (path.to_owned(), size);
+    if let Some(image) = resolve(state, &key, handle, window, cx) {
+        return Some(image);
+    }
+    Some(Ok(state.lock().ok()?.placeholder(size)))
 }
 
 fn image_source(
@@ -408,11 +508,64 @@ impl VisualPictures {
     pub(super) fn has_cached(&mut self, path: &str, size: (u32, u32)) -> bool {
         self.ready.get(&(path.to_owned(), size)).is_some()
     }
+
+    /// The sizes `path` was decoded at.
+    pub(super) fn cached_sizes(&self, path: &str) -> Vec<(u32, u32)> {
+        self.ready
+            .keys()
+            .filter(|(cached, _)| cached == path)
+            .map(|(_, size)| *size)
+            .collect()
+    }
+
+    /// Whether `path` was read from the book, whatever came of it.
+    pub(super) fn was_requested(&self, path: &str) -> bool {
+        self.failed.contains(path)
+            || self.loading.iter().any(|(loading, _)| loading == path)
+            || !self.cached_sizes(path).is_empty()
+    }
+
+    /// How many stand-ins of pictures being decoded are kept.
+    pub(super) fn placeholder_count(&self) -> usize {
+        self.placeholders.len()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::image_path;
+    use std::sync::Arc;
+
+    use gpui_kit::{DevicePixels, size};
+
+    use super::{VisualPictures, image_path};
+
+    #[test]
+    fn a_stand_in_has_the_size_of_its_picture_and_is_made_once_for_each_size() {
+        let mut pictures = VisualPictures::default();
+        let first = pictures.placeholder((4, 3));
+        let again = pictures.placeholder((4, 3));
+        let other = pictures.placeholder((3, 4));
+        assert!(Arc::ptr_eq(&first, &again));
+        assert!(!Arc::ptr_eq(&first, &other));
+        assert_eq!(first.size(0), size(DevicePixels(4), DevicePixels(3)));
+        assert_eq!(pictures.placeholder_count(), 2);
+    }
+
+    #[test]
+    fn the_sizes_of_the_pictures_come_from_the_last_outline() {
+        use crate::features::edit_book::outline::PictureOutline;
+        let picture = |path: &str, width, height| PictureOutline {
+            path: path.to_owned(),
+            width,
+            height,
+            len: 1,
+        };
+        let mut pictures = VisualPictures::default();
+        pictures.set_sizes(&[picture("a.avif", 4, 3), picture("b.avif", 5, 6)]);
+        pictures.set_sizes(&[picture("b.avif", 7, 8)]);
+        assert_eq!(pictures.sizes.len(), 1);
+        assert_eq!(pictures.sizes.get("b.avif"), Some(&(7, 8)));
+    }
 
     #[test]
     fn a_chapter_picture_path_is_relative_and_percent_decoded() {

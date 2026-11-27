@@ -82,7 +82,7 @@ quick-xml = { version = "0.42", features = ["encoding", "escape-html"], optional
 # The order of the pages of a comic: `page2` before `page10`.
 alphanumeric-sort = { version = "1.5", optional = true }
 unpdf = { version = "0.55", default-features = false, features = ["raster"], optional = true }
-undoc = { version = "0.28", default-features = false, features = ["docx"], optional = true }
+undoc = { version = "0.29", default-features = false, features = ["docx"], optional = true }
 # The writers share a stream of CommonMark events.
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"], optional = true }
 pulldown-cmark-to-cmark = { version = "23", optional = true }

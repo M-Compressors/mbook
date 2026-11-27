@@ -467,8 +467,11 @@ fn editor_visual(stage: &mut Stage) -> Result<()> {
     stage.click_label(&t!("editor.mode.source"))?;
     stage.click("chapter-source")?;
     stage.with_window(|window, cx| window.dispatch_action(SelectAll.boxed_clone(), cx))?;
-    stage.type_text("# The harvest\n\nThe apples came late that year.\n\n| Fruit | Count |\n| :--- | ---: |\n| Apples | 27 |\n| Pears | 12 |\n\n- [x] Count the baskets\n- [ ] Mark the crates\n")?;
-    stage.click_label(&t!("editor.mode.visual"))
+    stage.type_text("# The harvest\n\nThe apples came late that year.\n\n| Fruit | Count |\n| :--- | ---: |\n| Apples | 27 |\n| Pears | 12 |\n\nA crate held ![thirteen](math/yield.tex) apples on average.\n\n![From the crates to the cellar](dia/press.mmd)\n\n![The orchard at dusk, seen from the gate](img/orchard.avif)\n\n- [x] Count the baskets\n- [ ] Mark the crates\n")?;
+    stage.click_label(&t!("editor.mode.visual"))?;
+    // The picture is asked for once the text has been laid out, and the
+    // figures once the book has resolved them from the draft.
+    stage.wait(Duration::from_millis(600))
 }
 
 /// Breaks a link in a chapter and asks the editor to check the book.

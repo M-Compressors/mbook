@@ -63,8 +63,8 @@ uuid.workspace = true
 # code imports `gpui_kit` only. The engine is chosen per target below: GPUI
 # Fast on the desktop, gpui-pre on Android, where gpui-mobile is the platform
 # (mbook-ui docs, "Design").
-gpui-kit = { version = "0.10", features = ["tree-sitter-markdown"] }
-gpui-kit-markdown-editor = "0.3.1"
+gpui-kit = { version = "0.11", features = ["tree-sitter-markdown"] }
+gpui-kit-markdown-editor = "0.4.1"
 # Grammars for the diagram and formula source dialogs.
 tree-sitter-mermaid = "0.3.5"
 codebook-tree-sitter-latex = "0.6.1"
@@ -98,8 +98,8 @@ self_update = { version = "1.3", default-features = false, features = ["ureq", "
 [target.'cfg(not(target_os = "android"))'.dependencies]
 # The GPUI Fast engine. Cargo leaves the features of a target table out of
 # a build for another target, so Android stays on gpui-pre.
-gpui-kit = { version = "0.10", features = ["gpui-fast", "tree-sitter-markdown"] }
-gpui-kit-markdown-editor = { version = "0.3.1", features = ["gpui-fast"] }
+gpui-kit = { version = "0.11", features = ["gpui-fast", "tree-sitter-markdown"] }
+gpui-kit-markdown-editor = { version = "0.4.1", features = ["gpui-fast"] }
 # Native file pickers with extension filters.
 rfd = "0.18"
 # The share sheet of the platform: NSSharingServicePicker on macOS,
@@ -119,10 +119,11 @@ image = { workspace = true, features = ["nasm"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 # The GPUI platform of Android: window, input, renderer, and the file picker
-# of the Storage Access Framework. Pinned to the commit of
-# longbridge/gpui-mobile#56, which moves it to the gpui-pre of gpui-kit 0.10;
-# crates.io has only a release for an older gpui-pre.
-gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/longbridge/gpui-mobile", rev = "d8945a826e4012b43a46b53d7e72b6beae24cc80", default-features = false }
+# of the Storage Access Framework. Pinned to a commit of the fork
+# Mnwa/gpui-mobile, which moves it to the gpui-pre of gpui-kit 0.11; upstream
+# is on an older gpui-pre, and crates.io has only a release for an older one
+# still (mbook-ui docs, "Design").
+gpui-mobile = { package = "gpui-pre-mobile", git = "https://github.com/Mnwa/gpui-mobile", rev = "d3eddb8985b02821e8215ae5f3916e18f5799766", default-features = false }
 # Records reach logcat through the logger `mbook-android` installs.
 log = "0.4"
 # Calls the activity for the documents it received and for the share sheet;
@@ -131,7 +132,7 @@ jni = "0.22"
 
 # The tests run on the desktop only.
 [target.'cfg(not(target_os = "android"))'.dev-dependencies]
-gpui-kit = { version = "0.10", features = ["gpui-fast", "test-support"] }
+gpui-kit = { version = "0.11", features = ["gpui-fast", "test-support"] }
 
 # The screens are rendered on the main thread, which a test harness does not
 # run its tests on: the test has a `main` of its own.
@@ -144,7 +145,7 @@ required-features = ["visual"]
 [target.'cfg(windows)'.dependencies]
 # Registers the book formats for the user who runs the application: the
 # installer registers none (mbook-ui docs, "Opening files from the system").
-windows-registry = "0.6"
+windows-registry = "0.100"
 
 # The icon of the Windows executable (`build.rs`): the `.ico` is made from the
 # PNG of the bundle and compiled in as a resource.

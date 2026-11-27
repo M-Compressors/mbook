@@ -184,6 +184,14 @@ book under *Book*, then the chapters in reading order under *Chapters*.
   heading level and inline formatting, quotes and list indents, then what is
   put into the text: **Link**, **Picture** and the **Insert** menu with
   tables, code blocks, rules and lists. Code blocks offer a language picker.
+- The pictures of the chapter are drawn in the text, no wider than the
+  text and no larger than they are. While one is decoded its place is
+  kept empty at its size. A destination that is no picture of the book is
+  drawn as a small empty square; Source shows what it is.
+- Diagrams and formulas are drawn as in Preview, at the size of the text and
+  in the colours of the page, shortly after the text changes. A formula
+  alone in its paragraph is a display formula; one inside a line is set in
+  it. One that cannot be drawn is a small empty square.
 - Click or Tab into a table cell to edit it. Row and column grips open
   controls for insertion, deletion and alignment. Tables and code blocks can
   move between top-level blocks by dragging their handles. Task items can

@@ -161,9 +161,9 @@ type an mbook file comes with ([Opening files from the system](architecture.md#o
   activity of its own.
 - **The navigation bar** of gesture navigation is not reported by every
   device: on some, the handle is drawn over the bottom of the library's bar.
-- **gpui-mobile is a pinned commit** of an open pull request,
-  [longbridge/gpui-mobile#56](https://github.com/longbridge/gpui-mobile/pull/56),
-  fetched from the repository; see [Dependencies](design.md#dependencies).
+- **gpui-mobile is a pinned commit** of a fork,
+  [Mnwa/gpui-mobile](https://github.com/Mnwa/gpui-mobile), that moves it to
+  the gpui-pre of GPUI Kit 0.11; see [Dependencies](design.md#dependencies).
 - **Documents are polled.** The interface asks the activity once a second
   for documents it received, for as long as it runs.
 - **No tests run on Android.** The code shared with the desktop is tested

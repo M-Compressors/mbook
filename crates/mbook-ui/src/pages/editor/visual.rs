@@ -26,13 +26,17 @@ use super::keys::VISUAL_CONTEXT;
 use super::link_prompt::{LinkAnswer, LinkRequest, ask_link};
 use super::place_picker::chapter_choices;
 use super::session::ViewMode;
+use super::visual_figures::SharedFigures;
 use super::visual_formatting::{formatting, insert_menu};
 use super::visual_pictures::VisualPictures;
 use super::visual_source::VisualSource;
-use crate::entities::figure::FigureKind;
+use crate::entities::figure::{FigureKind, Palette};
 use crate::entities::picture::picture_file_extensions;
 use crate::features::appearance::Appearance;
 use crate::shared::ui::{empty_state, icon_button, page_colors, status_line, target_size};
+
+/// The space between the edges of Visual and its text, in logical pixels.
+const PADDING: f32 = 16.0;
 
 struct KeysInstalled;
 
@@ -41,6 +45,8 @@ impl Global for KeysInstalled {}
 pub(super) struct VisualEditor {
     pub(super) input: Entity<BlockEditorState>,
     pub(super) pictures: Arc<Mutex<VisualPictures>>,
+    /// The diagrams and formulas of the chapter.
+    pub(super) figures: SharedFigures,
     scroll: ScrollHandle,
     baseline: Option<VisualSource>,
     /// The text last loaded from or copied into Source.
@@ -56,8 +62,7 @@ impl VisualEditor {
         }
         let scroll = ScrollHandle::new();
         let input = cx.new(|cx| {
-            let mut editor =
-                BlockEditorState::new(window, cx).with_image_policy(ImagePolicy::Placeholder);
+            let mut editor = BlockEditorState::new(window, cx).with_image_policy(ImagePolicy::Load);
             editor.set_scroll_handle(scroll.clone());
             editor.set_readonly(true, cx);
             editor
@@ -65,6 +70,7 @@ impl VisualEditor {
         Self {
             input,
             pictures: Arc::default(),
+            figures: Arc::default(),
             scroll,
             baseline: None,
             mirrored: None,
@@ -268,13 +274,22 @@ impl EditorPage {
         if let Some(error) = &self.visual.error {
             return empty_state(t!("visual.needs_source"), error.clone()).into_any_element();
         }
-        let appearance = Appearance::global(cx);
-        let appearance = appearance.read(cx);
-        let font = appearance.reading_font(cx);
-        let settings = appearance.settings();
-        let text_size = px(settings.text_size);
-        let line_height = relative(settings.line_height);
-        let (paper, ink) = page_colors(appearance.page_tone(window));
+        let (font, size, line_height, (paper, ink)) = {
+            let appearance = Appearance::global(cx);
+            let appearance = appearance.read(cx);
+            let settings = appearance.settings();
+            (
+                appearance.reading_font(cx),
+                settings.text_size,
+                settings.line_height,
+                page_colors(appearance.page_tone(window)),
+            )
+        };
+        let (text_size, line_height) = (px(size), relative(line_height));
+        // The width of the text as it was last laid out; none before the
+        // first layout, when pictures wait for it.
+        let column = self.visual.scroll.bounds().size.width.as_f32() - 2.0 * PADDING;
+        self.draw_visual_figures(Palette::of(paper, ink), cx);
         v_flex()
             .id("visual-editor")
             .key_context(if self.escaped {
@@ -323,8 +338,9 @@ impl EditorPage {
                     }))
                     .child(
                         BlockEditor::new(&self.visual.input)
+                            .image_source(self.visual_image_source(path, column, size))
                             .min_h_full()
-                            .px_4()
+                            .px(px(PADDING))
                             .py_3()
                             .font_family(font)
                             .text_size(text_size)

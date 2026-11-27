@@ -130,7 +130,7 @@ fn node_of(name: &'static str, shown: Shown, source: Option<&str>) -> MarkdownNo
 /// A figure is drawn for text of its own size; `scale` brings it to the size
 /// of the text around it. It is made smaller, never larger, to fit the
 /// column and the page.
-pub(super) fn fitted(
+pub(crate) fn fitted(
     natural: (f32, f32),
     scale: f32,
     column: f32,

@@ -237,10 +237,14 @@ fn name_pictures(document: &mut Document) -> Vec<(String, String)> {
 }
 
 /// Replaces every tilde of the text of the document by [`TILDE`]. Code and
-/// addresses are left as they are: nothing is escaped in a code span, and an
-/// address is not text.
+/// addresses are left as they are: nothing is escaped in a code span or in a
+/// paragraph `undoc` writes as a code block, whatever the faces of its runs,
+/// and an address is not text.
 fn protect_tildes(document: &mut Document) {
     fn paragraph(found: &mut Paragraph) {
+        if found.code_block {
+            return;
+        }
         for run in &mut found.runs {
             if !run.style.code {
                 run.text = run
