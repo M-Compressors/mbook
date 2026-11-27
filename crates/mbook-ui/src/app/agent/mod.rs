@@ -33,7 +33,6 @@ use crate::features::appearance::Appearance;
 pub(crate) struct AgentServer {
     /// The server that runs; dropping it stops the server.
     running: Option<Running>,
-    starting: Option<Task<()>>,
     /// Answers the calls of the server that runs.
     calls: Option<Task<()>>,
     _settings: Subscription,
@@ -52,7 +51,6 @@ impl AgentServer {
         let appearance = Appearance::global(cx);
         let server = cx.new(|cx| Self {
             running: None,
-            starting: None,
             calls: None,
             _settings: cx.observe(&appearance, |this: &mut Self, _, cx| this.follow(cx)),
         });
@@ -82,7 +80,7 @@ impl AgentServer {
             self.stop(cx);
             return;
         }
-        if self.running.is_none() && self.starting.is_none() {
+        if self.running.is_none() {
             self.start(cx);
         }
     }
@@ -90,33 +88,25 @@ impl AgentServer {
     /// Opens the port and serves.
     fn start(&mut self, cx: &mut Context<'_, Self>) {
         let (bridge, calls) = Bridge::new();
-        let starting = http::start(bridge);
-        Self::tell(Status::Starting, cx);
-        self.calls = Some(dispatch::listen(calls, cx));
-        self.starting = Some(cx.spawn(async move |this, cx| {
-            let started = starting.await;
-            drop(this.update(cx, |this, cx| {
-                this.starting = None;
-                match started {
-                    Ok(running) => {
-                        Self::tell(Status::Running(running.url()), cx);
-                        this.running = Some(running);
-                    }
-                    Err(error) => {
-                        this.calls = None;
-                        let reason = crate::features::edit_book::agent::error::chain(&error);
-                        Self::tell(Status::Failed(reason), cx);
-                    }
-                }
-            }));
-        }));
+        match http::start(bridge) {
+            Ok(running) => {
+                Self::tell(Status::Running(running.url()), cx);
+                self.calls = Some(dispatch::listen(calls, cx));
+                self.running = Some(running);
+            }
+            Err(error) => {
+                let reason = crate::features::edit_book::agent::error::chain(&error);
+                Self::tell(Status::Failed(reason), cx);
+            }
+        }
     }
 
     /// Stops the server; the calls in flight end.
     fn stop(&mut self, cx: &mut Context<'_, Self>) {
-        self.running = None;
-        self.starting = None;
+        // The task that answers the calls goes first: the thread of the
+        // server, ending, then wakes no task when it lets go of the bridge.
         self.calls = None;
+        self.running = None;
         Self::tell(Status::Off, cx);
     }
 }

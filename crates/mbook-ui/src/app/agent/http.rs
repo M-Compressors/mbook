@@ -10,7 +10,6 @@ use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::sync::Arc;
 use std::thread;
 
-use futures::channel::oneshot;
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use tokio_util::sync::CancellationToken;
@@ -71,72 +70,51 @@ fn bind() -> Result<TcpListener, std::io::Error> {
     TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).map_err(|error| last.unwrap_or(error))
 }
 
-/// Starts the server on a thread of its own. The future gives the address
-/// once the port is bound.
+/// Starts the server: binds the first free port of 7341 to 7350 on
+/// 127.0.0.1, or any free one, and serves on a thread of its own.
 ///
-/// The port is bound on that thread, so the caller does no I/O.
-pub(crate) fn start(
-    bridge: Bridge,
-) -> impl Future<Output = Result<Running, StartError>> + Send + 'static {
-    let (bound, answer) = oneshot::channel();
-    let stop = CancellationToken::new();
-    let serving = stop.clone();
-    let spawned = thread::Builder::new()
-        .name("mbook-mcp".into())
-        .spawn(move || serve(bridge, &serving, bound));
-    async move {
-        spawned.map_err(StartError::Thread)?;
-        let address = answer
-            .await
-            .unwrap_or_else(|_| Err(StartError::Thread(std::io::ErrorKind::Interrupted.into())))?;
-        Ok(Running { address, stop })
-    }
-}
-
-/// The body of the thread: binds, reports, and serves until `stop`.
-fn serve(
-    bridge: Bridge,
-    stop: &CancellationToken,
-    bound: oneshot::Sender<Result<SocketAddr, StartError>>,
-) {
-    let runtime = match tokio::runtime::Builder::new_current_thread()
+/// The port and the runtime are made here, so that a failure is told at
+/// once and the thread hands nothing back: binding a port of the loopback
+/// address returns at once.
+///
+/// # Errors
+///
+/// When no port can be bound, or the runtime or the thread cannot be made.
+pub(crate) fn start(bridge: Bridge) -> Result<Running, StartError> {
+    let listener = bind().map_err(StartError::Bind)?;
+    listener.set_nonblocking(true).map_err(StartError::Bind)?;
+    let address = listener.local_addr().map_err(StartError::Bind)?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_io()
         .enable_time()
         .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            drop(bound.send(Err(StartError::Thread(error))));
-            return;
-        }
-    };
-    let listener = bind()
-        .and_then(|listener| {
-            listener.set_nonblocking(true)?;
-            let address = listener.local_addr()?;
-            Ok((listener, address))
-        })
-        .map_err(StartError::Bind);
-    let (listener, address) = match listener {
-        Ok(bound) => bound,
-        Err(error) => {
-            drop(bound.send(Err(error)));
-            return;
-        }
-    };
+        .map_err(StartError::Thread)?;
+    let stop = CancellationToken::new();
+    let serving = stop.clone();
+    thread::Builder::new()
+        .name("mbook-mcp".into())
+        .spawn(move || serve(&runtime, listener, address, bridge, &serving))
+        .map_err(StartError::Thread)?;
+    Ok(Running { address, stop })
+}
+
+/// The body of the thread: serves until `stop`.
+fn serve(
+    runtime: &tokio::runtime::Runtime,
+    listener: TcpListener,
+    address: SocketAddr,
+    bridge: Bridge,
+    stop: &CancellationToken,
+) {
     runtime.block_on(async move {
-        let listener = match tokio::net::TcpListener::from_std(listener) {
-            Ok(listener) => listener,
-            Err(error) => {
-                drop(bound.send(Err(StartError::Bind(error))));
-                return;
-            }
+        // Made from a listener that is bound and non-blocking, inside the
+        // runtime: it does not fail.
+        let Ok(listener) = tokio::net::TcpListener::from_std(listener) else {
+            return;
         };
         let router = router(bridge, address, stop.child_token());
-        drop(bound.send(Ok(address)));
         let stopped = stop.clone();
-        // An error of the listener ends the server; the settings then show it
-        // as stopped when the application asks again.
+        // An error of the listener ends the server.
         drop(
             axum::serve(listener, router)
                 .with_graceful_shutdown(async move { stopped.cancelled().await })

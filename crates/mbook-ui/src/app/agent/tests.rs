@@ -51,7 +51,7 @@ fn started() -> Running {
             }
         });
     });
-    block_on(http::start(bridge)).unwrap()
+    http::start(bridge).unwrap()
 }
 
 /// The address of a running server.

@@ -25,7 +25,6 @@ use crate::shared::ui::{announce, target_size};
 pub(super) fn status_words(status: &Status) -> String {
     match status {
         Status::Off => t!("settings.mcp_off").into_owned(),
-        Status::Starting => t!("settings.mcp_starting").into_owned(),
         Status::Running(url) => t!("settings.mcp_running", url = url).into_owned(),
         Status::Failed(reason) => t!("settings.mcp_failed", reason = reason).into_owned(),
     }
@@ -228,7 +227,6 @@ mod tests {
                 .contains("http://127.0.0.1:7341/mcp")
         );
         assert!(status_words(&Status::Failed("no port".into())).contains("no port"));
-        assert_ne!(status_words(&Status::Starting), "");
     }
 
     #[test]

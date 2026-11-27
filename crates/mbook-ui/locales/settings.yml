@@ -93,9 +93,6 @@ settings:
   mcp_off:
     en: "The server is off."
     ru: "Сервер выключен."
-  mcp_starting:
-    en: "The server is starting…"
-    ru: "Сервер запускается…"
   mcp_running:
     en: "Agents reach the library at %{url}"
     ru: "Агенты обращаются к библиотеке по адресу %{url}"

@@ -12,8 +12,6 @@ pub(crate) enum Status {
     /// The setting is off.
     #[default]
     Off,
-    /// The port is being opened.
-    Starting,
     /// It serves at this URL.
     Running(String),
     /// It could not start, for this reason.

@@ -78,7 +78,11 @@ sequenceDiagram
 - HTTP is served on a thread of its own, `mbook-mcp`, by a current-thread
   runtime of `tokio` with `axum` and the Streamable HTTP service of `rmcp`.
   The executor of GPUI is not `tokio`; the two meet through the channels of
-  `futures`.
+  `futures`. The port and the runtime are made on the main thread before the
+  thread starts, so that a failure is told at once and the thread hands
+  nothing back: binding a port of the loopback address returns at once.
+- Stopping drops the task that answers the calls before it stops the thread,
+  so that the thread, ending, wakes no task of GPUI.
 - The thread of the server touches no `Book`, no catalogue and no file of
   the library. It hands each call to the main thread and waits for the
   answer; the work runs where the [table of threads](architecture.md#threads)
