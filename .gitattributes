@@ -1,0 +1,3 @@
+# The skill an agent is served is part of the binary: every platform builds
+# it from the same bytes.
+crates/mbook-ui/assets/mcp/** text eol=lf

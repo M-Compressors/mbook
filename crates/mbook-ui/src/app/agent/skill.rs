@@ -79,20 +79,44 @@ pub(crate) fn guide(topic: &str) -> Option<&'static str> {
         .map(|file| body(file.text))
 }
 
-/// A Markdown text without the front matter at its start.
+/// A Markdown text without the front matter at its start. The lines may end
+/// in a line feed or, as a checkout on Windows may leave them, in a carriage
+/// return and a line feed.
 fn body(text: &'static str) -> &'static str {
-    text.strip_prefix("---\n")
-        .and_then(|rest| rest.split_once("\n---\n"))
-        .map_or(text, |(_, body)| body.trim_start_matches('\n'))
+    let mut lines = text.split_inclusive('\n');
+    if lines.next().map(str::trim_end) != Some("---") {
+        return text;
+    }
+    let mut start = 0;
+    let mut offset = 0;
+    for (index, line) in text.split_inclusive('\n').enumerate() {
+        offset += line.len();
+        if index > 0 && line.trim_end() == "---" {
+            start = offset;
+            break;
+        }
+    }
+    if start == 0 {
+        return text;
+    }
+    text[start..].trim_start_matches(['\r', '\n'])
+}
+
+/// The value of `key` in the front matter of a text.
+fn front_matter<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+    let mut lines = text.lines();
+    if lines.next() != Some("---") {
+        return None;
+    }
+    lines
+        .take_while(|line| *line != "---")
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix(':'))
+        .map(str::trim)
 }
 
 /// The description in the front matter of `SKILL.md`.
 fn description() -> &'static str {
-    FILES[0]
-        .text
-        .lines()
-        .find_map(|line| line.strip_prefix("description: "))
-        .unwrap_or_default()
+    front_matter(FILES[0].text, "description").unwrap_or_default()
 }
 
 /// The skill as `skills/list` and `skills/get` give it.
@@ -131,7 +155,7 @@ mod tests {
 
     #[test]
     fn the_skill_names_itself_and_describes_what_it_is_for() {
-        assert!(FILES[0].text.contains("name: mbook-authoring\n"));
+        assert_eq!(front_matter(FILES[0].text, "name"), Some(NAME));
         assert!(description().starts_with("Write and edit books"));
         assert_eq!(skill().uri, "skill://mbook-authoring/SKILL.md");
     }
@@ -163,6 +187,13 @@ mod tests {
         assert!(overview.starts_with("# Writing books in mbook"));
         assert!(guide("dialect").unwrap().starts_with("# What a chapter"));
         assert_eq!(guide("nothing"), None);
+    }
+
+    #[test]
+    fn front_matter_is_found_with_windows_line_endings() {
+        let text = "---\r\nname: x\r\ndescription: Does y\r\n---\r\n\r\n# Title\r\n";
+        assert_eq!(body(text), "# Title\r\n");
+        assert_eq!(front_matter(text, "description"), Some("Does y"));
     }
 
     #[test]
