@@ -10,9 +10,11 @@
 //! The future uses only channels and the pool, so it runs on any executor.
 
 pub(crate) mod actor;
+pub(crate) mod agent;
 pub(crate) mod command;
 mod contents;
 pub(crate) mod error;
 pub(crate) mod outline;
+pub(crate) mod sessions;
 #[cfg(test)]
 mod tests;

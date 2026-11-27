@@ -8,6 +8,8 @@
 //! width; on a larger one it is a column of at most 640 px (mbook-ui docs,
 //! "Settings").
 
+#[cfg(not(target_os = "android"))]
+mod agents;
 mod choices;
 
 use gpui_kit::assets::IconName;
@@ -74,6 +76,9 @@ pub(crate) struct SettingsPage {
     text_size: Entity<SliderState>,
     line_height: Entity<SliderState>,
     interface: Entity<SliderState>,
+    /// The client whose configuration the section of agents shows.
+    #[cfg(not(target_os = "android"))]
+    client: crate::features::agents::Client,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -167,6 +172,14 @@ impl SettingsPage {
             UpdateBanner::try_global(cx).map(|banner| cx.observe(&banner, |_, _, cx| cx.notify()));
         #[cfg(not(feature = "self-update"))]
         let updates: Option<Subscription> = None;
+        // Where the server of agents is shows in its section.
+        #[cfg(not(target_os = "android"))]
+        let agents = Some({
+            let status = crate::features::agents::AgentStatus::global(cx);
+            cx.observe(&status, |_, _, cx| cx.notify())
+        });
+        #[cfg(target_os = "android")]
+        let agents: Option<Subscription> = None;
         Self {
             focus_handle: cx.focus_handle(),
             typeface,
@@ -174,7 +187,13 @@ impl SettingsPage {
             text_size,
             line_height,
             interface,
-            _subscriptions: subscriptions.into_iter().chain(updates).collect(),
+            #[cfg(not(target_os = "android"))]
+            client: crate::features::agents::Client::ClaudeCode,
+            _subscriptions: subscriptions
+                .into_iter()
+                .chain(updates)
+                .chain(agents)
+                .collect(),
         }
     }
 
@@ -626,6 +645,10 @@ impl Render for SettingsPage {
             .child(Self::motion_field(&settings))
             .child(heading("updates-heading", t!("settings.updates")))
             .child(Self::updates_group(&settings, &updates));
+        #[cfg(not(target_os = "android"))]
+        let column = column
+            .child(heading("agents-heading", t!("settings.agents")))
+            .child(self.agents_group(&settings, compact, cx));
 
         v_flex()
             .id("settings-page")

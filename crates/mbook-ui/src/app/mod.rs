@@ -1,11 +1,13 @@
 //! The start of the application: the window, the root view, keys and menus.
 
+#[cfg(not(target_os = "android"))]
+pub(crate) mod agent;
 mod file_types;
 mod keys;
 mod open;
 mod opened;
-mod root;
-mod shell;
+pub(crate) mod root;
+pub(crate) mod shell;
 mod window;
 
 use std::path::PathBuf;

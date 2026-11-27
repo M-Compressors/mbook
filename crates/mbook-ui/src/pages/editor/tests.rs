@@ -37,6 +37,7 @@ use crate::entities::catalogue::{Library, Store};
 use crate::features::appearance::Appearance;
 use crate::features::edit_book::command::{Command, ContentsChange, MetaChange};
 use crate::features::edit_book::error::EditError;
+use crate::features::edit_book::sessions::Sessions;
 use crate::shared::model::BookKey;
 use crate::shared::roots::Roots;
 use crate::testing::{self, Fixture};
@@ -2619,20 +2620,25 @@ fn a_save_waits_for_the_pictures_that_are_being_encoded(cx: &mut TestAppContext)
 }
 
 #[gpui_kit::test]
-#[expect(
-    clippy::used_underscore_binding,
-    reason = "the field is only held, so that dropping the page ends the session; the test replaces it"
-)]
-fn dropping_the_task_that_owns_the_book_ends_the_session(cx: &mut TestAppContext) {
+fn the_session_ends_when_its_only_editor_leaves(cx: &mut TestAppContext) {
     let setup = started(cx, 1280.0);
     let handle = state(&setup, cx, |page| page.handle.clone());
-    // The page holds the task; when the page goes, this is what is dropped.
-    act(&setup, cx, |page, _, _| {
-        page._actor = gpui_kit::Task::ready(());
-    });
+    // What the release of the page does.
+    cx.update(|cx| Sessions::leave(setup.key, false, cx));
     let reply = handle.chapter_text("ch01.md");
     let ended = cx.foreground_executor().block_test(reply);
     assert!(matches!(ended, Err(EditError::Ended)), "{ended:?}");
+}
+
+#[gpui_kit::test]
+fn a_session_an_agent_used_stays_when_the_editor_leaves(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    let agent = cx.update(|cx| Sessions::agent(setup.key, cx));
+    cx.update(|cx| Sessions::leave(setup.key, false, cx));
+    let reply = agent.chapter_text("ch01.md");
+    let text = cx.foreground_executor().block_test(reply);
+    assert!(text.is_ok(), "{text:?}");
+    assert!(!cx.update(|cx| Sessions::in_editor(setup.key, cx)));
 }
 
 #[gpui_kit::test]
@@ -3928,4 +3934,92 @@ fn chapter_find_tracks_the_current_view_and_closes_on_chapter_change(cx: &mut Te
         page.open_chapter("ch02.md", window, cx);
     });
     assert!(!state(&setup, cx, |page| page.search.open));
+}
+
+/// An edit an agent makes to the first chapter.
+fn agent_edit(old: &str, new: &str) -> crate::features::edit_book::agent::Op {
+    use crate::features::edit_book::agent::types::{Edit, EditChapter};
+    crate::features::edit_book::agent::Op::EditChapter(EditChapter {
+        chapter: "ch01.md".into(),
+        edits: vec![Edit {
+            old: old.into(),
+            new: new.into(),
+            replace_all: false,
+        }],
+        allow_unrendered: false,
+    })
+}
+
+#[gpui_kit::test]
+fn the_editor_shows_what_an_agent_writes_into_the_open_chapter(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    let agent = cx.update(|cx| Sessions::agent(setup.key, cx));
+    let edited = cx
+        .foreground_executor()
+        .block_test(agent.agent(agent_edit("First text.", "Agent text.")));
+    assert!(edited.is_ok(), "{edited:?}");
+    cx.run_until_parked();
+    assert_eq!(editor_text(&setup, cx), "# One\n\nAgent text.\n");
+    assert!(cx.update(|cx| Sessions::in_editor(setup.key, cx)));
+}
+
+#[gpui_kit::test]
+fn an_agent_waits_while_the_person_types_in_the_chapter(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    act(&setup, cx, |page, window, cx| {
+        page.text.update(cx, |state, cx| {
+            state.set_value("# One\n\nTyped.\n", window, cx);
+        });
+        page.on_text_event(&gpui_kit::component::input::InputEvent::Change, window, cx);
+    });
+    let agent = cx.update(|cx| Sessions::agent(setup.key, cx));
+    let refused = cx
+        .foreground_executor()
+        .block_test(agent.agent(agent_edit("# One", "# Uno")));
+    assert_eq!(refused.map_err(|error| error.code()), Err("user_typing"));
+}
+
+#[gpui_kit::test]
+fn a_change_of_an_agent_to_another_chapter_leaves_the_open_text(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    let agent = cx.update(|cx| Sessions::agent(setup.key, cx));
+    let op = {
+        use crate::features::edit_book::agent::types::{Edit, EditChapter};
+        crate::features::edit_book::agent::Op::EditChapter(EditChapter {
+            chapter: "ch02.md".into(),
+            edits: vec![Edit {
+                old: "Second".into(),
+                new: "Other".into(),
+                replace_all: false,
+            }],
+            allow_unrendered: false,
+        })
+    };
+    assert!(cx.foreground_executor().block_test(agent.agent(op)).is_ok());
+    cx.run_until_parked();
+    assert_eq!(editor_text(&setup, cx), "# One\n\nFirst text.\n");
+}
+
+#[gpui_kit::test]
+fn after_a_conflict_the_editor_learns_the_change_of_the_agent(cx: &mut TestAppContext) {
+    let setup = started(cx, 1280.0);
+    let agent = cx.update(|cx| Sessions::agent(setup.key, cx));
+    // Typed text holds the chapter, so the editor does not load the agent's.
+    act(&setup, cx, |page, window, cx| {
+        page.text.update(cx, |state, cx| {
+            state.set_value("# One\n\nTyped.\n", window, cx);
+        });
+        page.on_text_event(&gpui_kit::component::input::InputEvent::Change, window, cx);
+    });
+    agent.hold(None);
+    let edited = cx
+        .foreground_executor()
+        .block_test(agent.agent(agent_edit("First text.", "Agent text.")));
+    assert!(edited.is_ok(), "{edited:?}");
+    cx.run_until_parked();
+    assert_eq!(state(&setup, cx, |page| page.seen), 0);
+    act(&setup, cx, |page, window, cx| {
+        page.see_agent("ch01.md", window, cx);
+    });
+    assert!(state(&setup, cx, |page| page.seen) > 0);
 }

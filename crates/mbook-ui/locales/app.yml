@@ -90,3 +90,85 @@ app:
   close:
     en: "Close"
     ru: "Закрыть"
+agent:
+  confirm:
+    title:
+      en: "%{client} asks"
+      ru: "%{client} спрашивает"
+    allow:
+      en: "Allow"
+      ru: "Разрешить"
+    decline:
+      en: "Decline"
+      ru: "Отказать"
+    remove_chapter:
+      en: "Remove the chapter %{chapter} from “%{book}”? This cannot be undone once the book is saved."
+      ru: "Удалить главу %{chapter} из «%{book}»? После сохранения книги это не отменить."
+    remove_picture:
+      en: "Remove the picture %{path} from “%{book}”? This cannot be undone once the book is saved."
+      ru: "Удалить картинку %{path} из «%{book}»? После сохранения книги это не отменить."
+    remove_figure:
+      en: "Remove %{path} from “%{book}”? This cannot be undone once the book is saved."
+      ru: "Удалить %{path} из «%{book}»? После сохранения книги это не отменить."
+    discard:
+      en: "Throw away every unsaved change of “%{book}”, yours too, and read it again from its file?"
+      ru: "Отбросить все несохранённые изменения «%{book}», включая ваши, и перечитать книгу из файла?"
+    delete:
+      en: "Delete “%{book}” from the library, its file too? This cannot be undone."
+      ru: "Удалить «%{book}» из библиотеки вместе с файлом? Это не отменить."
+    overwrite:
+      en: "Write over the file %{path}?"
+      ru: "Перезаписать файл %{path}?"
+    import:
+      en: "Read the book file %{path} into the library?"
+      ru: "Прочитать файл книги %{path} в библиотеку?"
+    read_picture:
+      en: "Read the picture file %{path} into “%{book}”?"
+      ru: "Прочитать файл картинки %{path} в «%{book}»?"
+    export:
+      en: "Write the book to the new file %{path}?"
+      ru: "Записать книгу в новый файл %{path}?"
+  always:
+    remove_chapter:
+      en: "Allow removing chapters for the rest of this session"
+      ru: "Разрешать удалять главы в этой сессии"
+    remove_picture:
+      en: "Allow removing pictures for the rest of this session"
+      ru: "Разрешать удалять картинки в этой сессии"
+    remove_figure:
+      en: "Allow removing diagrams and formulas for the rest of this session"
+      ru: "Разрешать удалять диаграммы и формулы в этой сессии"
+    discard:
+      en: "Allow discarding unsaved changes for the rest of this session"
+      ru: "Разрешать отбрасывать несохранённые изменения в этой сессии"
+    delete_book:
+      en: "Allow deleting books for the rest of this session"
+      ru: "Разрешать удалять книги в этой сессии"
+    import:
+      en: "Allow adding books from files for the rest of this session"
+      ru: "Разрешать добавлять книги из файлов в этой сессии"
+    read_picture:
+      en: "Allow adding pictures from files for the rest of this session"
+      ru: "Разрешать добавлять картинки из файлов в этой сессии"
+    export:
+      en: "Allow writing new files for the rest of this session"
+      ru: "Разрешать записывать новые файлы в этой сессии"
+    overwrite:
+      en: "Allow writing over files for the rest of this session"
+      ru: "Разрешать перезаписывать файлы в этой сессии"
+  working:
+    en: "An agent is at work"
+    ru: "Работает агент"
+  quit:
+    title:
+      en: "Agents left changes that are not saved"
+      ru: "Агенты оставили несохранённые изменения"
+    detail:
+      en: "%{count} book(s) edited by an agent have changes that are not saved. They are lost when the window closes."
+      ru: "В книгах, которые правил агент (%{count}), есть несохранённые изменения. Они пропадут, когда окно закроется."
+    discard:
+      en: "Close without saving"
+      ru: "Закрыть без сохранения"
+    save:
+      en: "Save and close"
+      ru: "Сохранить и закрыть"

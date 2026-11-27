@@ -595,6 +595,7 @@ mod tests {
                 size_set: true,
                 ..Default::default()
             },
+            agents: super::super::settings::AgentSettings { serve: true },
         };
         catalogue.put_settings(&settings)?;
         assert_eq!(catalogue.settings()?, settings);

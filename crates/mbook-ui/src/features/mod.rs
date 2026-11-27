@@ -1,5 +1,6 @@
 //! What a user does: importing, editing.
 
+pub(crate) mod agents;
 pub(crate) mod appearance;
 #[cfg(feature = "self-update")]
 pub(crate) mod auto_update;

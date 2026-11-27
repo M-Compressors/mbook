@@ -456,7 +456,7 @@ fn decode_cover(bytes: &[u8]) -> Result<Arc<RenderImage>, PictureError> {
 
 /// Why the library could not be told about a saved book.
 #[derive(Debug, thiserror::Error)]
-pub(super) enum FollowUpError {
+pub(crate) enum FollowUpError {
     /// The saved file could not be opened.
     #[error("{}", t!("editor.files.saved_unreadable"))]
     Read(#[source] mbook::Error),
@@ -478,7 +478,7 @@ pub(super) enum FollowUpError {
 /// [`FollowUpError`] when the saved file cannot be read or the catalogue
 /// cannot be written. A thumbnail that cannot be made is not an error: the
 /// shelf draws a placeholder.
-pub(super) async fn record_save(
+pub(crate) async fn record_save(
     roots: &Roots,
     catalogue: &Catalogue,
     key: BookKey,

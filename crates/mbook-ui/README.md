@@ -57,6 +57,7 @@ crates/mbook-android/android.sh apk
 | **Reader** | Read one scrolling column or one page at a time from where the text begins, follow links and footnotes and return, go to the notes, the glossary or the index the book marks, open a picture or a diagram over the whole window and zoom it, search the whole book, choose typeface, size and one of five page tones |
 | **Editor** | Write chapters as blocks, as Markdown source or side by side with a preview; put in pictures, links, diagrams and formulas; edit the details, the cover, the contents and the landmarks; see what `Book::check` reports |
 | **Settings** | Typography, page tone, the language of the interface (English or Russian, by default the one of the system), its size, motion and updates |
+| **Agents** | Turn on the MCP server in the settings and copy the configuration of Claude Code, Cursor or Codex: an agent then lists the library, writes and edits chapters, adds pictures, diagrams and formulas, checks and saves a book, and the window asks before it removes anything ([Agents (MCP)][mcp]) |
 
 The layout follows the width of the window, not the platform: below 600 px
 it is a stack of screens with a bar at the bottom, from 960 px a sidebar
@@ -129,5 +130,6 @@ at your option.
 [appearance]: https://m-compressors.github.io/mbook/mbook-ui/appearance.html
 [android]: https://m-compressors.github.io/mbook/mbook-ui/android.html
 [status]: https://m-compressors.github.io/mbook/mbook-ui/status.html
+[mcp]: https://m-compressors.github.io/mbook/mbook-ui/mcp.html
 [design]: https://m-compressors.github.io/mbook/mbook-ui/design.html
 [measured]: https://m-compressors.github.io/mbook/rfcs/0001-mbook-format.html#a-converted-book

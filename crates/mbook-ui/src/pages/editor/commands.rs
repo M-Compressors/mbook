@@ -48,6 +48,8 @@ pub(super) enum ChapterOp {
 pub(super) enum Origin {
     /// The first command of the session.
     Load,
+    /// An agent changed the book: the outline is asked for again.
+    Agent,
     /// A field of the Details form.
     Meta(MetaField),
     /// The list of landmarks was changed in the Landmarks section.
@@ -118,6 +120,15 @@ impl EditorPage {
                 cx.notify();
             }
             (Origin::Load | Origin::Check, Ok(outline)) => self.take(seq, outline, window, cx),
+            (Origin::Agent, Ok(outline)) => {
+                self.take(seq, outline, window, cx);
+                if self.meta_timers.is_empty() {
+                    // The form shows the metadata an agent may have changed;
+                    // a field being typed into is left alone.
+                    self.fill_fields(window, cx);
+                }
+            }
+            (Origin::Agent, Err(_)) => {}
             (Origin::Meta(field), Ok(outline)) => {
                 self.session.clear_error(&Control::Meta(field));
                 self.take(seq, outline, window, cx);
@@ -289,6 +300,10 @@ impl EditorPage {
             )
             .into_owned();
         }
+        if matches!(error, EditError::Conflict) {
+            // Typing on replaces what the agent wrote.
+            self.see_agent(path, window, cx);
+        }
         self.session.text_refused(path, text, message);
         if let Some(offset) = offset
             && self.loaded.as_deref() == Some(path)
@@ -337,6 +352,10 @@ impl EditorPage {
         let Some(path) = self.loaded.clone() else {
             return;
         };
+        if !self.session.holds_text() {
+            // An agent cannot change the chapter while the text is not sent.
+            self.handle.hold(Some((path.clone(), self.seen)));
+        }
         self.session.text_typed(&path);
         let text = self.text.read(cx).value();
         self.update_preview(&text, window, cx);
@@ -411,7 +430,7 @@ impl EditorPage {
             self.text_typed(window, cx);
             return;
         }
-        let reply = self.handle.chapter_text(&path);
+        let reply = self.handle.editor_text(&path);
         self.load_task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = reply.await;
             this.update_in(cx, |this, window, cx| {
@@ -426,7 +445,7 @@ impl EditorPage {
         &mut self,
         generation: u64,
         path: &str,
-        result: Result<String, EditError>,
+        result: Result<(String, u64), EditError>,
         window: &mut Window,
         cx: &mut Context<'_, Self>,
     ) {
@@ -434,11 +453,12 @@ impl EditorPage {
             return;
         }
         match result {
-            Ok(text) => {
+            Ok((text, seen)) => {
+                self.seen = seen;
                 self.set_editor_text(&text, true, window, cx);
                 self.loaded = Some(path.to_owned());
                 self.update_preview(&text, window, cx);
-                if let Some(offset) = self.caret.take() {
+                if let Some(offset) = self.caret.take().or_else(|| self.caret_after_reload(&text)) {
                     self.move_caret(offset, window, cx);
                 }
                 if std::mem::take(&mut self.write_next) {

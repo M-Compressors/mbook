@@ -144,6 +144,34 @@ impl Figure {
     pub fn em(&self) -> f32 {
         self.em
     }
+
+    /// The figure as a PNG image, `scale` pixels to a unit of the document,
+    /// on a `background` of `0xRRGGBB` or on nothing.
+    ///
+    /// The labels of a diagram are drawn with the fonts of the system and
+    /// Noto Sans for any family the system lacks. A figure that would take
+    /// more than 16,777,216 pixels is drawn at the scale that fits them.
+    ///
+    /// # Errors
+    ///
+    /// [`FigureError::Raster`] when the drawing has no size to make pixels
+    /// of.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mbook_converter::figure::{self, Palette, Setting};
+    ///
+    /// let formula = figure::formula("x^2", Setting::Line, Palette::default())?;
+    /// let png = formula.png(2.0, Some(0x00ff_ffff))?;
+    /// assert!(png.starts_with(b"\x89PNG"));
+    /// # Ok::<(), mbook_converter::figure::FigureError>(())
+    /// ```
+    pub fn png(&self, scale: f32, background: Option<u32>) -> Result<Vec<u8>, FigureError> {
+        crate::export::graphic::rasterise(self, scale, background)
+            .map(|png| png.bytes)
+            .ok_or(FigureError::Raster)
+    }
 }
 
 #[cfg(test)]
@@ -175,6 +203,9 @@ pub enum FigureError {
     /// The renderer stopped unexpectedly.
     #[error("the renderer stopped unexpectedly")]
     Renderer,
+    /// The drawing could not be turned into pixels.
+    #[error("the drawing cannot be turned into pixels")]
+    Raster,
 }
 
 /// Draws a diagram in Mermaid notation.
@@ -253,6 +284,22 @@ fn guarded(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_figure_is_drawn_as_png_at_its_scale() {
+        let drawn = formula("x+y", Setting::Line, Palette::default()).unwrap();
+        let png = drawn.png(2.0, None).unwrap();
+        let image = image::load_from_memory(&png).unwrap();
+        assert!((f64::from(image.width()) - f64::from(drawn.width()) * 2.0).abs() <= 1.0);
+    }
+
+    #[test]
+    fn a_figure_without_a_size_has_no_png() {
+        let drawn = formula("x", Setting::Line, Palette::default())
+            .unwrap()
+            .with_svg("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"0\" height=\"0\"/>");
+        assert_eq!(drawn.png(1.0, None), Err(FigureError::Raster));
+    }
 
     const NIGHT: Palette = Palette {
         ink: 0x00b8_b8b8,

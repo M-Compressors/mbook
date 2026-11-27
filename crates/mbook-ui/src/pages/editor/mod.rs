@@ -20,6 +20,7 @@
 //! - `landmark_kinds` names the kinds of landmark and orders new ones,
 //! - `markup` writes the Markdown the editor inserts itself.
 
+mod changes;
 mod chapter;
 mod commands;
 mod contents;
@@ -28,6 +29,7 @@ mod encode;
 mod entry_prompt;
 mod figures;
 mod files;
+pub(crate) use files::record_save;
 mod keys;
 mod landmark_kinds;
 mod landmark_prompt;
@@ -61,10 +63,10 @@ use gpui_kit::{
 };
 use rust_i18n::t;
 
-use crate::entities::catalogue::Store;
 use crate::features::appearance::Appearance;
-use crate::features::edit_book::actor::{self, EditHandle};
+use crate::features::edit_book::actor::EditHandle;
 use crate::features::edit_book::command::Command;
+use crate::features::edit_book::sessions::Sessions;
 use crate::shared::model::BookKey;
 use crate::shared::ui::search_bar::SearchBar;
 use crate::widgets::chapter_view::ChapterView;
@@ -150,8 +152,11 @@ pub(crate) struct EditorPage {
     key: BookKey,
     focus_handle: FocusHandle,
     handle: EditHandle,
-    /// The task that owns the book; dropping the page ends it.
-    _actor: Task<()>,
+    /// Listens to the changes agents make to the book.
+    _changes: Task<()>,
+    /// The last change an agent made to the chapter in the editor, as the
+    /// editor has seen it.
+    seen: u64,
     session: Session,
     /// The number of the last command sent.
     sent: u64,
@@ -188,6 +193,10 @@ pub(crate) struct EditorPage {
     chooser: Option<Task<()>>,
     /// The caret goes here when the text that is loading has arrived.
     caret: Option<usize>,
+    /// The line the caret goes to when an agent's text has arrived.
+    caret_line: Option<usize>,
+    /// Asks for the last change of an agent after a conflict.
+    agent_seen: Option<Task<()>>,
     /// The chapter that is loading was just added: when its text has
     /// arrived, the editor takes the focus with the caret at its end.
     write_next: bool,
@@ -202,9 +211,8 @@ impl EditorPage {
     /// The book is opened on the background; until its outline arrives the
     /// page says that it is opening.
     pub(crate) fn new(key: BookKey, window: &mut Window, cx: &mut Context<'_, Self>) -> Self {
-        let path = Store::global(cx).roots.book(key);
-        let (handle, serving) = actor::session(path);
-        let actor = cx.background_spawn(serving);
+        let handle = Sessions::edit(key, cx);
+        let changes = changes::listen(&handle, window, cx);
         let text = cx.new(|cx| {
             let mut state = EditorState::new(window, cx)
                 .language("markdown")
@@ -232,13 +240,17 @@ impl EditorPage {
                 },
             ),
             cx.observe(&Appearance::global(cx), |_, _, cx| cx.notify()),
+            cx.on_release(move |page: &mut Self, cx| {
+                Sessions::leave(page.key, page.session.has_unsaved(), cx);
+            }),
         ];
         subscriptions.extend(fields.subscribe(window, cx));
         let mut page = Self {
             key,
             focus_handle: cx.focus_handle(),
             handle,
-            _actor: actor,
+            _changes: changes,
+            seen: 0,
             session: Session::new(),
             sent: 0,
             requests: HashMap::new(),
@@ -262,11 +274,28 @@ impl EditorPage {
             places_task: None,
             chooser: None,
             caret: None,
+            caret_line: None,
+            agent_seen: None,
             write_next: false,
             _subscriptions: subscriptions,
         };
         page.send(Command::Load, commands::Origin::Load, window, cx);
         page
+    }
+
+    /// The book the page edits.
+    pub(crate) const fn key(&self) -> BookKey {
+        self.key
+    }
+
+    /// Opens a chapter, as choosing it in the list does.
+    pub(crate) fn show_chapter(
+        &mut self,
+        path: &str,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        self.open_chapter(path, window, cx);
     }
 
     /// The focus handle of the Markdown editor.

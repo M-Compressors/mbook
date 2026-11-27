@@ -94,7 +94,6 @@ impl Shell {
     }
 
     /// Whether the library is open and the first page is built.
-    #[cfg(any(test, feature = "visual"))]
     pub(crate) fn root(&self) -> Option<&Entity<Root>> {
         match &self.state {
             State::Ready(root) => Some(root),
@@ -144,6 +143,22 @@ impl Shell {
                 let appearance = cx.new(Appearance::new);
                 Library::install(library.clone(), cx);
                 Appearance::install(appearance.clone(), cx);
+                #[cfg(not(target_os = "android"))]
+                {
+                    let shell = cx.entity();
+                    cx.set_global(super::agent::MainWindow {
+                        handle: window.window_handle(),
+                        shell: Some(shell),
+                    });
+                    super::agent::AgentServer::install(cx);
+                    let status = crate::features::agents::AgentStatus::global(cx);
+                    self.subscriptions
+                        .push(cx.observe(&status, |_, _, cx| cx.notify()));
+                    let allowed = std::rc::Rc::new(std::cell::Cell::new(false));
+                    window.on_window_should_close(cx, move |window, cx| {
+                        super::agent::quit::may_close(&allowed, window, cx)
+                    });
+                }
                 self.subscriptions
                     .push(cx.observe_in(&library, window, Self::refresh));
                 self.subscriptions
@@ -260,7 +275,18 @@ impl Render for Shell {
         match &self.state {
             State::Opening => Self::loading(cx),
             State::Failed(error) => Self::failed_view(error, cx),
-            State::Ready(root) => root.clone().into_any_element(),
+            State::Ready(root) => {
+                #[cfg(not(target_os = "android"))]
+                if let Some(badge) = super::agent::quit::badge(cx) {
+                    return gpui_kit::div()
+                        .relative()
+                        .size_full()
+                        .child(root.clone())
+                        .child(badge)
+                        .into_any_element();
+                }
+                root.clone().into_any_element()
+            }
         }
     }
 }

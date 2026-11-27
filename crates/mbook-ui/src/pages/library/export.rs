@@ -74,7 +74,7 @@ pub(super) fn choose<F>(
             };
             let path = with_extension(selected, format);
             let result = executor
-                .spawn(compute::spawn(move || save(&source, &path, format)))
+                .spawn(compute::spawn(move || save(&source, &path, format, false)))
                 .await;
             cx.update(|window, cx| {
                 let message = match result {
@@ -144,7 +144,7 @@ fn stage(source: &Path, folder: &Path, name: &str, format: Format) -> Result<Pat
         .tempdir_in(folder)?
         .keep();
     let path = own.join(name);
-    save(source, &path, format)?;
+    save(source, &path, format, false)?;
     Ok(path)
 }
 
@@ -207,7 +207,7 @@ fn with_extension(path: PathBuf, format: Format) -> PathBuf {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum ExportError {
+pub(crate) enum ExportError {
     #[error("{}", t!("library.export_unreadable"))]
     Book(#[from] mbook::Error),
     #[error(transparent)]
@@ -219,8 +219,14 @@ enum ExportError {
 }
 
 /// Publishes the finished export by moving a temporary file in the destination
-/// directory. A concurrent export or an existing file keeps its name.
-fn save(source: &Path, destination: &Path, format: Format) -> Result<(), ExportError> {
+/// directory. A concurrent export or an existing file keeps its name, unless
+/// `replace` says to write over it.
+pub(crate) fn save(
+    source: &Path,
+    destination: &Path,
+    format: Format,
+    replace: bool,
+) -> Result<(), ExportError> {
     let file = File::open(source).map_err(mbook::Error::from)?;
     let book = Book::read(BufReader::new(file))?;
     let parent = destination
@@ -232,6 +238,10 @@ fn save(source: &Path, destination: &Path, format: Format) -> Result<(), ExportE
     Converter::export(&book, format, &mut writer)?;
     writer.flush()?;
     drop(writer);
+    if replace {
+        output.persist(destination).map_err(|error| error.error)?;
+        return Ok(());
+    }
     output.persist_noclobber(destination).map_err(|error| {
         if error.error.kind() == io::ErrorKind::AlreadyExists {
             ExportError::Exists
@@ -283,7 +293,7 @@ mod tests {
         book.save(&source).unwrap();
         let original = std::fs::read(&source).unwrap();
 
-        save(&source, &target, Format::Text).unwrap();
+        save(&source, &target, Format::Text, false).unwrap();
 
         assert_eq!(
             std::fs::read_to_string(target).unwrap(),
@@ -306,7 +316,7 @@ mod tests {
         .unwrap();
         book.save(&source).unwrap();
 
-        save(&source, &target, Format::Html).unwrap();
+        save(&source, &target, Format::Html, false).unwrap();
 
         assert!(
             std::fs::read_to_string(target)
@@ -379,7 +389,7 @@ mod tests {
         std::fs::write(&target, "Already here").unwrap();
 
         assert!(matches!(
-            save(&source, &target, Format::Text),
+            save(&source, &target, Format::Text, false),
             Err(ExportError::Exists)
         ));
         assert_eq!(std::fs::read_to_string(target).unwrap(), "Already here");
@@ -393,7 +403,7 @@ mod tests {
         std::fs::write(&source, "broken").unwrap();
 
         assert!(matches!(
-            save(&source, &target, Format::Epub),
+            save(&source, &target, Format::Epub, false),
             Err(ExportError::Book(_))
         ));
         assert!(!target.exists());

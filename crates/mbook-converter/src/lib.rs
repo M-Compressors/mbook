@@ -84,6 +84,7 @@ mod export;
 pub mod figure;
 mod format;
 mod formats;
+pub mod inline;
 mod markdown;
 mod options;
 #[cfg(pictures)]

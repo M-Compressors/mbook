@@ -9,10 +9,10 @@ use super::{Format, Result};
 
 const MAX_PIXELS: u64 = 100_000_000;
 
-pub(super) struct Png {
-    pub(super) bytes: Vec<u8>,
-    pub(super) width: u32,
-    pub(super) height: u32,
+pub(crate) struct Png {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 pub(super) fn png(picture: &Picture, format: Format) -> Result<Png> {

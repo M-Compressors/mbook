@@ -73,6 +73,9 @@ methods. A view holds no `BookReader`, no `Book` and no path.
 | Filtering the library | Pool | High |
 | Matching text in the reader and chapter editor | Pool | |
 | Checking for an update; downloading it | Background | Low |
+| Serving MCP over HTTP | The thread `mbook-mcp`, with a current-thread runtime of `tokio` | |
+| A call of an agent on a book | Pool, for the task that owns the book | Medium |
+| Encoding a picture an agent gives; turning a picture or a figure into PNG for it | Pool | Low |
 
 - Code on the main thread must not call a `read_` method of
   `BookReader`, any method of `Book` or `Converter`, a function of
@@ -141,7 +144,7 @@ The catalogue is one `redb` database. It holds two kinds of data:
 | --- | --- | --- | --- |
 | `books` | key | `id`, title, authors, language, series, the size of the file and of the cover, the time added, the format it was converted from | Yes, from the files in `books/` |
 | `state` | key | The last place read, the time of the last opening, whether the book is finished | No |
-| `settings` | name | Page tone, typeface, text size, the size of the window, whether updates are checked | No |
+| `settings` | name | Page tone, typeface, text size, the size of the window, whether updates are checked, whether the MCP server is on | No |
 
 - **The mbook files are the source of truth for metadata.** A row of `books`
   is a copy that spares the application from opening every file at start.
@@ -454,6 +457,11 @@ sequenceDiagram
     S-->>V: notify
 ```
 
+- A book has at most one session in the application, kept in a registry
+  by its key, which the editor and agents share
+  ([Agents (MCP)](mcp.md#how-the-server-works)). The session ends when its
+  last editor leaves, unless an agent used it: then 10 minutes after the
+  last call of an agent, once it holds no unsaved changes.
 - A session starts with `Book::open` on the background. The `Book` is then
   owned by one background task for as long as the session lives.
 - The session sends that task commands over a channel, and the task applies
@@ -763,5 +771,10 @@ a build for a store or a package manager leaves off.
   from the book; a network address in a picture is not fetched.
 - An external link is opened by the system browser, and only when the user
   follows it.
+- The MCP server of agents listens on `127.0.0.1` only, refuses a request
+  with an `Origin` or for another `Host`, and asks in a
+  dialog before a call removes or overwrites anything
+  ([Agents (MCP)](mcp.md#requests-the-server-refuses)). It is off until the
+  person turns it on.
 - An update replaces the program. It is accepted only with a valid
   signature, over TLS, from the releases of this repository.

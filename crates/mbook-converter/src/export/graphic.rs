@@ -145,7 +145,7 @@ fn fonts() -> Arc<fontdb::Database> {
 
 /// The SVG of a figure as PNG, `scale` pixels to a unit of the document.
 /// `None` for a document that cannot be read or drawn.
-fn rasterise(figure: &Figure, scale: f32, background: Option<u32>) -> Option<Png> {
+pub(crate) fn rasterise(figure: &Figure, scale: f32, background: Option<u32>) -> Option<Png> {
     let options = usvg::Options {
         fontdb: fonts(),
         ..usvg::Options::default()

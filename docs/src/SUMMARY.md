@@ -35,6 +35,7 @@
 - [mbook-ui](mbook-ui/index.md)
   - [Using the application](mbook-ui/guide.md)
   - [Architecture](mbook-ui/architecture.md)
+  - [Agents (MCP)](mbook-ui/mcp.md)
   - [Appearance and accessibility](mbook-ui/appearance.md)
   - [Android](mbook-ui/android.md)
   - [Status and verification](mbook-ui/status.md)

@@ -33,6 +33,8 @@ pub(super) mod name {
     pub(in crate::entities::catalogue) const CHECK_UPDATES: &str = "check_updates";
     /// The language of the interface.
     pub(in crate::entities::catalogue) const LANGUAGE: &str = "language";
+    /// Whether the MCP server of agents is on.
+    pub(in crate::entities::catalogue) const SERVE_MCP: &str = "serve_mcp";
 }
 
 /// The range of the size of the text, in pixels.
@@ -122,6 +124,15 @@ pub(crate) struct Settings {
     pub(crate) check_updates: bool,
     /// The language of the interface; `None` follows the system.
     pub(crate) language: Option<Language>,
+    /// The MCP server of agents.
+    pub(crate) agents: AgentSettings,
+}
+
+/// The settings of the MCP server of agents.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct AgentSettings {
+    /// Whether the server is on.
+    pub(crate) serve: bool,
 }
 
 impl Default for Settings {
@@ -137,6 +148,7 @@ impl Default for Settings {
             reduce_motion: false,
             check_updates: true,
             language: None,
+            agents: AgentSettings::default(),
         }
     }
 }
@@ -163,6 +175,7 @@ impl Settings {
             (name::KEEP_CONTROLS, self.keep_controls.to_string()),
             (name::REDUCE_MOTION, self.reduce_motion.to_string()),
             (name::CHECK_UPDATES, self.check_updates.to_string()),
+            (name::SERVE_MCP, self.agents.serve.to_string()),
         ];
         if self.reading.size_set
             || (self.text_size - Self::default().text_size).abs() > f32::EPSILON
@@ -219,6 +232,9 @@ impl Settings {
             language: rows
                 .get(name::LANGUAGE)
                 .and_then(|code| Language::from_code(code)),
+            agents: AgentSettings {
+                serve: flag(rows, name::SERVE_MCP, default.agents.serve),
+            },
         }
     }
 }
@@ -289,6 +305,7 @@ mod tests {
             reduce_motion: true,
             check_updates: false,
             language: Some(Language::Russian),
+            agents: AgentSettings { serve: true },
         };
         let rows: HashMap<String, String> = settings
             .encode()
@@ -296,6 +313,13 @@ mod tests {
             .map(|(key, value)| (key.to_owned(), value))
             .collect();
         assert_eq!(Settings::decode(&rows), settings);
+    }
+
+    #[test]
+    fn the_mcp_server_is_off_at_first() {
+        assert!(!Settings::default().agents.serve);
+        let on = Settings::decode(&stored(&[(name::SERVE_MCP, "true")]));
+        assert!(on.agents.serve);
     }
 
     #[test]

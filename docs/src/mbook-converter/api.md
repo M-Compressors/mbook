@@ -34,8 +34,25 @@ pub mod figure {
     pub enum Setting { Block, Line }
     pub struct Palette { pub ink: u32, pub page: u32 }      // also Default
     pub struct Figure { /* SVG and measures */ }            // svg, into_svg, width, height, baseline, em
+    impl Figure {
+        pub fn png(&self, scale: f32, background: Option<u32>) -> Result<Vec<u8>, FigureError>;
+    }
     #[non_exhaustive]
-    pub enum FigureError { Empty, Diagram(String), Formula(String), Renderer }
+    pub enum FigureError { Empty, Diagram(String), Formula(String), Renderer, Raster }
+}
+
+pub mod inline {
+    pub fn extract(text: &str, chapter: &str, book: &mbook::Book, new: &[Range<usize>])
+        -> Extracted;
+
+    pub enum Kind { Diagram, Formula }
+    #[non_exhaustive]
+    pub struct Extracted { pub text: String, pub figures: Vec<Found> }
+    #[non_exhaustive]
+    pub struct Found {
+        pub kind: Kind, pub path: String, pub source: String,
+        pub line: usize, pub new: bool, pub described: bool,
+    }
 }
 
 #[non_exhaustive]
@@ -192,6 +209,43 @@ the same in both.
 
 `mbook-ui` draws the figures of its pages with the same calls. EPUB, DOCX, PDF and CBZ buffer the output
 document in memory before writing it to the sink.
+
+## Diagrams and formulas in Markdown
+
+`inline::extract` finds the diagrams and formulas written into the Markdown
+of a chapter the way an author writes them, a `mermaid` code fence and
+`$…$` or `$$…$$`, and says what the text becomes and which resources it
+needs. Nothing is changed: the caller adds the resources whose `new` is set
+and stores the text. `mbook-ui` does this for the text an agent writes
+([`mbook-ui`, Agents (MCP)](../mbook-ui/mcp.md#diagrams-and-formulas-in-the-text)).
+The Markdown import of `Converter` does not use it yet.
+
+- A fenced code block whose info string is `mermaid` is a diagram. Its
+  leading lines `%% alt: …` and `%% caption: …` give the alternative text
+  and the caption and are removed from its source; other lines are kept. A
+  fence with no source left is not a diagram.
+- `$$…$$` is a display formula and `$…$` a formula in a line, as `markdown`
+  1.0.0 finds them with `math_flow` and `math_text` on. Code spans, other
+  code blocks and `\$` are not formulas.
+- A diagram and a display formula become a paragraph of their own,
+  `![alt](dia/0001.mmd "caption")`, with the empty lines that keep it one;
+  inside a block quote they keep the marks of the quote. A formula in a line
+  becomes a reference in its place. The alternative text of a formula is its
+  source, and that of a diagram without `%% alt:` is its source too;
+  `described` says whether words were given.
+- Only a figure that lies wholly inside one of the byte ranges `new` is
+  moved. A `$` is plain text in mbook, so a caller passes the parts of the
+  text that are new, and what the book already held stays as it is.
+- A new resource gets the first free number under `dia/` or `math/`, a path
+  nothing of the book has; the reference is relative to `chapter`. A
+  formula whose source the book already has, or that the text has twice,
+  names one resource, and is `new` only the first time.
+- `line` is the line of the text the figure was written on, from 1.
+
+`Figure::png` draws a figure as PNG at `scale` pixels to a unit of its
+document, on a `background` of `0xRRGGBB` or on nothing, with the fonts of
+the export; a figure of more than 16,777,216 pixels is drawn at the scale
+that fits them. A drawing without a size is `FigureError::Raster`.
 
 ## Formats and features
 

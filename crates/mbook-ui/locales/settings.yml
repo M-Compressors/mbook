@@ -84,6 +84,51 @@ settings:
   save_failed:
     en: "Settings could not be saved: %{reason}. They still apply until the application closes; change a setting to try saving again."
     ru: "Не удалось сохранить настройки: %{reason}. Они действуют до закрытия приложения; измените любую настройку, чтобы попробовать сохранить снова."
+  agents:
+    en: "Agents (MCP)"
+    ru: "Агенты (MCP)"
+  serve_mcp:
+    en: "Serve MCP to agents on this computer"
+    ru: "Открыть MCP для агентов на этом компьютере"
+  mcp_off:
+    en: "The server is off."
+    ru: "Сервер выключен."
+  mcp_starting:
+    en: "The server is starting…"
+    ru: "Сервер запускается…"
+  mcp_running:
+    en: "Agents reach the library at %{url}"
+    ru: "Агенты обращаются к библиотеке по адресу %{url}"
+  mcp_failed:
+    en: "The server could not start: %{reason}"
+    ru: "Сервер не запустился: %{reason}"
+  mcp_hint:
+    en: "An agent such as Claude Code, Cursor or Codex can then read and edit the books of the library. Only programs on this computer can connect, web pages cannot; removals are asked about first."
+    ru: "Тогда агент вроде Claude Code, Cursor или Codex сможет читать и править книги библиотеки. Подключиться могут только программы на этом компьютере, веб-страницы не могут; перед удалением приложение спрашивает."
+  copy:
+    en: "Copy"
+    ru: "Скопировать"
+  mcp_other:
+    en: "Other"
+    ru: "Другие"
+  mcp_preview:
+    en: "Configuration for %{client}"
+    ru: "Конфигурация для %{client}"
+  mcp_hint_claude_code:
+    en: "Run the command in a terminal."
+    ru: "Выполните команду в терминале."
+  mcp_hint_cursor:
+    en: "Add it to ~/.cursor/mcp.json, or to .cursor/mcp.json of a project."
+    ru: "Добавьте в ~/.cursor/mcp.json или в .cursor/mcp.json проекта."
+  mcp_hint_codex:
+    en: "Add it to ~/.codex/config.toml."
+    ru: "Добавьте в ~/.codex/config.toml."
+  mcp_hint_other:
+    en: "The usual configuration of an MCP server over Streamable HTTP: the address of the server. A client that speaks only stdio needs a bridge such as mcp-remote."
+    ru: "Обычная конфигурация MCP-сервера по Streamable HTTP: адрес сервера. Клиенту, который умеет только stdio, нужен мост вроде mcp-remote."
+  copied_configuration:
+    en: "The configuration for %{client} is on the clipboard."
+    ru: "Конфигурация для %{client} скопирована."
 tone:
   paper:
     en: "Paper"

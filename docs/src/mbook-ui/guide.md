@@ -325,6 +325,7 @@ screen on a compact one.
 | Controls of the reader | Hide while reading, or always shown | Hide while reading |
 | Motion | As the system says, or reduced | As the system says |
 | Check for updates | On, off | On |
+| Serve MCP to agents on this computer | On, off; not on Android | Off |
 
 A change shows at once in an open book. A page tone that follows the system
 is Paper while the system is light and Night while it is dark.
@@ -336,6 +337,36 @@ stands for, and each language is named in itself, so that a person who
 cannot read the current one finds theirs. A new language shows at once,
 the menu bar of macOS included; a message already on the screen keeps its
 language ([Languages](architecture.md#languages)).
+
+## Agents
+
+With **Serve MCP to agents on this computer** on, an agent such as Claude
+Code, Cursor or Codex can read and edit the books of the library through the
+Model Context Protocol, without looking at the screen. The section shows
+the address the agents reach and the configuration of the client chosen in
+the bar under it, highlighted, with a button that copies it:
+
+1. Turn on **Serve MCP to agents on this computer** in the settings.
+2. Choose the client in the bar under the preview — Claude Code, Cursor,
+   Codex, or **Other** for the usual configuration of any client of MCP —
+   press **Copy** and paste it where the line under the card says. For
+   Claude Code it is a command for the terminal.
+3. Ask the agent to work on a book: it lists the library, reads the
+   structure of a book, writes chapters, adds pictures, diagrams and
+   formulas, checks the book and saves it.
+
+An agent edits through the same session as the editor: a book open in the
+editor shows the changes of the agent as they are made, and an agent cannot
+change a chapter while text typed into it has not been sent. Before an
+agent removes a chapter, a picture, a figure or a book, throws away unsaved
+changes, or reads or writes a file of the computer, the window asks;
+**Decline** refuses. Tick the box in the dialog to allow that kind of action
+for the rest of the program's session. A badge
+in the corner of the window shows while an agent is at work, and closing
+the window over changes an agent did not save asks whether to save them.
+Only programs of this computer can connect; web pages cannot. The
+tools, their answers and their errors are listed in
+[Agents (MCP)](mcp.md).
 
 ## Using the application without a pointer or without sight
 

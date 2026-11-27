@@ -1,5 +1,7 @@
 //! The commands of an editing session and the requests that carry them.
 
+use super::agent::error::AgentError;
+use super::agent::{Answer, Op};
 use super::error::EditError;
 use super::outline::Outline;
 use crate::entities::figure::{FigureKind, FigureSources};
@@ -188,4 +190,22 @@ pub(crate) enum Request {
     Figure(FigureKind, String, Reply<String>),
     /// The sources referenced by a draft chapter, which might not be saved yet.
     ChapterFigures(String, String, Reply<FigureSources>),
+    /// The text of a chapter and the last change an agent made to it.
+    EditorText(String, Reply<(String, u64)>),
+    /// A call of an agent.
+    Agent(Op, oneshot::Sender<Result<Answer, AgentError>>),
+    /// Reads the book again from its file.
+    Discard(Reply<()>),
+    /// The chapter the editor holds unsent text of, and the last change by
+    /// an agent it has seen of it.
+    Hold(Option<(String, u64)>),
+    /// Where to tell the changes agents make.
+    Subscribe(futures::channel::mpsc::UnboundedSender<Change>),
+}
+
+/// Chapters an agent changed, each with the change it is at now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Change {
+    /// The path of each chapter and the last change of it by an agent.
+    pub(crate) chapters: Vec<(String, u64)>,
 }

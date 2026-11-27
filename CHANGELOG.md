@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+## [v0.3.9](https://github.com/M-Compressors/mbook/releases/tag/v0.3.9) - 2026-11-27
+
+### Added
+
+- The application serves the Model Context Protocol to agents on this
+  computer, such as Claude Code, Cursor and Codex, once **Serve MCP to agents
+  on this computer** is turned on in the settings. It listens on
+  `127.0.0.1:7341`, or the next free port, over Streamable HTTP, needs no
+  token, and refuses a request with an `Origin` or for another `Host`, so
+  that no web page can reach it. Its
+  28 tools list, create, import, export and delete books; read a book's
+  structure, chapters by section or by lines, figures and pictures, the
+  latter as PNG; add, edit, write, move and remove chapters; add pictures
+  from a file, base64 or SVG; add and change diagrams and formulas, drawn
+  first; set the metadata, contents and landmarks; check, save and discard;
+  and open a book in the window. Removals, discarding and overwriting a file
+  are confirmed in a dialog, and so are reading a book or a picture from a
+  file of the computer and writing a file; the dialog can allow a kind of
+  action for the rest of the session of a client. The skill `mbook-authoring` tells an agent how
+  to write a book: as a skill of MCP, as resources, through `get_guide` and
+  in the instructions of the server; three prompts start common tasks.
+- An agent and the editor share one session of a book: the editor shows the
+  changes of an agent as they are made, an agent cannot change a chapter
+  while text typed into it has not been sent, and text typed over a change
+  of an agent is kept as a draft. A badge shows while an agent is at work,
+  and closing the window over changes an agent did not save asks first.
+- `mbook-converter`: `inline::extract` moves the Mermaid fences and the
+  `$…$` and `$$…$$` of a Markdown text into diagram and formula resources,
+  only within the ranges a caller names as new, with the alternative text
+  and caption of a diagram from `%% alt:` and `%% caption:`.
+- `mbook-converter`: `Figure::png` draws a diagram or a formula as PNG, and
+  `FigureError::Raster` says when a drawing has no size.
+
+### Changed
+
+- `resvg` is a dependency of the workspace, shared by `mbook-converter` and
+  `mbook-ui`.
+
 ## [v0.3.8](https://github.com/M-Compressors/mbook/releases/tag/v0.3.8) - 2026-11-27
 
 ### Added

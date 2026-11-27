@@ -40,7 +40,9 @@ icon_assets!(
         ListIndentIncrease,
         ZoomIn,
         ZoomOut,
-        Scan
+        Scan,
+        Copy,
+        KeyRound
     ]
 );
 

@@ -5,7 +5,7 @@ mod cbz;
 mod docx;
 mod epub;
 mod fb2;
-mod graphic;
+pub(crate) mod graphic;
 mod markup;
 mod pdf;
 mod picture;

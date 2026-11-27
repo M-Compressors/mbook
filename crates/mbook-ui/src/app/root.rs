@@ -172,6 +172,33 @@ impl Root {
         self.enter(Screen::Editor(page), subscription, window, cx);
     }
 
+    /// Opens a book for an agent: in the reader, or in the editor at a
+    /// chapter. A book already in front stays, in the mode asked for.
+    #[cfg(not(target_os = "android"))]
+    pub(crate) fn show(
+        &mut self,
+        key: BookKey,
+        chapter: Option<String>,
+        edit: bool,
+        window: &mut Window,
+        cx: &mut Context<'_, Self>,
+    ) {
+        match (self.screen(), edit) {
+            (Screen::Editor(page), true) if page.read(cx).key() == key => {}
+            (Screen::Reader(reader), false) if reader.read(cx).key() == key => {}
+            (_, true) => {
+                if let Screen::Reader(reader) = self.screen() {
+                    reader.update(cx, ReaderPage::suspend);
+                }
+                self.open_editor(key, window, cx);
+            }
+            (_, false) => self.open_reader(key, window, cx),
+        }
+        if let (true, Some(chapter), Screen::Editor(page)) = (edit, chapter, self.screen()) {
+            page.update(cx, |page, cx| page.show_chapter(&chapter, window, cx));
+        }
+    }
+
     fn open_settings(&mut self, window: &mut Window, cx: &mut Context<'_, Self>) {
         if matches!(self.screen(), Screen::Settings(_)) {
             return;

@@ -378,6 +378,11 @@ impl ReaderPage {
         self.start(cx);
     }
 
+    /// The book the page shows.
+    pub(crate) const fn key(&self) -> BookKey {
+        self.key
+    }
+
     /// Whether [`Self::suspend`] was called since the last [`Self::resume`].
     #[cfg(test)]
     pub(crate) fn is_suspended(&self) -> bool {

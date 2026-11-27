@@ -37,6 +37,18 @@ open.
 | The catalogue is a `redb` database | Confirmed |
 | The application is built for Android; there it runs on gpui-pre with the platform of gpui-mobile, while the desktop stays on GPUI Fast | Confirmed on 2026-11-23 |
 | The release workflow builds an APK | Confirmed on 2026-11-23 |
+| An MCP server inside the application, over HTTP, turned on in the settings | Confirmed on 2026-11-27 |
+| Its port is 7341, and the next free one when that is taken | Confirmed on 2026-11-27 |
+| An agent may name files of the computer to import, export and add as pictures | Confirmed on 2026-11-27 |
+| Changes of an agent are written only by an explicit save | Confirmed on 2026-11-27 |
+| Removals, discarding and overwriting are confirmed by the person in a dialog | Confirmed on 2026-11-27 |
+| Reading and writing files of the computer is confirmed too, and a kind of action can be allowed for the rest of the session of a client | Confirmed on 2026-11-27 |
+| A client connects without a token | Confirmed on 2026-11-27 |
+| Pictures and figures are given to agents as PNG images as well as text | Confirmed on 2026-11-27 |
+| Diagrams and formulas an agent writes as fences and dollars go into resources at once, with `%% alt:` | Confirmed on 2026-11-27 |
+| A figure that cannot be drawn is refused unless the agent says to store it | Confirmed on 2026-11-27 |
+| A session without a window ends after 10 minutes idle; closing the window over unsaved changes of an agent asks | Confirmed on 2026-11-27 |
+| The skill is served as a skill of MCP, as resources, by `get_guide` and in the instructions | Confirmed on 2026-11-27 |
 
 ## Dependencies
 
@@ -46,7 +58,7 @@ several packages share.
 
 | Crate | Version, last release | License | Used for |
 | --- | --- | --- | --- |
-| `gpui-kit`, feature `gpui-fast` | 0.11.0, 2026-11-23 | Apache-2.0 | The interface; brings GPUI Fast 0.1 |
+| `gpui-kit`, features `gpui-fast`, `tree-sitter-markdown`, `tree-sitter-bash`, `tree-sitter-toml` | 0.11.0, 2026-11-23 | Apache-2.0 | The interface; brings GPUI Fast 0.1. The grammars highlight Markdown in the editor, and the configurations of agents in the settings |
 | `rfd` | 0.17.2 | MIT | Native book and picture pickers with extension filters |
 | `robius-share`, desktop only | 0.3.0, 2026-07-18; Project Robius, repository pushed 2026-11-13 | MIT | The share sheet of the platform; Rust 1.77. On Windows it brings `windows` 0.56 beside the versions GPUI uses |
 | `mimalloc3` | 0.1.61, 2026-11-17 | MIT | The allocator of the binary |
@@ -66,6 +78,11 @@ several packages share.
 | `android-activity`, `android_logger`, `log` (in `mbook-android`) | 0.6, 0.15, 0.4 | MIT OR Apache-2.0 | `NativeActivity` glue that calls `android_main`; logcat |
 | `jni`, `log`, Android only | 0.22, the version gpui-mobile uses; 0.4 | MIT OR Apache-2.0 | Asking the activity for the documents it received; logging a Java exception |
 | `windows-registry`, Windows only | 0.100.0, of windows-rs; Rust 1.95. GPUI keeps 0.6.1, so the tree holds both | MIT OR Apache-2.0 | Registering the book formats for the current user; a safe API, so the crate keeps `unsafe_code` forbidden |
+| `rmcp`, desktop only | 3.12.0, the official Rust SDK of MCP | Apache-2.0 | The MCP server: tools, prompts, resources, the skills extension, Streamable HTTP with its checks of `Host` and `Origin`; Rust 1.88 |
+| `axum`, `tokio`, `tokio-util`, desktop only | 0.8.9, 1.54.1, 0.7.20; `tokio` and `hyper` were in the tree already | MIT | The HTTP server under `rmcp`, on a current-thread runtime of its own thread; the token that stops it |
+| `serde`, `serde_json`, `schemars` | 1.0, 1.0, 1.2.3; in the tree of `rmcp` | MIT OR Apache-2.0; `schemars` MIT | The arguments and answers of the tools and their JSON schemas |
+| `base64`, desktop only | 0.23.1; in the tree already | MIT OR Apache-2.0 | Pictures in base64 |
+| `resvg` | The version of the workspace, which `mbook-converter` shares | Apache-2.0 OR MIT | Drawing an SVG picture an agent gives before it is encoded |
 
 gpui-mobile is taken from a fork, pinned to a commit: its only release on
 crates.io, 0.1.0, is built for gpui-pre 0.3.5, its `main` is on 0.3.10, and
@@ -104,6 +121,14 @@ Ruled out:
 
 ## Drawbacks
 
+- **A server in a reading application.** Turned on, the application listens
+  on a port of the loopback address, without a token. Any program of the user
+  can change and remove books through it, the removals after the person
+  agrees; such a program could change the files of the library directly as
+  well.
+- **An agent can name any file of the user** to import, to export over
+  (after the person agrees) or to add as a picture: the server runs with the
+  rights of the application.
 - **A large dependency.** GPUI and its component library are far larger
   than the rest of the workspace together, and the engine is young: GPUI Fast
   is at version 0.1.
@@ -166,6 +191,15 @@ Ruled out:
 | The language in tests | Never set: the tests run in English and a test checks the language `Appearance` chooses, not the text | Setting it per test | The language of `rust-i18n` belongs to the process, and the tests of a crate run on several threads at once. |
 | File picker filters | Native dialogs through `rfd` | GPUI file prompts | GPUI Kit 0.11 cannot pass extension filters to its platform picker. |
 | Sending a book to other people | The share sheet of the platform through `robius-share`, with the mbook file | Share links of social networks; code of this crate on AppKit and WinRT | A share link carries text and a web address, and a library book has no address. Calling the platform directly needs `unsafe`, which the workspace forbids; `robius-share` keeps it in a maintained crate. |
+| How agents reach the books | An MCP server inside the application, over Streamable HTTP on the loopback address | A command-line program over the files; an MCP server over stdio in a crate of its own | The application owns the files of the library and its catalogue, and a book open in the editor would race another writer. Inside the application an agent edits through the session the editor uses, so a person sees the changes at once and is asked before a removal in the window. The cost is that the application must be open. Stdio would need the client to start the application. |
+| The MCP library | `rmcp`, the official Rust SDK | Our own JSON-RPC and Streamable HTTP | The protocol changes often (the skills extension, sessions dropped in 2026-07-28); `rmcp` follows it and checks `Host` and `Origin` against DNS rebinding. |
+| Where a call runs | Handed from the HTTP thread to the main thread, and from there to the task that owns the book | Tools that open a `Book` on the HTTP thread | One owner of a book keeps the order of the editor's and the agent's changes; the rule that the main thread does no I/O holds. |
+| An agent and the person in one chapter | The editor holds a chapter while it has text it has not sent; a change of an agent is refused with `user_typing` then, and text sent over a change of an agent is refused once as a conflict | A merge of the two texts; locking a chapter while it is open | Nothing typed is lost and nothing the agent wrote is overwritten unseen; a merge of Markdown could break its blocks, and a lock would shut the agent out of the chapter a person only looks at. |
+| Diagrams and formulas an agent writes | Moved into resources from the parts of the text the call wrote | From the whole text; left as code | A `$` is plain text in mbook: a price in a chapter must not become a formula. |
+| The handlers of `rmcp` | Written by hand over the routers of its macros | Its `tool_handler` and `prompt_handler` macros | The macros make `async` functions without `await`, which Clippy's `unused_async` denies, and an `#[expect]` does not reach them. |
+| The configuration of a client in the settings | A highlighted preview in the language of the client, with a bar under it that chooses the client and copies; **Other** for the usual JSON of MCP | One button per client, copying unseen text | Asked for by the format author on 2026-11-27. A person sees what is copied before pasting it into a terminal or a file, and a configuration of a client the list does not name is still at hand. The preview is a fenced block of the Markdown view of GPUI Kit, which highlights with the grammars of bash, JSON and TOML. |
+| How a client proves itself | It does not: the server listens on the loopback address and refuses an `Origin` and another `Host` | A bearer token in the settings, copied into each client | Decided by the format author on 2026-11-27, after a first version with a token. Copying a secret into every client was hard for people, and it protected nothing a program of the user cannot reach anyway: the files of the library. What a token could add, keeping out web pages, the checks of `Origin` and `Host` already do. |
+| What a client without a token may do unseen | Edit the library; a file of the computer is read or written only after a dialog, which can allow the kind of action for the rest of the MCP session it came through | No dialog for files; remembering a choice for good; remembering it for the name a client gives | Decided by the format author on 2026-11-27. Without a token, another account of the computer or a program in a sandbox could otherwise read and write the user's files through the server. The name of a client is what the client says, so a permission kept for a name could be taken by any program that gives it; the number of a session is given by the server. A choice kept only for a session asks again on the next connection, when the person may not remember having given it. |
 | Export destination | Native save dialog and temporary file in the destination directory | Convert directly into the chosen file | The completed file is published in one operation and an existing file cannot be overwritten. |
 | Landmarks section | The start in a block of its own, then the other landmarks as a list | One row for every kind, filled or empty; one list with the start among the rest | The start is the one landmark a reader meets without asking and a book has one. Twenty-two rows would bury the few places a book has. |
 | Choosing the kind of a landmark | One menu grouped by what a reader looks for, the places looked up while reading first, with a line that says what the choice gives | An alphabetical menu; the identifiers of the format | Authors choose by purpose, and the line answers why a place is worth marking. |
@@ -289,3 +323,9 @@ application.
 - **Showing where a picture is used**, and offering to remove the ones no
   chapter refers to.
 - **Conversion progress and cancellation**, when `mbook-converter` has them.
+- **Progress notifications of MCP** for an import, an export and the
+  encoding of a picture.
+- **`show` at a place in the reader**: it opens the reader where the book
+  was left.
+- **The Markdown import using `inline::extract`**, so that a Markdown file
+  with Mermaid fences becomes a book with diagrams.

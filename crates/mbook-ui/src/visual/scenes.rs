@@ -71,6 +71,7 @@ const fn shot(name: &'static str, library: Library, run: fn(&mut Stage) -> Resul
 /// Every shot. The files are named so that they sort by screen.
 pub(super) fn all() -> Vec<Shot> {
     let mut shots = other_shots();
+    shots.extend(agent_shots());
     shots.extend(editor_shots());
     shots
 }
@@ -160,6 +161,32 @@ fn editor_shots() -> Vec<Shot> {
             draw_diagram(stage)?;
             stage.click("figure-zoom")
         }),
+    ]
+}
+
+/// The shots of the section of agents in the settings, and of what an agent
+/// asks the person.
+fn agent_shots() -> Vec<Shot> {
+    vec![
+        Shot {
+            calm: false,
+            ..shot("09c-settings-agents", Library::Books, open_agents)
+        },
+        Shot {
+            calm: false,
+            ..shot("09d-settings-agents-other", Library::Books, |stage| {
+                open_agents(stage)?;
+                stage.click_label("Other")?;
+                stage.scroll("settings-page", -4000.0)
+            })
+        },
+        Shot {
+            calm: false,
+            ..shot("09e-agent-confirmation", Library::Books, |stage| {
+                stage.with_app(crate::app::agent::show_confirmation);
+                stage.settle()
+            })
+        },
     ]
 }
 
@@ -483,6 +510,25 @@ fn editor_problems(stage: &mut Stage) -> Result<()> {
     stage.type_text("\n\nSee [the gone page](nowhere.md).\n")?;
     open_section(stage, "section-problems")?;
     stage.click("check")
+}
+
+/// The settings at the section of agents, with the server serving.
+fn open_agents(stage: &mut Stage) -> Result<()> {
+    open_settings(stage)?;
+    stage.with_app(|cx| {
+        crate::features::appearance::Appearance::global(cx).update(cx, |appearance, cx| {
+            appearance.update(|settings| settings.agents.serve = true, cx);
+        });
+        let status = crate::features::agents::AgentStatus::global(cx);
+        status.update(cx, |status, cx| {
+            status.set(
+                crate::features::agents::Status::Running("http://127.0.0.1:7341/mcp".into()),
+                cx,
+            );
+        });
+    });
+    stage.settle()?;
+    stage.scroll("settings-page", -4000.0)
 }
 
 fn open_settings(stage: &mut Stage) -> Result<()> {

@@ -151,6 +151,9 @@ edit:
     ended:
       en: "the editing session has ended"
       ru: "сеанс редактирования завершён"
+    conflict:
+      en: "an agent changed this chapter while you were typing; your text is kept here and replaces the agent's when you go on typing"
+      ru: "агент изменил эту главу, пока вы печатали; ваш текст сохранён здесь и заменит текст агента, когда вы продолжите печатать"
     automatic:
       en: "the contents follow the headings, so there is no list to change"
       ru: "оглавление строится по заголовкам, поэтому списка для изменения нет"

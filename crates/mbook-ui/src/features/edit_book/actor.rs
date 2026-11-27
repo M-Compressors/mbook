@@ -1,6 +1,8 @@
 //! The task that owns the book, and the handle that talks to it.
 
-use super::command::{Command, ContentsChange, MetaChange, Reply, Request};
+use super::agent::error::AgentError;
+use super::agent::{self, Answer, Held, Op, Revisions};
+use super::command::{Change, Command, ContentsChange, MetaChange, Reply, Request};
 use super::contents::{self, Places};
 use super::error::{ContentsError, EditError, OpenFailure};
 use super::outline::{Outline, ProblemOutline};
@@ -13,7 +15,7 @@ use mbook::{Book, Meta, Toc};
 use std::future::Future;
 use std::path::PathBuf;
 
-const CONTENTS_MODE: &str = "x-mbook-ui-contents";
+pub(crate) const CONTENTS_MODE: &str = "x-mbook-ui-contents";
 const HEADINGS: &str = "headings";
 
 /// Starts a session for the book at `path`.
@@ -117,6 +119,66 @@ impl EditHandle {
         self.ask(|reply| Request::ChapterFigures(chapter, text, reply))
     }
 
+    /// The current text of a chapter and the last change an agent made to
+    /// it, which the editor gives back with [`hold`](Self::hold).
+    ///
+    /// # Errors
+    ///
+    /// As [`chapter_text`](Self::chapter_text).
+    pub(crate) fn editor_text(
+        &self,
+        path: &str,
+    ) -> impl Future<Output = Result<(String, u64), EditError>> + Send + 'static {
+        let path = path.to_owned();
+        self.ask(|reply| Request::EditorText(path, reply))
+    }
+
+    /// Runs a call of an agent.
+    ///
+    /// # Errors
+    ///
+    /// The error of the call; [`AgentError::OpenFailed`] when the session is
+    /// gone or the book could not be opened.
+    pub(crate) fn agent(
+        &self,
+        op: Op,
+    ) -> impl Future<Output = Result<Answer, AgentError>> + Send + 'static {
+        let (reply, answer) = oneshot::channel();
+        drop(self.requests.unbounded_send(Request::Agent(op, reply)));
+        async move {
+            answer
+                .await
+                .unwrap_or_else(|_| Err(AgentError::from(EditError::Ended)))
+        }
+    }
+
+    /// Reads the book again from its file; every change since the last save
+    /// is lost.
+    ///
+    /// # Errors
+    ///
+    /// [`EditError::Open`] when the file cannot be read; the session then
+    /// keeps the book it had.
+    pub(crate) fn discard(&self) -> impl Future<Output = Result<(), EditError>> + Send + 'static {
+        self.ask(Request::Discard)
+    }
+
+    /// Says which chapter the editor holds text of that it has not sent, and
+    /// the last change by an agent it has seen of it; `None` when it holds
+    /// none. While a chapter is held, an agent cannot change it; text the
+    /// editor sends for a chapter an agent changed after `seen` is refused
+    /// with [`EditError::Conflict`].
+    pub(crate) fn hold(&self, held: Option<(String, u64)>) {
+        drop(self.requests.unbounded_send(Request::Hold(held)));
+    }
+
+    /// Changes made by agents from now on, as they are made.
+    pub(crate) fn subscribe(&self) -> mpsc::UnboundedReceiver<Change> {
+        let (sender, changes) = mpsc::unbounded();
+        drop(self.requests.unbounded_send(Request::Subscribe(sender)));
+        changes
+    }
+
     /// Queues a request now, so that the order of calls is the order of
     /// application, and waits for the answer later.
     fn ask<T: Send + 'static>(
@@ -132,7 +194,7 @@ impl EditHandle {
 }
 
 /// What the task owns.
-enum State {
+pub(crate) enum State {
     /// The book is open.
     Open(Box<Session>),
     /// The book could not be opened; every request gets this failure.
@@ -156,6 +218,9 @@ impl State {
                 path,
                 problems: Vec::new(),
                 unsaved: false,
+                revisions: Revisions::default(),
+                held: None,
+                subscribers: Vec::new(),
             })),
             Err(error) => Self::Failed(OpenFailure::new(&error)),
         }
@@ -203,6 +268,57 @@ impl State {
                 let outcome = self.read(|book| Ok(chapter_figures(book, &chapter, &text)));
                 drop(reply.send(outcome));
             }
+            Request::EditorText(path, reply) => {
+                let outcome = match self {
+                    Self::Open(session) => session
+                        .book
+                        .chapter(&path)
+                        .map(|chapter| {
+                            (chapter.text().to_owned(), session.revisions.by_agent(&path))
+                        })
+                        .ok_or(EditError::NoSuchPath(path)),
+                    Self::Failed(failure) => Err(EditError::Open(failure.clone())),
+                };
+                drop(reply.send(outcome));
+            }
+            Request::Agent(op, reply) => {
+                let outcome = match self {
+                    Self::Open(session) => {
+                        // A save changes nothing an editor shows but whether
+                        // the book is saved; it is told all the same.
+                        let told = op.changes() || matches!(op, Op::Save);
+                        let outcome = agent::run(session, op);
+                        if let Ok(answer) = &outcome
+                            && told
+                        {
+                            session.tell(&answer.chapters);
+                        }
+                        outcome
+                    }
+                    Self::Failed(failure) => Err(EditError::Open(failure.clone()).into()),
+                };
+                drop(reply.send(outcome));
+            }
+            Request::Discard(reply) => {
+                let outcome = match self {
+                    Self::Open(session) => session.reopen(),
+                    Self::Failed(failure) => Err(EditError::Open(failure.clone())),
+                };
+                drop(reply.send(outcome));
+            }
+            Request::Hold(held) => {
+                if let Self::Open(session) = self {
+                    session.held = held.map(|(path, seen)| Held {
+                        conflict: session.revisions.by_agent(&path) != seen,
+                        path,
+                    });
+                }
+            }
+            Request::Subscribe(sender) => {
+                if let Self::Open(session) = self {
+                    session.subscribers.push(sender);
+                }
+            }
         }
     }
 
@@ -244,14 +360,20 @@ fn chapter_figures(book: &Book, chapter: &str, text: &str) -> FigureSources {
 }
 
 /// An open book and what is known about it.
-struct Session {
-    book: Book,
+pub(crate) struct Session {
+    pub(crate) book: Book,
     /// Where `Save` writes.
     path: PathBuf,
     /// The problems of the last `Check` or `Save`, until the next change.
-    problems: Vec<ProblemOutline>,
+    pub(crate) problems: Vec<ProblemOutline>,
     /// A change was made since the book was opened or last saved.
-    unsaved: bool,
+    pub(crate) unsaved: bool,
+    /// How often each chapter changed.
+    pub(crate) revisions: Revisions,
+    /// The chapter the editor holds text of that it has not sent.
+    pub(crate) held: Option<Held>,
+    /// Where the changes of agents are told.
+    subscribers: Vec<mpsc::UnboundedSender<Change>>,
 }
 
 impl Session {
@@ -267,7 +389,17 @@ impl Session {
             Command::Check => self.problems = self.found(),
             Command::Save => self.save()?,
             change => {
+                let touched = touched(&change);
+                if let Command::SetChapterText { path, .. } = &change
+                    && let Some(held) = self.held.take_if(|held| held.path == *path)
+                    && held.conflict
+                {
+                    return Err(EditError::Conflict);
+                }
                 self.apply(change)?;
+                if let Some(path) = touched {
+                    self.revisions.touch(&path, false);
+                }
                 self.problems.clear();
                 self.unsaved = true;
             }
@@ -275,8 +407,44 @@ impl Session {
         Ok(Outline::of(&self.book, &self.problems, self.unsaved))
     }
 
+    /// Tells the subscribers that agents changed these chapters, with the
+    /// change each is at; subscribers that are gone are forgotten.
+    fn tell(&mut self, chapters: &[String]) {
+        let change = Change {
+            chapters: chapters
+                .iter()
+                .map(|path| (path.clone(), self.revisions.by_agent(path)))
+                .collect(),
+        };
+        self.subscribers
+            .retain(|subscriber| subscriber.unbounded_send(change.clone()).is_ok());
+    }
+
+    /// Reads the book again from its file, and tells the subscribers that
+    /// every chapter changed.
+    fn reopen(&mut self) -> Result<(), EditError> {
+        let State::Open(fresh) = State::open(self.path.clone()) else {
+            return Err(EditError::Open(OpenFailure::new(&mbook::Error::Io(
+                std::io::ErrorKind::NotFound.into(),
+            ))));
+        };
+        self.book = fresh.book;
+        self.problems.clear();
+        self.unsaved = false;
+        self.held = None;
+        self.revisions.touch_all(&self.book);
+        let chapters: Vec<String> = self
+            .book
+            .chapters()
+            .iter()
+            .map(|chapter| chapter.path().to_owned())
+            .collect();
+        self.tell(&chapters);
+        Ok(())
+    }
+
     /// Runs `Book::check`.
-    fn found(&self) -> Vec<ProblemOutline> {
+    pub(crate) fn found(&self) -> Vec<ProblemOutline> {
         self.book
             .check()
             .err()
@@ -284,7 +452,7 @@ impl Session {
     }
 
     /// Writes the book when it has no problems.
-    fn save(&mut self) -> Result<(), EditError> {
+    pub(crate) fn save(&mut self) -> Result<(), EditError> {
         self.problems = self.found();
         if self.problems.is_empty() {
             self.book.save(&self.path).map_err(EditError::Save)?;
@@ -354,8 +522,19 @@ impl Session {
     }
 }
 
+/// The chapter whose text a command of the editor changes.
+fn touched(command: &Command) -> Option<String> {
+    match command {
+        Command::SetChapterText { path, .. } | Command::AddChapter { path, .. } => {
+            Some(path.clone())
+        }
+        Command::MoveChapterPath { to, .. } => Some(to.clone()),
+        _ => None,
+    }
+}
+
 /// Selects automatic contents and records the choice for the next session.
-fn contents_from_headings(book: &mut Book) -> mbook::Result<()> {
+pub(crate) fn contents_from_headings(book: &mut Book) -> mbook::Result<()> {
     if book.meta().get(CONTENTS_MODE) != Some(HEADINGS) {
         book.meta_mut().set(CONTENTS_MODE, HEADINGS)?;
     }
@@ -387,7 +566,7 @@ fn keep_list(book: &mut Book, items: Vec<mbook::TocItem>) -> mbook::Result<()> {
 /// Removes a chapter, and with it what led into it and would lead nowhere:
 /// the landmarks, of every kind, and the entries of a contents list the book
 /// keeps.
-fn remove_chapter(book: &mut Book, path: &str) -> Result<(), EditError> {
+pub(crate) fn remove_chapter(book: &mut Book, path: &str) -> Result<(), EditError> {
     if book.chapter(path).is_none() {
         return Err(EditError::NoSuchPath(path.to_owned()));
     }
@@ -449,7 +628,7 @@ fn set_or_remove(meta: &mut Meta, key: &str, value: Option<String>) -> mbook::Re
 /// sorted again when it was in the order of the book before, so that the
 /// entries of the chapter move with it; a list that was out of order already
 /// is left for the author to sort.
-fn move_chapter(book: &mut Book, path: &str, index: usize) -> Result<(), EditError> {
+pub(crate) fn move_chapter(book: &mut Book, path: &str, index: usize) -> Result<(), EditError> {
     let followed = match book.toc() {
         Toc::Explicit(items) if contents::in_order(items, &Places::of(book)) => Some(items.clone()),
         _ => None,
@@ -468,7 +647,7 @@ fn move_chapter(book: &mut Book, path: &str, index: usize) -> Result<(), EditErr
 /// refuses that, it is put back under the old one. The landmarks that led
 /// into the chapter, and the entries of a contents list the book keeps,
 /// follow it to its new path.
-fn move_chapter_path(book: &mut Book, from: &str, to: String) -> Result<(), EditError> {
+pub(crate) fn move_chapter_path(book: &mut Book, from: &str, to: String) -> Result<(), EditError> {
     let index = book
         .chapters()
         .iter()

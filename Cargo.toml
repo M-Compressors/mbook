@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/mbook", "crates/mbook-converter", "crates/mbook-ui", "crates/mbook-android"]
 
 [workspace.package]
-version = "0.3.8"
+version = "0.3.9"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
@@ -19,7 +19,7 @@ markdown = "1.0.0"
 tempfile = "3.10"
 percent-encoding = "2"
 github-slugger = "0.1"
-mbook = { path = "crates/mbook", version = "0.3.8", default-features = false }
+mbook = { path = "crates/mbook", version = "0.3.9", default-features = false }
 # Decodes pictures and encodes them as AVIF; `avif` is the encoder, built on
 # `ravif` and `rav1e`. The converter uses it for the pictures of a source,
 # the application for a picture added in its editor.
@@ -32,6 +32,9 @@ rayon = "1.10"
 
 # Decodes stored pictures in the reader and in picture-capable export builds.
 avif-decode = { version = "3", default-features = false }
+# Draws SVG: the figures of an export, and the SVG pictures agents give the
+# application.
+resvg = { version = "0.46", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

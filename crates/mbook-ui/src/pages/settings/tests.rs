@@ -781,3 +781,92 @@ fn a_failure_to_save_the_settings_is_said_on_the_page(cx: &mut TestAppContext) {
         assert!(window.try_find("settings-error").is_none());
     });
 }
+
+#[cfg(not(target_os = "android"))]
+mod agents {
+    use super::*;
+    use crate::features::agents::{AgentStatus, Status};
+
+    fn click_id(started: &Started, id: &str, cx: &mut TestAppContext) {
+        let id = id.to_owned();
+        testing::frame(cx, started.window, move |window, cx| window.click(id, cx));
+        cx.run_until_parked();
+    }
+
+    fn clipboard(cx: &mut TestAppContext) -> String {
+        cx.read_from_clipboard()
+            .and_then(|item| item.text())
+            .unwrap_or_default()
+    }
+
+    /// A page that sees a server serving.
+    fn serving(cx: &mut TestAppContext) -> Started {
+        let started = start(cx, 900.0);
+        set(&started, cx, |settings| settings.agents.serve = true);
+        cx.update(|cx| {
+            let status = AgentStatus::global(cx);
+            status.update(cx, |status, cx| {
+                status.set(Status::Running("http://127.0.0.1:7341/mcp".into()), cx);
+            });
+        });
+        cx.run_until_parked();
+        started
+    }
+
+    #[gpui_kit::test]
+    fn the_switch_turns_the_server_on_and_off(cx: &mut TestAppContext) {
+        let started = start(cx, 900.0);
+        assert!(!settings(&started, cx).agents.serve);
+        click_id(&started, "serve-mcp", cx);
+        assert!(settings(&started, cx).agents.serve);
+        click_id(&started, "serve-mcp", cx);
+        assert!(!settings(&started, cx).agents.serve);
+    }
+
+    #[gpui_kit::test]
+    fn a_stopped_server_offers_nothing_to_copy(cx: &mut TestAppContext) {
+        let started = start(cx, 900.0);
+        let found = testing::frame(cx, started.window, |window, _| {
+            (
+                window.try_find("copy-claude-code").is_some(),
+                window.find("mcp-status").label().map(str::to_owned),
+            )
+        });
+        assert_eq!(found, (false, Some("The server is off.".to_owned())));
+    }
+
+    #[gpui_kit::test]
+    fn a_serving_server_copies_the_configuration_of_each_client(cx: &mut TestAppContext) {
+        let started = serving(cx);
+        click_id(&started, "copy-claude-code", cx);
+        let command = clipboard(cx);
+        assert!(command.starts_with("claude mcp add"), "{command}");
+        assert!(command.contains("http://127.0.0.1:7341/mcp"));
+        click_label(&started, "Cursor", cx);
+        click_id(&started, "copy-cursor", cx);
+        assert!(clipboard(cx).contains("mcpServers"));
+        click_label(&started, "Codex", cx);
+        click_id(&started, "copy-codex", cx);
+        assert!(clipboard(cx).contains("[mcp_servers.mbook]"));
+    }
+
+    #[gpui_kit::test]
+    fn the_bar_below_the_preview_chooses_the_client(cx: &mut TestAppContext) {
+        let started = serving(cx);
+        let hint = |cx: &mut TestAppContext| {
+            testing::frame(cx, started.window, |window, _| {
+                window.find("mcp-client-hint").label().map(str::to_owned)
+            })
+        };
+        assert!(hint(cx).is_some_and(|hint| hint.contains("terminal")));
+        click_label(&started, "Other", cx);
+        assert!(hint(cx).is_some_and(|hint| hint.contains("Streamable HTTP")));
+        click_id(&started, "copy-other", cx);
+        let copied = clipboard(cx);
+        assert!(copied.contains("\"type\": \"http\""), "{copied}");
+        let preview = testing::frame(cx, started.window, |window, _| {
+            window.find("mcp-preview").label().map(str::to_owned)
+        });
+        assert_eq!(preview.as_deref(), Some("Configuration for Other"));
+    }
+}

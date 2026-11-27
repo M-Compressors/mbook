@@ -55,6 +55,10 @@ pub(crate) enum EditError {
     /// dropped or has ended.
     #[error("{}", rust_i18n::t!("edit.err.ended"))]
     Ended,
+    /// An agent changed the chapter while the editor held text of it that it
+    /// had not sent; the text was not taken.
+    #[error("{}", rust_i18n::t!("edit.err.conflict"))]
+    Conflict,
 }
 
 /// Why a change of the contents list was refused.

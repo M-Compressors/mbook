@@ -147,6 +147,25 @@ use mbook_converter::figure::{self, Palette, Setting};
 
 let formula = figure::formula(r"v = \frac{s}{t}", Setting::Block, Palette::default())?;
 std::fs::write("speed.svg", formula.svg())?;
+std::fs::write("speed.png", formula.png(2.0, Some(0x00ff_ffff))?)?;
+```
+
+### Move diagrams and formulas written in Markdown into resources
+
+```rust
+use mbook::Book;
+use mbook_converter::inline::{self, Kind};
+
+let mut book = Book::new("The Example", "en")?;
+let text = "# One\n\nSpeed $v = s / t$.\n";
+let found = inline::extract(text, "ch01.md", &book, &[0..text.len()]);
+for figure in found.figures.iter().filter(|figure| figure.new) {
+    match figure.kind {
+        Kind::Diagram => drop(book.add_diagram(&figure.path, &figure.source)?),
+        Kind::Formula => drop(book.add_formula(&figure.path, &figure.source)?),
+    }
+}
+book.add_chapter("ch01.md", found.text)?; // "# One\n\nSpeed ![v = s / t](math/0001.tex).\n"
 ```
 
 ## Formats

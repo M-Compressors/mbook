@@ -432,6 +432,11 @@ impl Session {
         self.edited.insert(path.to_owned());
     }
 
+    /// Whether text was typed and not sent, outside tests too.
+    pub(super) const fn holds_text(&self) -> bool {
+        self.pending.is_some()
+    }
+
     /// Takes the chapter whose text must be sent, if any.
     pub(super) fn take_pending(&mut self) -> Option<String> {
         self.pending.take()
@@ -543,6 +548,7 @@ pub(super) fn edit_error_words(error: &EditError) -> String {
         EditError::Contents(_) => t!("editor.error.contents", detail = detail),
         EditError::NoSuchPath(path) => t!("editor.error.no_such_path", path = path),
         EditError::Ended => t!("editor.error.ended"),
+        EditError::Conflict => t!("edit.err.conflict"),
     }
     .into_owned()
 }

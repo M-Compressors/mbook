@@ -68,7 +68,12 @@ pub fn render_screens(out: &Path, language: &str) -> Result<Vec<PathBuf>> {
     write_reading_latency(&reading, out)?;
     let mut written = Vec::new();
     let mut failures = Vec::new();
-    for shot in scenes::all() {
+    // `MBOOK_VISUAL_ONLY` draws only the shots whose name contains it.
+    let only = std::env::var("MBOOK_VISUAL_ONLY").unwrap_or_default();
+    for shot in scenes::all()
+        .into_iter()
+        .filter(|shot| shot.name.contains(only.as_str()))
+    {
         let world = match shot.library {
             Library::Empty => &empty,
             Library::Books => &books,
