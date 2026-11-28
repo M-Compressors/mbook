@@ -34,7 +34,7 @@ rayon = "1.10"
 avif-decode = { version = "3", default-features = false }
 # Draws SVG: the figures of an export, and the SVG pictures agents give the
 # application.
-resvg = { version = "0.46", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+resvg = { version = "0.50", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
